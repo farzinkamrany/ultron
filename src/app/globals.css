@@ -1,26 +1,21 @@
-@import "tailwindcss";
+﻿@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
+@layer base {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    /* Premium Avengers/Ultron Aesthetic Theme */
+    --color-phase1: 0 191 255;   /* Deep Sci-Fi Blue (Ultron/Jarvis Aura) */
+    --color-phase2: 139 92 246;  /* Quantum Purple */
+    --color-phase3: 236 72 153;  /* Neon Magenta */
+    --color-phase4: 16 185 129;  /* Matrix Emerald */
+    --color-phase5: 245 158 11;  /* Core Gold */
+    --color-phase6: 59 130 246;  /* Royal Blue */
+    --color-phase7: 225 29 72;   /* Ultron Crimson / Rose-600 */
+    --color-phase8: 34 197 94;   /* Launch Green */
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
-}
+* { scrollbar-width: thin; scrollbar-color: rgba(var(--color-phase1), 0.3) transparent; }
+*::-webkit-scrollbar { width: 4px; }
+*::-webkit-scrollbar-thumb { background: rgba(var(--color-phase1), 0.3); border-radius: 4px; }

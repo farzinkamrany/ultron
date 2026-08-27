@@ -1,0 +1,16 @@
+﻿{
+  "crons": [
+    {
+      "path": "/api/cron/arbitrage",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/trading",
+      "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/cron/reflect",
+      "schedule": "59 23 * * *"
+    }
+  ]
+}

@@ -5,22 +5,33 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
-    "lint": "eslint"
+    "start": "next start"
   },
   "dependencies": {
-    "next": "16.3.3",
-    "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "@google/generative-ai": "^0.24.1",
+    "@supabase/supabase-js": "^2.112.4",
+    "ccxt": "^4.5.76",
+    "clsx": "^2.1.1",
+    "framer-motion": "^11.0.0",
+    "https-proxy-agent": "^9.1.0",
+    "lucide-react": "^0.427.0",
+    "next": "14.2.5",
+    "protobufjs": "^7.6.6",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-textarea-autosize": "^8.5.9",
+    "sonner": "^2.0.8",
+    "tailwind-merge": "^2.5.2",
+    "telegraf": "^4.16.3",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "eslint": "^9",
-    "eslint-config-next": "16.3.3",
-    "tailwindcss": "^4",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.41",
+    "tailwindcss": "^3.4.10",
     "typescript": "^5"
   }
 }
