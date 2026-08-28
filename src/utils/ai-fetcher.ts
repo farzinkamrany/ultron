@@ -1,5 +1,3 @@
-import https from "https";
-import { HttpsProxyAgent } from "https-proxy-agent";
 import { PRO_MODELS, FLASH_MODELS, getApiKeysPool } from "@/config/ai-models";
 
 class ApiError extends Error {
@@ -11,57 +9,30 @@ class ApiError extends Error {
 }
 
 async function makeHttpsRequest(model: string, apiKey: string, payload: string, stream: boolean): Promise<any> {
-  const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
   const action = stream ? "streamGenerateContent" : "generateContent";
   const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:${action}?key=${apiKey}${stream ? '&alt=sse' : ''}`;
 
-  return new Promise((resolve, reject) => {
-    const urlObj = new URL(apiUrl);
-    const options: https.RequestOptions = {
-      hostname: urlObj.hostname,
-      path: urlObj.pathname + urlObj.search,
+  try {
+    const response = await fetch(apiUrl, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Content-Length": Buffer.byteLength(payload),
-      },
-      ...(proxyUrl ? { agent: new HttpsProxyAgent(proxyUrl) } : {}),
-    };
-
-    const request = https.request(options, (res) => {
-      if (res.statusCode !== 200) {
-        let errData = "";
-        res.on("data", chunk => errData += chunk);
-        res.on("end", () => {
-          reject(new ApiError(res.statusCode || 500, errData));
-        });
-        return;
-      }
-
-      if (stream) {
-        resolve(res);
-      } else {
-        let data = "";
-        res.on("data", chunk => data += chunk);
-        res.on("end", () => {
-          try {
-            const json = JSON.parse(data);
-            resolve(json);
-          } catch (e) {
-            reject(e);
-          }
-        });
-      }
+      headers: { "Content-Type": "application/json" },
+      body: payload,
     });
 
-    request.on("error", reject);
-    request.setTimeout(60000, () => {
-      request.destroy();
-      reject(new ApiError(408, "Request timeout"));
-    });
-    request.write(payload);
-    request.end();
-  });
+    if (!response.ok) {
+      const errData = await response.text();
+      throw new ApiError(response.status || 500, errData);
+    }
+
+    if (stream) {
+      return response;
+    } else {
+      return await response.json();
+    }
+  } catch (error: any) {
+    if (error instanceof ApiError) throw error;
+    throw new ApiError(500, error.message || "Unknown Fetch Error");
+  }
 }
 
 /**

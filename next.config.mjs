@@ -1,4 +1,18 @@
-﻿/** @type {import('next').NextConfig} */
+/** @type {import('next').NextConfig} */
+
+// Bootstrap the undici global proxy so Next.js's native fetch goes through it.
+// This is the only reliable method for Next.js 14 (undici-based fetch).
+if (process.env.HTTPS_PROXY || process.env.HTTP_PROXY) {
+  const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
+  try {
+    const { ProxyAgent, setGlobalDispatcher } = await import("undici");
+    setGlobalDispatcher(new ProxyAgent(proxyUrl));
+    console.log(`[Proxy] Global dispatcher set to: ${proxyUrl}`);
+  } catch (e) {
+    console.warn("[Proxy] Failed to set global dispatcher:", e.message);
+  }
+}
+
 const nextConfig = {
   experimental: {
     serverComponentsExternalPackages: ["ccxt"]

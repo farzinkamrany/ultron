@@ -1,4 +1,4 @@
-﻿import https from "https";
+import https from "https";
 
 export interface DivarAd {
   token: string;
@@ -16,70 +16,54 @@ export interface DivarAd {
 export async function fetchDivarAds(city: string, category: string): Promise<DivarAd[]> {
   const apiUrl = `https://api.divar.ir/v8/web-search/${city}/${category}`;
 
-  return new Promise((resolve, reject) => {
-    const urlObj = new URL(apiUrl);
-    const options: https.RequestOptions = {
-      hostname: urlObj.hostname,
-      path: urlObj.pathname,
-      method: "GET",
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Accept": "application/json",
-      },
-      // Explicitly NO agent to bypass the global proxy for this Iranian domain
-    };
+  const fetchOptions: RequestInit = {
+    method: "GET",
+    headers: {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      "Accept": "application/json",
+    },
+    // Explicitly NO agent to bypass the global proxy for this Iranian domain
+  };
 
-    const req = https.request(options, (res) => {
-      if (res.statusCode !== 200) {
-        let errData = "";
-        res.on("data", chunk => errData += chunk);
-        res.on("end", () => reject(new Error(`Divar API Error ${res.statusCode}: ${errData}`)));
-        return;
-      }
+  try {
+    const response = await fetch(apiUrl, fetchOptions);
+    if (!response.ok) {
+      const errData = await response.text();
+      throw new Error(`Divar API Error ${response.status}: ${errData}`);
+    }
 
-      let data = "";
-      res.on("data", chunk => data += chunk);
-      res.on("end", () => {
-        try {
-          const json = JSON.parse(data);
-          const ads: DivarAd[] = [];
-          
-          // Divar's payload structure varies, this is a standard parsing approach
-          const widgetList = json?.widget_list || [];
-          for (const widget of widgetList) {
-            const dataObj = widget?.data;
-            if (dataObj && dataObj.token && dataObj.title) {
-              // Price parsing (Divar sometimes returns price in string with formatting)
-              let priceStr = dataObj.middle_description_text || "";
-              let price = 0;
-              // Very basic extraction, real world requires regex for "تومان"
-              if (priceStr.includes("تومان")) {
-                const numericStr = priceStr.replace(/[^0-9]/g, "");
-                if (numericStr) price = parseInt(numericStr, 10);
-              }
-              
-              if (price > 0) {
-                ads.push({
-                  token: dataObj.token,
-                  title: dataObj.title,
-                  description: dataObj.description || "",
-                  price,
-                  url: `https://divar.ir/v/${dataObj.token}`
-                });
-              }
-            }
-          }
-          resolve(ads);
-        } catch (e) {
-          reject(e);
+    const json = await response.json();
+    const ads: DivarAd[] = [];
+    
+    // Divar's payload structure varies, this is a standard parsing approach
+    const widgetList = json?.widget_list || [];
+    for (const widget of widgetList) {
+      const dataObj = widget?.data;
+      if (dataObj && dataObj.token && dataObj.title) {
+        // Price parsing (Divar sometimes returns price in string with formatting)
+        let priceStr = dataObj.middle_description_text || "";
+        let price = 0;
+        // Very basic extraction, real world requires regex for "تومان"
+        if (priceStr.includes("تومان")) {
+          const numericStr = priceStr.replace(/[^0-9]/g, "");
+          if (numericStr) price = parseInt(numericStr, 10);
         }
-      });
-    });
-
-    req.on("error", reject);
-    req.setTimeout(15000, () => { req.destroy(); reject(new Error("Divar Request timeout")); });
-    req.end();
-  });
+        
+        if (price > 0) {
+          ads.push({
+            token: dataObj.token,
+            title: dataObj.title,
+            description: dataObj.description || "",
+            price,
+            url: `https://divar.ir/v/${dataObj.token}`
+          });
+        }
+      }
+    }
+    return ads;
+  } catch (error: any) {
+    throw new Error(error.message || "Divar Request failed");
+  }
 }
 
 /**

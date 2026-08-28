@@ -1,20 +1,22 @@
-// Pro Models (مناسب برای استدلال‌های پیچیده، تصمیم‌گیری و کدنویسی)
+// Pro Models (for complex reasoning, decision-making, coding)
 export const PRO_MODELS = [
-  "gemini-3.1-pro",
-  "gemini-2.5-pro"
+  "gemini-3.1-pro",   // Best available
+  "gemini-2.5-pro",           // Stable high-quality
+  "gemini-1.5-pro",           // Classic fallback
 ];
 
-// Flash Models (مناسب برای سرعت بسیار بالا، پایداری و مکالمات روزمره)
+// Flash Models (for speed, stability, and everyday conversations)
 export const FLASH_MODELS = [
+  "gemini-3.7-flash",         // Latest fast model
+  "gemini-3.6-flash",
   "gemini-3.5-flash",
-  "gemini-2-flash",
-  "gemini-3.7-flash-lite",
-  "gemini-3-flash",
-  "gemini-3.5-flash-lite",
   "gemini-3.1-flash-lite",
+  "gemini-3.5-flash-lite",
   "gemini-2.5-flash",
   "gemini-2.5-flash-lite",
-  "gemini-2-flash-lite"
+  "gemini-2.0-flash",
+  "gemini-2.0-flash-lite",
+  "gemini-1.5-flash",         // Last resort stable
 ];
 
 
@@ -35,6 +37,6 @@ export function getApiKeysPool(): string[] {
   if (keys.length === 0) {
     throw new Error("No Gemini API keys are configured in the environment variables.");
   }
-  
+
   return keys;
 }
