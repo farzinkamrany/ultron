@@ -60,11 +60,15 @@ export async function writeAndProposeCode(filePath: string, content: string, des
   const branchName = `ultron-update-${Date.now()}`;
   const commitMessage = `Ultron Auto-Commit: Update ${filePath}\n\n${description}`;
 
-  // 1. Get SHA of main branch
-  const mainRef = await githubFetch(`/repos/${owner}/${repo}/git/refs/heads/main`);
+  // 1. Get the repo's actual default branch (could be 'main' or 'master')
+  const repoData = await githubFetch(`/repos/${owner}/${repo}`);
+  const baseBranch = repoData.default_branch || 'main';
+
+  // 2. Get SHA of base branch
+  const mainRef = await githubFetch(`/repos/${owner}/${repo}/git/refs/heads/${baseBranch}`);
   const mainSha = mainRef.object.sha;
 
-  // 2. Create new branch
+  // 3. Create new branch
   await githubFetch(`/repos/${owner}/${repo}/git/refs`, {
     method: "POST",
     body: JSON.stringify({
