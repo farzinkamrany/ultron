@@ -3,14 +3,12 @@ import { NextResponse } from 'next/server';
 import { generateAIResponse } from '@/lib/ai';
 import { sendTelegramMessage } from '@/lib/telegram';
 import { logSystemEvent } from '@/lib/ultron-db';
+import { verifyQStashSignature } from '@/lib/qstash';
 
-export async function GET(request: Request) {
-  const authHeader = request.headers.get('authorization');
-  if (
-    process.env.NODE_ENV === 'production' &&
-    authHeader !== `Bearer ${process.env.CRON_SECRET}`
-  ) {
-    return new NextResponse('Unauthorized', { status: 401 });
+export async function POST(request: Request) {
+  const isValid = await verifyQStashSignature(request);
+  if (!isValid) {
+    return new NextResponse('Unauthorized: Invalid QStash Signature', { status: 401 });
   }
 
   try {

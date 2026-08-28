@@ -1,20 +1,30 @@
-﻿export const dynamic = "force-dynamic"
+export const dynamic = "force-dynamic"
 import { NextResponse } from "next/server";
 import { logError } from "@/lib/logger";
 import { storeMemory } from "@/lib/memory";
 import { sendTelegramMessage } from "@/lib/telegram";
 
-// This endpoint should be called nightly via Vercel Cron
-export async function GET(request: Request) {
+import { verifyQStashSignature } from "@/lib/qstash";
+
+// This endpoint should be called nightly via Upstash QStash
+export async function POST(request: Request) {
+  const isValid = await verifyQStashSignature(request);
+  if (!isValid) {
+    return new NextResponse('Unauthorized: Invalid QStash Signature', { status: 401 });
+  }
+
   try {
     // 1. In a real scenario, you'd fetch all raw chat logs/trades from the day here.
     // For this implementation, we will manually inject a simulated reflection summary 
     // or allow POSTing daily summaries.
 
-    // As a test, we will just store a hardcoded memory if called without data, 
-    // or parse URL params for a custom memory.
-    const { searchParams } = new URL(request.url);
-    const customMemory = searchParams.get("memory");
+    let customMemory = null;
+    try {
+      const body = await request.clone().json();
+      customMemory = body.memory;
+    } catch (e) {
+      // Body might be empty or not JSON
+    }
 
     const memoryContent = customMemory || `Daily Reflection [${new Date().toISOString().split("T")[0]}]: Monitored Divar for arbitrage. Found 0 extreme outliers today. Bitcoin trading volume was low. No Gann levels triggered.`;
 

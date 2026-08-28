@@ -1,22 +1,22 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import ccxt from "ccxt";
 import { analyzeGannSetup, Candle } from "@/lib/trading/gann";
 import { sendTelegramMessage } from "@/lib/telegram";
 import { logError } from "@/lib/logger";
 import { HttpsProxyAgent } from "https-proxy-agent";
 
+import { verifyQStashSignature } from "@/lib/qstash";
+
 export const dynamic = "force-dynamic";
 export const maxDuration = 60; // External API calls may take time
 
-export async function GET(req: NextRequest) {
+export async function POST(req: NextRequest) {
+  const isValid = await verifyQStashSignature(req);
+  if (!isValid) {
+    return new NextResponse('Unauthorized: Invalid QStash Signature', { status: 401 });
+  }
+
   try {
-    // Vercel Cron security check
-    const authHeader = req.headers.get("authorization");
-    if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-      if (process.env.NODE_ENV === "production") {
-        return new Response("Unauthorized", { status: 401 });
-      }
-    }
 
     // Initialize CCXT Exchange (Binance as default for high liquidity)
     const exchange = new ccxt.binance({ enableRateLimit: true });

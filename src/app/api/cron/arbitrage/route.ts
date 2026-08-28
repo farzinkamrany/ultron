@@ -1,22 +1,21 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { fetchDivarAds, detectArbitrageOpportunities } from "@/lib/divar";
 import { sendTelegramMessage } from "@/lib/telegram";
 import { logError } from "@/lib/logger";
 import { supabase } from "@/lib/supabase";
 
+import { verifyQStashSignature } from "@/lib/qstash";
+
 export const dynamic = "force-dynamic";
 export const maxDuration = 60; // Allow enough time for scraping
 
-export async function GET(req: NextRequest) {
+export async function POST(req: NextRequest) {
+  const isValid = await verifyQStashSignature(req);
+  if (!isValid) {
+    return new NextResponse('Unauthorized: Invalid QStash Signature', { status: 401 });
+  }
+
   try {
-    // Vercel Cron security check
-    const authHeader = req.headers.get("authorization");
-    if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-      // Return 401 if unauthorized, but skip check if secret not set for local testing
-      if (process.env.NODE_ENV === "production") {
-        return new Response("Unauthorized", { status: 401 });
-      }
-    }
 
     const city = "tehran";
     // Target high-liquidity category
