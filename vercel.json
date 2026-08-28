@@ -11,6 +11,10 @@
     {
       "path": "/api/cron/reflect",
       "schedule": "59 23 * * *"
+    },
+    {
+      "path": "/api/cron/auditor",
+      "schedule": "0 19 * * *"
     }
   ]
 }

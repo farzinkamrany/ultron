@@ -1,4 +1,4 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 import { detectContext } from "@/lib/geo";
 
@@ -6,6 +6,13 @@ export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   try {
+    // Phase 13: Webhook Security for OwnTracks
+    const authHeader = req.headers.get('authorization');
+    if (process.env.OWNTRACKS_SECRET && authHeader !== `Bearer ${process.env.OWNTRACKS_SECRET}`) {
+      console.warn("Unauthorized location track attempt");
+      return new NextResponse('Unauthorized', { status: 401 });
+    }
+
     const data = await req.json();
 
     // OwnTracks location payload

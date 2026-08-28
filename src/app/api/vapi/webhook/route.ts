@@ -1,4 +1,4 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { generateAIResponse } from "@/lib/ai";
 
 export const dynamic = "force-dynamic";
@@ -7,6 +7,13 @@ export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
   try {
+    // Phase 13: Webhook Security for Vapi
+    const vapiSecret = req.headers.get('x-vapi-secret');
+    if (process.env.VAPI_WEBHOOK_SECRET && vapiSecret !== process.env.VAPI_WEBHOOK_SECRET) {
+      console.warn("Unauthorized Vapi webhook attempt");
+      return new NextResponse('Unauthorized', { status: 401 });
+    }
+
     const body = await req.json();
 
     // Vapi sends different types of webhook events

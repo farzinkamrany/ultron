@@ -1,4 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { redis } from '@/lib/redis';
+import { logExpense } from '@/lib/ultron-tracker';
+import { sendTelegramMessage } from '@/lib/telegram';
+import { generateAIResponse } from '@/lib/ai';
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -32,44 +36,71 @@ export async function POST(req: NextRequest) {
       return new NextResponse('OK', { status: 200 });
     }
 
-    // 4. Send message to AI Provider via native fetch
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`;
-    const systemPrompt = "You are Ultron, Farzin's Life OS. Reply concisely and helpfully in Persian.";
-    
-    const aiPayload = {
-      system_instruction: { parts: [{ text: systemPrompt }] },
-      contents: [{ role: "user", parts: [{ text }] }],
-      generationConfig: { temperature: 0.7, maxOutputTokens: 1024 }
-    };
-
-    const aiResponse = await fetch(geminiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(aiPayload)
-    });
-
-    let replyText = "متاسفانه خطایی در ارتباط با هوش مصنوعی رخ داد.";
-    if (aiResponse.ok) {
-      const aiData = await aiResponse.json();
-      // 5. Get AI's response text
-      replyText = aiData?.candidates?.[0]?.content?.parts?.[0]?.text || replyText;
-    } else {
-      console.error('AI Provider Error:', await aiResponse.text());
+    // 3.5. Command Parsing (Phase 11: Expense Tracking)
+    if (text.startsWith('/spend ')) {
+      const amountRegex = /(\d+k|\d+)\s+(.+)/i;
+      const match = text.replace('/spend ', '').match(amountRegex);
+      
+      if (match) {
+        let amountStr = match[1].toLowerCase();
+        let amount = parseInt(amountStr);
+        if (amountStr.endsWith('k')) {
+          amount = amount * 1000;
+        }
+        
+        const category = match[2].trim();
+        
+        try {
+          await logExpense(amount, category);
+          const replyText = `✅ Expense logged: ${amount.toLocaleString()} for ${category}`;
+          
+          await sendTelegramMessage(chatId, replyText);
+        } catch (e) {
+          console.error("Failed to log expense:", e);
+        }
+        
+        return new NextResponse('OK', { status: 200 });
+      }
     }
 
-    // 6. Call Telegram's sendMessage API via native fetch
-    const telegramUrl = `https://api.telegram.org/bot${botToken}/sendMessage`;
-    const tgResponse = await fetch(telegramUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text: replyText
-      })
-    });
+    // 4. Fetch Short-Term Memory from Redis
+    const historyKey = `chat_history:${chatId}`;
+    let rawHistory: any[] = [];
+    try {
+      rawHistory = await redis.lrange(historyKey, 0, -1);
+    } catch (e) {
+      console.error("Redis Fetch Error:", e);
+    }
 
-    if (!tgResponse.ok) {
-      console.error('Telegram API Error:', await tgResponse.text());
+    const messages = rawHistory.map(msg => ({
+      role: msg.role === 'model' ? 'model' : 'user',
+      content: msg.content
+    }));
+    messages.push({ role: 'user', content: text });
+
+    // 5. Generate AI Response (Using proxy-aware helper)
+    let replyText = "متاسفانه خطایی در ارتباط با هوش مصنوعی رخ داد.";
+    try {
+      replyText = await generateAIResponse(messages, false);
+      
+      // Save new interaction to Redis
+      try {
+        await redis.rpush(historyKey, { role: "user", content: text });
+        await redis.rpush(historyKey, { role: "model", content: replyText });
+        // Keep only last 14 messages (7 interactions)
+        await redis.ltrim(historyKey, -14, -1);
+      } catch (e) {
+        console.error("Redis Save Error:", e);
+      }
+    } catch (e) {
+      console.error('AI Provider Error:', e);
+    }
+
+    // 6. Send message back to Telegram (Using proxy-aware helper)
+    try {
+      await sendTelegramMessage(chatId, replyText);
+    } catch (e) {
+      console.error('Telegram API Error:', e);
     }
 
     // 7. Return 200 OK quickly

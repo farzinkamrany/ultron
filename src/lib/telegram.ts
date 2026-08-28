@@ -1,5 +1,4 @@
-﻿import https from "https";
-import { HttpsProxyAgent } from "https-proxy-agent";
+import { ProxyAgent } from 'undici';
 
 export async function sendTelegramMessage(chatId: string | number, text: string) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -9,30 +8,25 @@ export async function sendTelegramMessage(chatId: string | number, text: string)
   }
 
   const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
-  const fetchUrl = `https://api.telegram.org/bot${token}/sendMessage`;
-  const urlObj = new URL(fetchUrl);
-  
-  const payload = JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML" });
-  
-  const options: https.RequestOptions = {
-    hostname: urlObj.hostname,
-    path: urlObj.pathname,
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Content-Length": Buffer.byteLength(payload),
-    },
-    ...(proxyUrl ? { agent: new HttpsProxyAgent(proxyUrl) } : {}),
-  };
+  const dispatcher = proxyUrl ? new ProxyAgent(proxyUrl.replace('localhost', '127.0.0.1')) : undefined;
 
-  return new Promise((resolve, reject) => {
-    const req = https.request(options, (res) => {
-      let data = "";
-      res.on("data", chunk => data += chunk);
-      res.on("end", () => resolve(data));
-    });
-    req.on("error", reject);
-    req.write(payload);
-    req.end();
-  });
+  const payload = { chat_id: chatId, text, parse_mode: "HTML" };
+
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      ...(dispatcher ? { dispatcher } : {})
+    } as any);
+
+    if (!response.ok) {
+      console.error("[Telegram] Error response:", await response.text());
+    }
+    
+    return await response.json().catch(() => null);
+  } catch (error) {
+    console.error("[Telegram] Request failed:", error);
+    throw error;
+  }
 }
