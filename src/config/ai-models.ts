@@ -1,11 +1,11 @@
 // Pro Models (مناسب برای استدلال‌های پیچیده، تصمیم‌گیری و کدنویسی)
-const PRO_MODELS = [
+export const PRO_MODELS = [
   "gemini-3.1-pro",
   "gemini-2.5-pro"
 ];
 
 // Flash Models (مناسب برای سرعت بسیار بالا، پایداری و مکالمات روزمره)
-const FLASH_MODELS = [
+export const FLASH_MODELS = [
   "gemini-3.5-flash",
   "gemini-3.7-flash",
   "gemini-3-flash",
