@@ -1,4 +1,4 @@
-﻿import https from "https";
+import https from "https";
 import { HttpsProxyAgent } from "https-proxy-agent";
 import { supabase } from "./supabase";
 
@@ -7,10 +7,10 @@ export async function generateEmbedding(text: string): Promise<number[]> {
   if (!apiKey) throw new Error("GOOGLE_GENERATIVE_AI_API_KEY not set");
 
   const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
-  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${apiKey}`;
+  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/embedding-001:embedContent?key=${apiKey}`;
 
   const payload = JSON.stringify({
-    model: "models/text-embedding-004",
+    model: "models/embedding-001",
     content: {
       parts: [{ text }]
     }
