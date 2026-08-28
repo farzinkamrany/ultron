@@ -42,7 +42,7 @@ export async function generateAIResponse(messages: { role: string, content: stri
   });
 
   const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
-  const model = "gemini-1.5-pro";
+  const model = "gemini-3.7-flash";
   const action = stream ? "streamGenerateContent" : "generateContent";
   const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:${action}?key=${apiKey}${stream ? '&alt=sse' : ''}`;
 
