@@ -46,7 +46,7 @@ async function makeHttpsRequest(model: string, apiKey: string, payload: string, 
         res.on("end", () => {
           try {
             const json = JSON.parse(data);
-            resolve(json?.candidates?.[0]?.content?.parts?.[0]?.text || "");
+            resolve(json);
           } catch (e) {
             reject(e);
           }
