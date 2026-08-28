@@ -34,8 +34,8 @@ export async function generateAIResponse(messages: { role: string, content: stri
 
   const { fetchWithRotation } = await import("@/utils/ai-fetcher");
 
-  // Tool Execution Loop (max 3 iterations to prevent infinite loops)
-  const MAX_ITERATIONS = 3;
+  // Tool Execution Loop (max 5 iterations to prevent infinite loops)
+  const MAX_ITERATIONS = 5;
   for (let i = 0; i < MAX_ITERATIONS; i++) {
     const payload = JSON.stringify({
       system_instruction: { parts: [{ text: ULTRON_SYSTEM_PROMPT + memoryContext }] },
@@ -44,61 +44,74 @@ export async function generateAIResponse(messages: { role: string, content: stri
       generationConfig: { temperature: 0.8, maxOutputTokens: 4000 },
     });
 
-    const responseJson = await fetchWithRotation(payload, false, true); // Function calling rarely works well with raw streams
-    
+    const responseJson = await fetchWithRotation(payload, false, true);
+
     const candidate = responseJson?.candidates?.[0];
     if (!candidate) {
       throw new Error("No candidates returned from AI model");
     }
 
-    const part = candidate.content?.parts?.[0];
+    const finishReason = candidate.finishReason;
+    const parts: any[] = candidate.content?.parts ?? [];
 
-    // If it's a function call
-    if (part?.functionCall) {
-      const { name, args } = part.functionCall;
-      console.log(`[Ultron] Executing function: ${name}`, args);
-      
-      let functionOutput = "";
-      try {
-        if (name === "read_source_code") {
-          const code = await getFileContent(args.filePath);
-          functionOutput = `Content of ${args.filePath}:\n\`\`\`\n${code}\n\`\`\``;
-        } else if (name === "write_and_propose_code") {
-          const prUrl = await writeAndProposeCode(args.filePath, args.content, args.description);
-          functionOutput = `Code successfully proposed. PR URL: ${prUrl}`;
-        } else {
-          functionOutput = `Error: Function ${name} is not implemented.`;
-        }
-      } catch (err: any) {
-        functionOutput = `Error executing function ${name}: ${err.message}`;
-      }
+    // Scan ALL parts for function calls (Gemini can return multiple in one response)
+    const functionCallParts = parts.filter((p: any) => p.functionCall);
+    const textPart = parts.find((p: any) => p.text);
 
-      console.log(`[Ultron] Function output:`, functionOutput);
-
-      // Add the model's function call to contents
+    if (functionCallParts.length > 0) {
+      // Add the model's turn (with all its parts) to the conversation
       contents.push(candidate.content);
-      
-      // Add the function response to contents
-      contents.push({
-        role: "user",
-        parts: [{
+
+      // Execute every function call and collect responses
+      const functionResponses: any[] = [];
+      for (const fcPart of functionCallParts) {
+        const { name, args } = fcPart.functionCall;
+        console.log(`[Ultron] Executing function: ${name}`, args);
+
+        let functionOutput = "";
+        try {
+          if (name === "read_source_code") {
+            const code = await getFileContent(args.filePath);
+            functionOutput = JSON.stringify({ status: "success", content: code });
+          } else if (name === "write_and_propose_code") {
+            const prUrl = await writeAndProposeCode(args.filePath, args.content, args.description);
+            functionOutput = JSON.stringify({ status: "success", pr_url: prUrl });
+          } else {
+            functionOutput = JSON.stringify({ status: "error", details: `Function '${name}' is not implemented.` });
+          }
+        } catch (err: any) {
+          // Return error as structured JSON so the LLM understands it and responds gracefully
+          // instead of retrying the same tool call
+          functionOutput = JSON.stringify({ status: "error", details: err.message });
+        }
+
+        console.log(`[Ultron] Function "${name}" output:`, functionOutput.substring(0, 200));
+        functionResponses.push({
           functionResponse: {
             name,
             response: { result: functionOutput }
           }
-        }]
+        });
+      }
+
+      // Feed all function results back as a single user turn
+      contents.push({
+        role: "user",
+        parts: functionResponses,
       });
 
-      // Continue the loop to let the model evaluate the response
+      // Continue loop — model will now process the tool results
       continue;
     }
 
-    // If it's just text
-    if (part?.text) {
-      return part.text;
+    // No function calls — return the text response
+    if (textPart?.text) {
+      return textPart.text;
     }
 
-    return "AI returned an unknown format.";
+    // Edge case: model stopped for a non-obvious reason
+    console.warn(`[Ultron] Unexpected finish. reason="${finishReason}", parts=${JSON.stringify(parts)}`);
+    return "AI returned an unexpected format. Please try again.";
   }
 
   return "Error: Reached maximum tool execution iterations without returning text.";

@@ -12,13 +12,18 @@ export async function getGitHubConfig() {
 async function githubFetch(endpoint: string, options: RequestInit = {}) {
   const { pat } = await getGitHubConfig();
   const url = `https://api.github.com${endpoint}`;
-  
-  const headers = {
+
+  const headers: Record<string, string> = {
     "Authorization": `Bearer ${pat}`,
     "Accept": "application/vnd.github.v3+json",
     "X-GitHub-Api-Version": "2022-11-28",
-    ...options.headers,
+    ...(options.headers as Record<string, string>),
   };
+
+  // GitHub API requires Content-Type for any request with a body
+  if (options.body) {
+    headers["Content-Type"] = "application/json";
+  }
 
   const response = await fetch(url, { ...options, headers });
   if (!response.ok) {

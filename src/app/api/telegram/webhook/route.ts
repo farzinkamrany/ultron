@@ -72,10 +72,14 @@ export async function POST(req: NextRequest) {
       console.error("Redis Fetch Error:", e);
     }
 
-    const messages = rawHistory.map(msg => ({
-      role: msg.role === 'model' ? 'model' : 'user',
-      content: msg.content
-    }));
+    // Sanitize history: only keep entries with valid string content (guards against
+    // dangling functionCall turns that were never resolved, which cause instant loops)
+    const messages = rawHistory
+      .filter(msg => msg && typeof msg.content === 'string' && msg.content.trim())
+      .map(msg => ({
+        role: msg.role === 'model' ? 'model' : 'user',
+        content: msg.content as string,
+      }));
     messages.push({ role: 'user', content: text });
 
     // 5. Generate AI Response (Using proxy-aware helper)
