@@ -1,15 +1,21 @@
-export const PRO_MODELS = [
-  "gemini-3.1-pro",         // Primary choice (as requested)
-  "gemini-1.5-pro"   // Backup Pro
+// Pro Models (مناسب برای استدلال‌های پیچیده، تصمیم‌گیری و کدنویسی)
+const PRO_MODELS = [
+  "gemini-3.1-pro",
+  "gemini-2.5-pro"
 ];
 
-export const FLASH_MODELS = [
-  "gemini-3.7-flash",       // Fastest current generation
-  "gemini-3.6-flash",
-  "gemini-2.5-flash",       // Highly stable fallback
-  "gemini-2-flash",
-  "gemini-1.5-flash" // Ultimate stable fallback
+// Flash Models (مناسب برای سرعت بسیار بالا، پایداری و مکالمات روزمره)
+const FLASH_MODELS = [
+  "gemini-3.5-flash",
+  "gemini-3.7-flash",
+  "gemini-3-flash",
+  "gemini-3.5-flash-lite",
+  "gemini-3.1-flash-lite",
+  "gemini-2.5-flash",
+  "gemini-2.5-flash-lite",
+  "gemini-2-flash-lite"
 ];
+
 
 /**
  * Returns the available API keys configured in the environment.
