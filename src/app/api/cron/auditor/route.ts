@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic"
 import { NextResponse } from 'next/server';
 import { sendTelegramMessage } from '@/lib/telegram';
 // import { supabase } from '@/lib/supabase';
@@ -17,9 +18,9 @@ export async function GET(request: Request) {
     // In a full implementation, you would query the latest location from Supabase
     // const { data } = await supabase.from('locations').order('created_at', { ascending: false }).limit(1).single();
     // const isOverworking = data?.poi === 'OFFICE';
-    
+
     // Simulating the check for now
-    const isOverworking = true; 
+    const isOverworking = true;
 
     if (isOverworking) {
       const chatId = process.env.TELEGRAM_CHAT_ID;

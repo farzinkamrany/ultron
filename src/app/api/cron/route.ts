@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic"
 import { NextResponse } from 'next/server';
 import { generateAIResponse } from '@/lib/ai';
 import { sendTelegramMessage } from '@/lib/telegram';
@@ -26,7 +27,7 @@ Do not ask a question, just give a thoughtful or motivational nudge. Keep it con
     if (!chatId) {
       throw new Error('TELEGRAM_CHAT_ID is not defined');
     }
-    
+
     await sendTelegramMessage(chatId, aiResponse);
 
     await logSystemEvent('info', 'Proactive thought executed', { target: 'telegram', content: aiResponse });

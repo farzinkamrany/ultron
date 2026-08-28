@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic"
 import { NextResponse } from 'next/server';
 
 export async function GET(request: Request) {
@@ -10,13 +11,13 @@ export async function GET(request: Request) {
     // 1. Read host URL
     const host = request.headers.get('host') || 'localhost:3000';
     const protocol = host.includes('localhost') ? 'http' : 'https';
-    
+
     // 2. Construct webhook URL
     const webhookUrl = `${protocol}://${host}/api/telegram/webhook`;
 
     // 3. Call Telegram API to set Webhook
     const telegramApiUrl = `https://api.telegram.org/bot${token}/setWebhook?url=${encodeURIComponent(webhookUrl)}`;
-    
+
     const response = await fetch(telegramApiUrl);
     const data = await response.json();
 

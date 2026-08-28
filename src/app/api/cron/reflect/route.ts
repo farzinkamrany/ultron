@@ -1,4 +1,5 @@
-﻿import { NextResponse } from "next/server";
+﻿export const dynamic = "force-dynamic"
+import { NextResponse } from "next/server";
 import { logError } from "@/lib/logger";
 import { storeMemory } from "@/lib/memory";
 import { sendTelegramMessage } from "@/lib/telegram";
@@ -9,7 +10,7 @@ export async function GET(request: Request) {
     // 1. In a real scenario, you'd fetch all raw chat logs/trades from the day here.
     // For this implementation, we will manually inject a simulated reflection summary 
     // or allow POSTing daily summaries.
-    
+
     // As a test, we will just store a hardcoded memory if called without data, 
     // or parse URL params for a custom memory.
     const { searchParams } = new URL(request.url);

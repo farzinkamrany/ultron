@@ -1,10 +1,10 @@
+export const dynamic = "force-dynamic"
 import { NextRequest, NextResponse } from 'next/server';
 import { redis } from '@/lib/redis';
 import { logExpense } from '@/lib/ultron-tracker';
 import { sendTelegramMessage } from '@/lib/telegram';
 import { generateAIResponse } from '@/lib/ai';
 
-export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 export const runtime = "nodejs";
 
@@ -40,25 +40,25 @@ export async function POST(req: NextRequest) {
     if (text.startsWith('/spend ')) {
       const amountRegex = /(\d+k|\d+)\s+(.+)/i;
       const match = text.replace('/spend ', '').match(amountRegex);
-      
+
       if (match) {
         let amountStr = match[1].toLowerCase();
         let amount = parseInt(amountStr);
         if (amountStr.endsWith('k')) {
           amount = amount * 1000;
         }
-        
+
         const category = match[2].trim();
-        
+
         try {
           await logExpense(amount, category);
           const replyText = `✅ Expense logged: ${amount.toLocaleString()} for ${category}`;
-          
+
           await sendTelegramMessage(chatId, replyText);
         } catch (e) {
           console.error("Failed to log expense:", e);
         }
-        
+
         return new NextResponse('OK', { status: 200 });
       }
     }
@@ -82,7 +82,7 @@ export async function POST(req: NextRequest) {
     let replyText = "متاسفانه خطایی در ارتباط با هوش مصنوعی رخ داد.";
     try {
       replyText = await generateAIResponse(messages, false);
-      
+
       // Save new interaction to Redis
       try {
         await redis.rpush(historyKey, { role: "user", content: text });
