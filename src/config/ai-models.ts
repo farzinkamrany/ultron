@@ -1,6 +1,6 @@
 export const PRO_MODELS = [
   "gemini-3.1-pro",         // Primary choice (as requested)
-  "gemini-1.5-pro-latest"   // Backup Pro
+  "gemini-1.5-pro"   // Backup Pro
 ];
 
 export const FLASH_MODELS = [
@@ -8,7 +8,7 @@ export const FLASH_MODELS = [
   "gemini-3.6-flash",
   "gemini-2.5-flash",       // Highly stable fallback
   "gemini-2-flash",
-  "gemini-1.5-flash-latest" // Ultimate stable fallback
+  "gemini-1.5-flash" // Ultimate stable fallback
 ];
 
 /**
