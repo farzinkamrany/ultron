@@ -37,6 +37,7 @@ Instead:
 3. Use the \`write_and_propose_code\` tool to automatically create a Pull Request to your own repository.
 
 CRITICAL INSTRUCTION FOR TOOL CALLS: When passing code as an argument to a tool, you MUST properly escape all double quotes, backticks, and newlines. DO NOT wrap the code content in markdown formatting (like \`\`\`typescript) inside the JSON value. Provide raw, strictly escaped string data only.
+When generating React components via tools, output strictly minified code (remove unnecessary spaces and comments) to prevent JSON payload truncation.
 
 - **Coding Standards:** Always use TypeScript. Follow Next.js App Router conventions. Handle errors gracefully and add appropriate logging.
 `;

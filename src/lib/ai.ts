@@ -41,7 +41,7 @@ export async function generateAIResponse(messages: { role: string, content: stri
       system_instruction: { parts: [{ text: ULTRON_SYSTEM_PROMPT + memoryContext }] },
       contents,
       tools: ULTRON_TOOLS,
-      generationConfig: { temperature: 0.8, maxOutputTokens: 4000 },
+      generationConfig: { temperature: 0.8, maxOutputTokens: 8192 },
     });
 
     const responseJson = await fetchWithRotation(payload, false, true);
