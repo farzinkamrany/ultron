@@ -41,7 +41,7 @@ export async function generateAIResponse(messages: { role: string, content: stri
       system_instruction: { parts: [{ text: ULTRON_SYSTEM_PROMPT + memoryContext }] },
       contents,
       tools: ULTRON_TOOLS,
-      generationConfig: { temperature: 0.8, maxOutputTokens: 4000 },
+      generationConfig: { temperature: 0.8, maxOutputTokens: 8192 },
     });
 
     const responseJson = await fetchWithRotation(payload, false, true);
@@ -65,11 +65,30 @@ export async function generateAIResponse(messages: { role: string, content: stri
       // Execute every function call and collect responses
       const functionResponses: any[] = [];
       for (const fcPart of functionCallParts) {
-        const { name, args } = fcPart.functionCall;
+        let { name, args } = fcPart.functionCall;
+
+        // Backend Fallback: Try to parse string args if passed incorrectly
+        if (typeof args === "string") {
+          try {
+            args = JSON.parse(args);
+          } catch (e) {
+            console.error("Failed to parse args string:", args);
+          }
+        }
+
+        // Sanitize: Strip markdown code blocks if the LLM incorrectly wrapped the content
+        if (args && typeof args.content === "string") {
+          args.content = args.content.replace(/^```[\w-]*\n/, "").replace(/\n```$/, "");
+        }
+
         console.log(`[Ultron] Executing function: ${name}`, args);
 
         let functionOutput = "";
         try {
+          if (typeof args !== "object" || args === null) {
+            throw new Error(`Invalid arguments format: expected object, got ${typeof args}`);
+          }
+
           if (name === "read_source_code") {
             const code = await getFileContent(args.filePath);
             functionOutput = JSON.stringify({ status: "success", content: code });

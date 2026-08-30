@@ -25,7 +25,7 @@ async function githubFetch(endpoint: string, options: RequestInit = {}) {
     headers["Content-Type"] = "application/json";
   }
 
-  const response = await fetch(url, { ...options, headers });
+  const response = await fetch(url, { cache: "no-store", ...options, headers });
   if (!response.ok) {
     const errorText = await response.text();
     throw new Error(`GitHub API Error (${response.status}): ${errorText}`);
@@ -39,9 +39,15 @@ async function githubFetch(endpoint: string, options: RequestInit = {}) {
 export async function getFileContent(filePath: string): Promise<string> {
   const { owner, repo } = await getGitHubConfig();
   try {
-    const data = await githubFetch(`/repos/${owner}/${repo}/contents/${filePath}`);
+    const safePath = (filePath === "." || filePath === "/" || !filePath) ? "" : filePath;
+    const data = await githubFetch(`/repos/${owner}/${repo}/contents/${safePath}`);
+    
+    if (Array.isArray(data)) {
+      return `Directory contents:\n` + data.map((item: any) => `- ${item.name} (${item.type})`).join("\n");
+    }
+    
     if (data.type !== "file") {
-      throw new Error(`${filePath} is not a file.`);
+      throw new Error(`${filePath} is not a file or directory.`);
     }
     return Buffer.from(data.content, "base64").toString("utf8");
   } catch (error: any) {
