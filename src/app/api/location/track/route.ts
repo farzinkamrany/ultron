@@ -27,7 +27,33 @@ export async function POST(req: NextRequest) {
     for (const payload of payloads) {
       if (payload._type === "location") {
         const { lat, lon, acc, batt, tst } = payload;
-        const context = detectContext({ lat, lon });
+        let context = detectContext({ lat, lon });
+
+        // If not at a known geofence, try to get the city name
+        if (context === "In Transit") {
+          try {
+            const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`, {
+              headers: { 'User-Agent': 'UltronBot/1.0' }
+            });
+            if (res.ok) {
+              const geoData = await res.json();
+              const addr = geoData?.address || {};
+              const place = addr.city || addr.town || addr.village || addr.county;
+              const street = addr.road || addr.neighbourhood || addr.suburb;
+              
+              if (street && place) {
+                context = `In Transit (${street}, ${place})`;
+              } else if (place) {
+                context = `In Transit (${place})`;
+              } else if (street) {
+                context = `In Transit (${street})`;
+              }
+            }
+          } catch (e) {
+            console.error("Reverse geocoding failed", e);
+          }
+        }
+
         const timestamp = new Date(tst * 1000).toISOString();
 
         const { error } = await supabase.from("locations").insert([
