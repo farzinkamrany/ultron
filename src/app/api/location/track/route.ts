@@ -21,36 +21,33 @@ export async function POST(req: NextRequest) {
     }
 
     const data = await req.json();
+    const payloads = Array.isArray(data) ? data : [data];
+    let inserted = 0;
 
-    // OwnTracks location payload
-    if (data._type === "location") {
-      const { lat, lon, acc, batt, tst } = data;
-      
-      const context = detectContext({ lat, lon });
-      const timestamp = new Date(tst * 1000).toISOString();
+    for (const payload of payloads) {
+      if (payload._type === "location") {
+        const { lat, lon, acc, batt, tst } = payload;
+        const context = detectContext({ lat, lon });
+        const timestamp = new Date(tst * 1000).toISOString();
 
-      // Log to database
-      const { error } = await supabase.from("locations").insert([
-        {
-          lat,
-          lon,
-          accuracy: acc,
-          battery: batt,
-          context,
-          recorded_at: timestamp,
+        const { error } = await supabase.from("locations").insert([
+          { lat, lon, accuracy: acc, battery: batt, context, recorded_at: timestamp }
+        ]);
+
+        if (error) {
+          console.error("[Location Track Error DB]:", error);
+          return NextResponse.json({ error: error.message }, { status: 500 });
         }
-      ]);
-
-      if (error) {
-        console.error("[Location Track Error DB]:", error);
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        inserted++;
+      } else {
+        // Debug: Log unknown payloads to memories so we can see what OwnTracks is sending
+        await supabase.from("memories").insert([
+          { content: `DEBUG OwnTracks payload: ${JSON.stringify(payload)}`, category: "system" }
+        ]);
       }
-
-      console.log(`[Ultron Eye] Target located: ${context} (Batt: ${batt}%)`);
-      return NextResponse.json({ ok: true, context });
     }
 
-    return NextResponse.json({ ok: true, ignored: true });
+    return NextResponse.json({ ok: true, inserted });
   } catch (error: any) {
     console.error("[Location Track Error]:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
