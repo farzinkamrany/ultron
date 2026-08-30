@@ -3,7 +3,7 @@ import { searchMemories } from "./memory";
 import { ULTRON_TOOLS } from "./ai-tools";
 import { getFileContent, writeAndProposeCode } from "@/services/github";
 
-export async function generateAIResponse(messages: { role: string, content: string }[], stream = false): Promise<any> {
+export async function generateAIResponse(messages: { role: string, content: string }[], stream = false, tryPro = true): Promise<any> {
   const contents: any[] = messages
     .filter(m => m.content && m.content.trim())
     .map(msg => ({
@@ -44,7 +44,7 @@ export async function generateAIResponse(messages: { role: string, content: stri
       generationConfig: { temperature: 0.8, maxOutputTokens: 8192 },
     });
 
-    const responseJson = await fetchWithRotation(payload, false, true);
+    const responseJson = await fetchWithRotation(payload, false, tryPro);
 
     const candidate = responseJson?.candidates?.[0];
     if (!candidate) {

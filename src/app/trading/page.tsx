@@ -1,14 +1,32 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Activity, ShieldAlert, BarChart3, Database } from "lucide-react";
+import { ArrowLeft, Activity, ShieldAlert, BarChart3, Database, Star, Plus, X } from "lucide-react";
 import { createChart, IChartApi, ISeriesApi, LineSeries } from "lightweight-charts";
 import { useOrderBook } from "@/hooks/useOrderBook";
+import { useTradingStore } from "@/store/tradingStore";
+
+const POPULAR_PAIRS = [
+  "BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "ADAUSDT", 
+  "DOGEUSDT", "BNBUSDT", "MATICUSDT", "DOTUSDT", "LINKUSDT", 
+  "AVAXUSDT", "LTCUSDT", "UNIUSDT", "ATOMUSDT", "ETCUSDT",
+  "SHIBUSDT", "TRXUSDT", "XLMUSDT", "BCHUSDT", "NEARUSDT",
+  "APTUSDT", "OPUSDT", "ARBUSDT", "SUIUSDT", "SEIUSDT",
+  "PEPEUSDT", "WIFUSDT", "FETUSDT", "RNDRUSDT", "INJUSDT"
+];
 
 export default function TradingDashboard() {
   const router = useRouter();
-  const symbol = "BTCUSDT";
+  
+  const [symbol, setSymbol] = useState("BTCUSDT");
+  const [newFav, setNewFav] = useState("");
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [isMounted, setIsMounted] = useState(false);
+  
+  const { favorites, addFavorite, removeFavorite } = useTradingStore();
+
+  useEffect(() => setIsMounted(true), []);
   
   // Custom WebSocket Hook
   const orderBook = useOrderBook(symbol);
@@ -61,6 +79,13 @@ export default function TradingDashboard() {
     };
   }, []);
 
+  // Clear chart when symbol changes
+  useEffect(() => {
+    if (seriesRef.current) {
+      seriesRef.current.setData([]);
+    }
+  }, [symbol]);
+
   // Update chart data when lastPrice changes
   useEffect(() => {
     if (seriesRef.current && orderBook.lastPrice !== '0.00') {
@@ -101,6 +126,85 @@ export default function TradingDashboard() {
         </div>
       </header>
 
+      {/* Favorites Bar */}
+      {isMounted && (
+        <div className="mb-6 bg-black/40 p-4 rounded-xl border border-white/5 flex flex-wrap gap-3 items-center">
+          <span className="text-sm text-slate-400 font-mono flex items-center gap-2"><Star className="w-4 h-4 text-yellow-500"/> FAVORITES:</span>
+          {favorites.map(fav => (
+            <div 
+              key={fav} 
+              className={`flex items-center gap-1 px-3 py-1.5 rounded-lg border text-sm font-mono cursor-pointer transition-colors ${symbol === fav ? 'bg-phase5/20 border-phase5/50 text-phase5' : 'bg-white/5 border-transparent text-slate-300 hover:bg-white/10'}`} 
+              onClick={() => setSymbol(fav)}
+            >
+              {fav}
+              {fav !== 'BTCUSDT' && (
+                <button 
+                  onClick={(e) => { e.stopPropagation(); removeFavorite(fav); }} 
+                  className="ml-2 opacity-50 hover:opacity-100 hover:text-red-400 transition-opacity"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+          ))}
+          
+          <div className="relative ml-auto flex items-center">
+            <form 
+              onSubmit={(e) => { 
+                e.preventDefault(); 
+                if (newFav.trim()) { 
+                  addFavorite(newFav.trim().toUpperCase()); 
+                  setSymbol(newFav.trim().toUpperCase());
+                  setNewFav(""); 
+                  setShowDropdown(false);
+                } 
+              }} 
+              className="flex items-center gap-2"
+            >
+              <div className="relative">
+                <input 
+                  type="text" 
+                  placeholder="Search pairs..." 
+                  value={newFav} 
+                  onFocus={() => setShowDropdown(true)}
+                  onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
+                  onChange={e => {
+                    setNewFav(e.target.value.toUpperCase());
+                    setShowDropdown(true);
+                  }}
+                  className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm font-mono text-slate-200 outline-none focus:border-phase5/50 focus:bg-slate-800 w-48 placeholder-slate-500 transition-colors shadow-inner"
+                />
+                
+                {showDropdown && newFav.length >= 1 && (
+                  <div className="absolute top-full mt-1 left-0 w-full bg-slate-900 border border-slate-700 rounded-lg shadow-[0_0_15px_rgba(0,0,0,0.5)] overflow-hidden z-50">
+                    {POPULAR_PAIRS.filter(p => p.includes(newFav.toUpperCase()) && !favorites.includes(p)).slice(0, 5).map(p => (
+                      <div 
+                        key={p} 
+                        onClick={() => {
+                          addFavorite(p);
+                          setSymbol(p);
+                          setNewFav("");
+                          setShowDropdown(false);
+                        }}
+                        className="px-3 py-2 text-sm font-mono text-slate-300 hover:bg-slate-800 hover:text-phase5 cursor-pointer border-b border-slate-800 last:border-0 transition-colors"
+                      >
+                        {p}
+                      </div>
+                    ))}
+                    {POPULAR_PAIRS.filter(p => p.includes(newFav.toUpperCase()) && !favorites.includes(p)).length === 0 && (
+                       <div className="px-3 py-2 text-xs font-mono text-slate-500">No popular pairs found. Press + to add anyway.</div>
+                    )}
+                  </div>
+                )}
+              </div>
+              <button type="submit" className="bg-phase5/10 hover:bg-phase5/20 text-phase5 border border-phase5/20 rounded-lg p-1.5 transition-colors">
+                <Plus className="w-4 h-4" />
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Main Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
@@ -112,7 +216,7 @@ export default function TradingDashboard() {
             <div className="bg-black/40 border border-white/5 p-4 rounded-xl">
               <div className="text-xs text-slate-500 font-mono mb-1">TARGET ASSET</div>
               <div className="text-xl font-bold">{symbol}</div>
-              <div className="text-xs text-slate-400 mt-1">CoinEx (Spot)</div>
+              <div className="text-xs text-slate-400 mt-1">Bybit (Spot)</div>
             </div>
             
             <div className="bg-black/40 border border-white/5 p-4 rounded-xl">

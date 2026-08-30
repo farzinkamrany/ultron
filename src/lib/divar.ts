@@ -1,4 +1,6 @@
 import https from "https";
+import { ProxyAgent } from "undici";
+import { sendTelegramMessage } from "@/lib/telegram";
 
 export interface DivarAd {
   token: string;
@@ -9,61 +11,89 @@ export interface DivarAd {
 }
 
 /**
- * Fetches recent ads from Divar.
- * IMPORTANT: This uses direct https.request WITHOUT proxy,
- * because Divar is an Iranian domain and blocks foreign proxy IPs.
+ * Fetches recent ads from Divar with Proxy Rotation.
+ * Divar is an Iranian domain and often blocks foreign IPs (Vercel) or rate-limits them.
  */
 export async function fetchDivarAds(city: string, category: string): Promise<DivarAd[]> {
   const apiUrl = `https://api.divar.ir/v8/web-search/${city}/${category}`;
 
-  const fetchOptions: RequestInit = {
-    method: "GET",
-    headers: {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-      "Accept": "application/json",
-    },
-    // Explicitly NO agent to bypass the global proxy for this Iranian domain
-  };
+  const proxiesStr = process.env.DIVAR_PROXIES || "";
+  const proxies = proxiesStr.split(",").map(p => p.trim()).filter(Boolean);
+  
+  // If no proxies defined, at least try a direct connection (null) once
+  if (proxies.length === 0) {
+    proxies.push("");
+  }
 
-  try {
-    const response = await fetch(apiUrl, fetchOptions);
-    if (!response.ok) {
-      const errData = await response.text();
-      throw new Error(`Divar API Error ${response.status}: ${errData}`);
+  let lastError = null;
+
+  for (let i = 0; i < proxies.length; i++) {
+    const proxy = proxies[i];
+    
+    const fetchOptions: any = {
+      method: "GET",
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept": "application/json",
+      },
+    };
+
+    if (proxy) {
+      fetchOptions.dispatcher = new ProxyAgent(proxy);
     }
 
-    const json = await response.json();
-    const ads: DivarAd[] = [];
-    
-    // Divar's payload structure varies, this is a standard parsing approach
-    const widgetList = json?.widget_list || [];
-    for (const widget of widgetList) {
-      const dataObj = widget?.data;
-      if (dataObj && dataObj.token && dataObj.title) {
-        // Price parsing (Divar sometimes returns price in string with formatting)
-        let priceStr = dataObj.middle_description_text || "";
-        let price = 0;
-        // Very basic extraction, real world requires regex for "تومان"
-        if (priceStr.includes("تومان")) {
-          const numericStr = priceStr.replace(/[^0-9]/g, "");
-          if (numericStr) price = parseInt(numericStr, 10);
+    try {
+      const response = await fetch(apiUrl, fetchOptions);
+      if (!response.ok) {
+        const errData = await response.text();
+        if (response.status === 403 || response.status === 429) {
+          console.warn(`[Divar Scraper] Proxy ${proxy || 'Direct'} blocked by Divar with ${response.status}. Rotating...`);
+          lastError = new Error(`Divar API Error ${response.status}: ${errData}`);
+          continue; // Try next proxy
         }
-        
-        if (price > 0) {
-          ads.push({
-            token: dataObj.token,
-            title: dataObj.title,
-            description: dataObj.description || "",
-            price,
-            url: `https://divar.ir/v/${dataObj.token}`
-          });
+        throw new Error(`Divar API Error ${response.status}: ${errData}`);
+      }
+
+      const json = await response.json();
+      const ads: DivarAd[] = [];
+      
+      const widgetList = json?.widget_list || [];
+      for (const widget of widgetList) {
+        const dataObj = widget?.data;
+        if (dataObj && dataObj.token && dataObj.title) {
+          let priceStr = dataObj.middle_description_text || "";
+          let price = 0;
+          if (priceStr.includes("تومان")) {
+            const numericStr = priceStr.replace(/[^0-9]/g, "");
+            if (numericStr) price = parseInt(numericStr, 10);
+          }
+          
+          if (price > 0) {
+            ads.push({
+              token: dataObj.token,
+              title: dataObj.title,
+              description: dataObj.description || "",
+              price,
+              url: `https://divar.ir/v/${dataObj.token}`
+            });
+          }
         }
       }
+      return ads;
+    } catch (error: any) {
+      lastError = error;
+      console.warn(`[Divar Scraper] Proxy ${proxy || 'Direct'} failed with error: ${error.message}. Rotating...`);
+      continue;
     }
-    return ads;
-  } catch (error: any) {
-    throw new Error(error.message || "Divar Request failed");
   }
+
+  // If we exhaust all proxies
+  const chatId = process.env.TELEGRAM_ADMIN_CHAT_ID;
+  if (chatId) {
+    await sendTelegramMessage(chatId, `🚨 <b>DIVAR SCRAPER BLOCKED</b> 🚨\n\nAll proxies have been blocked (403/429) or failed. Please update the DIVAR_PROXIES environment variable.\n\nLast Error: ${lastError?.message || "Unknown"}`);
+  }
+
+  throw new Error(`All Divar requests failed. Last error: ${lastError?.message || "Unknown"}`);
 }
 
 /**

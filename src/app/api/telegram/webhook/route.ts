@@ -21,12 +21,14 @@ export async function POST(req: NextRequest) {
 
     const chatId = message.chat.id.toString();
     const text = message.text;
-    const envChatId = process.env.TELEGRAM_CHAT_ID;
+    const allowedChatIdsStr = process.env.TELEGRAM_ALLOWED_CHAT_IDS || process.env.TELEGRAM_CHAT_ID || "";
+    const allowedChatIds = allowedChatIdsStr.split(',').map(id => id.trim());
+    
     const botToken = process.env.TELEGRAM_BOT_TOKEN;
     const geminiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
 
     // 3. Security Check
-    if (chatId !== envChatId) {
+    if (!allowedChatIds.includes(chatId)) {
       console.warn(`Unauthorized access attempt from chat ID: ${chatId}`);
       return new NextResponse('OK', { status: 200 });
     }
@@ -36,7 +38,20 @@ export async function POST(req: NextRequest) {
       return new NextResponse('OK', { status: 200 });
     }
 
-    // 3.5. Command Parsing (Phase 11: Expense Tracking)
+    // 3.5. Command Parsing
+    if (text.startsWith('/model ')) {
+      const modelChoice = text.replace('/model ', '').trim().toLowerCase();
+      if (modelChoice === 'pro' || modelChoice === 'flash') {
+        try {
+          await redis.set(`model_pref:${chatId}`, modelChoice);
+          await sendTelegramMessage(chatId, `✅ AI Core switched to: ${modelChoice.toUpperCase()}`);
+        } catch (e) {
+          console.error("Failed to save model preference:", e);
+        }
+        return new NextResponse('OK', { status: 200 });
+      }
+    }
+
     if (text.startsWith('/spend ')) {
       const amountRegex = /(\d+k|\d+)\s+(.+)/i;
       const match = text.replace('/spend ', '').match(amountRegex);
@@ -82,13 +97,23 @@ export async function POST(req: NextRequest) {
       }));
     messages.push({ role: 'user', content: text });
 
-    // 5. Generate AI Response (Using proxy-aware helper)
+    // 5. Fetch Model Preference
+    let modelPref = 'pro'; // default
+    try {
+      const pref = await redis.get(`model_pref:${chatId}`);
+      if (pref === 'flash') modelPref = 'flash';
+    } catch (e) {
+      console.error("Redis Model Pref Fetch Error:", e);
+    }
+    const tryPro = modelPref === 'pro';
+
+    // 6. Generate AI Response (Using proxy-aware helper)
     // Send typing action to Telegram so user knows bot is processing
     await sendTelegramAction(chatId, 'typing');
     
     let replyText = "متاسفانه خطایی در ارتباط با هوش مصنوعی رخ داد.";
     try {
-      replyText = await generateAIResponse(messages, false);
+      replyText = await generateAIResponse(messages, false, tryPro);
 
       // Save new interaction to Redis
       try {

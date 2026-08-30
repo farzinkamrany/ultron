@@ -10,8 +10,10 @@ import { useRouter } from "next/navigation";
 import { Toaster, toast } from "sonner";
 import TextareaAutosize from "react-textarea-autosize";
 import { useChatStore, Message } from "@/store/chatStore";
-import { LiveCryptoChart } from "@/components/LiveCryptoChart";
+import dynamic from "next/dynamic";
 import { useGPS } from "@/hooks/useGPS";
+
+const LiveCryptoChart = dynamic(() => import("@/components/LiveCryptoChart").then(mod => mod.LiveCryptoChart), { ssr: false });
 
 // --- Sub-Components ---
 function ChatInterface({ messages, isLoading, sendMessage, input, setInput, isVoiceActive, setIsVoiceActive }: any) {

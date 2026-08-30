@@ -4,6 +4,7 @@ import { analyzeGannSetup, Candle } from "@/lib/trading/gann";
 import { sendTelegramMessage } from "@/lib/telegram";
 import { logError } from "@/lib/logger";
 import { HttpsProxyAgent } from "https-proxy-agent";
+import { supabase } from "@/lib/supabase";
 
 import { verifyQStashSignature } from "@/lib/qstash";
 
@@ -69,6 +70,23 @@ export async function POST(req: NextRequest) {
                   
       if (chatId) {
          await sendTelegramMessage(chatId, msg);
+      }
+      
+      // Log paper trade
+      const { error: dbError } = await supabase.from('paper_trades').insert({
+        symbol: signal.symbol,
+        position_type: signal.action,
+        entry_price: signal.entryPrice,
+        stop_loss: signal.stopLoss,
+        take_profit: signal.takeProfit,
+        status: 'OPEN',
+        pnl: 0
+      });
+      
+      if (dbError) {
+        console.error("[Trading Engine] Failed to log paper trade:", dbError);
+      } else {
+        console.log(`[Trading Engine] Logged OPEN paper trade for ${signal.symbol}`);
       }
     }
 
