@@ -7,10 +7,17 @@ export const dynamic = "force-dynamic";
 export async function POST(req: NextRequest) {
   try {
     // Phase 13: Webhook Security for OwnTracks
-    const authHeader = req.headers.get('authorization');
-    if (process.env.OWNTRACKS_SECRET && authHeader !== `Bearer ${process.env.OWNTRACKS_SECRET}`) {
-      console.warn("Unauthorized location track attempt");
-      return new NextResponse('Unauthorized', { status: 401 });
+    const authHeader = req.headers.get('authorization') || '';
+    const secret = process.env.OWNTRACKS_SECRET;
+
+    if (secret) {
+      const expectedBearer = `Bearer ${secret}`;
+      const expectedBasic = `Basic ${Buffer.from(`ultron:${secret}`).toString('base64')}`;
+
+      if (authHeader !== expectedBearer && authHeader !== expectedBasic) {
+        console.warn("Unauthorized location track attempt");
+        return new NextResponse('Unauthorized', { status: 401 });
+      }
     }
 
     const data = await req.json();
