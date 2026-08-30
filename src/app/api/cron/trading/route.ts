@@ -4,6 +4,8 @@ import { analyzeGannSetup, Candle } from "@/lib/trading/gann";
 import { sendTelegramMessage } from "@/lib/telegram";
 import { logError } from "@/lib/logger";
 import { HttpsProxyAgent } from "https-proxy-agent";
+import { supabase } from "@/lib/supabase";
+import { executeTrade } from "@/lib/trading/executor";
 
 import { verifyQStashSignature } from "@/lib/qstash";
 
@@ -70,6 +72,9 @@ export async function POST(req: NextRequest) {
       if (chatId) {
          await sendTelegramMessage(chatId, msg);
       }
+      
+      // Pass signal to the executor (handles both PAPER and MICRO modes)
+      await executeTrade(signal);
     }
 
     return NextResponse.json({ 

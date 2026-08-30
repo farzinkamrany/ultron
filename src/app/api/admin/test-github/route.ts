@@ -2,6 +2,8 @@
 // Hit: GET http://localhost:3000/api/admin/test-github
 import { NextResponse } from "next/server";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   const pat = process.env.GITHUB_PAT;
   const owner = process.env.GITHUB_OWNER;

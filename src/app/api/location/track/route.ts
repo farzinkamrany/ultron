@@ -7,43 +7,73 @@ export const dynamic = "force-dynamic";
 export async function POST(req: NextRequest) {
   try {
     // Phase 13: Webhook Security for OwnTracks
-    const authHeader = req.headers.get('authorization');
-    if (process.env.OWNTRACKS_SECRET && authHeader !== `Bearer ${process.env.OWNTRACKS_SECRET}`) {
-      console.warn("Unauthorized location track attempt");
-      return new NextResponse('Unauthorized', { status: 401 });
+    const authHeader = req.headers.get('authorization') || '';
+    const secret = process.env.OWNTRACKS_SECRET;
+
+    if (secret) {
+      const expectedBearer = `Bearer ${secret}`;
+      const expectedBasic = `Basic ${Buffer.from(`ultron:${secret}`).toString('base64')}`;
+
+      if (authHeader !== expectedBearer && authHeader !== expectedBasic) {
+        console.warn("Unauthorized location track attempt");
+        return new NextResponse('Unauthorized', { status: 401 });
+      }
     }
 
     const data = await req.json();
+    const payloads = Array.isArray(data) ? data : [data];
+    let inserted = 0;
 
-    // OwnTracks location payload
-    if (data._type === "location") {
-      const { lat, lon, acc, batt, tst } = data;
-      
-      const context = detectContext({ lat, lon });
-      const timestamp = new Date(tst * 1000).toISOString();
+    for (const payload of payloads) {
+      if (payload._type === "location") {
+        const { lat, lon, acc, batt, tst } = payload;
+        let context = detectContext({ lat, lon });
 
-      // Log to database
-      const { error } = await supabase.from("locations").insert([
-        {
-          lat,
-          lon,
-          accuracy: acc,
-          battery: batt,
-          context,
-          recorded_at: timestamp,
+        // If not at a known geofence, try to get the city name
+        if (context === "In Transit") {
+          try {
+            const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`, {
+              headers: { 'User-Agent': 'UltronBot/1.0' }
+            });
+            if (res.ok) {
+              const geoData = await res.json();
+              const addr = geoData?.address || {};
+              const place = addr.city || addr.town || addr.village || addr.county;
+              const street = addr.road || addr.neighbourhood || addr.suburb;
+              
+              if (street && place) {
+                context = `In Transit (${street}, ${place})`;
+              } else if (place) {
+                context = `In Transit (${place})`;
+              } else if (street) {
+                context = `In Transit (${street})`;
+              }
+            }
+          } catch (e) {
+            console.error("Reverse geocoding failed", e);
+          }
         }
-      ]);
 
-      if (error) {
-        console.error("[Location Track Error DB]:", error);
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        const timestamp = new Date(tst * 1000).toISOString();
+
+        const { error } = await supabase.from("locations").insert([
+          { lat, lon, accuracy: acc, battery: batt, context, recorded_at: timestamp }
+        ]);
+
+        if (error) {
+          console.error("[Location Track Error DB]:", error);
+          return NextResponse.json({ error: error.message }, { status: 500 });
+        }
+        inserted++;
+      } else {
+        // Debug: Log unknown payloads to memories so we can see what OwnTracks is sending
+        await supabase.from("memories").insert([
+          { content: `DEBUG OwnTracks payload: ${JSON.stringify(payload)}`, category: "system" }
+        ]);
       }
-
-      console.log(`[Ultron Eye] Target located: ${context} (Batt: ${batt}%)`);
-      return NextResponse.json({ ok: true, context });
     }
 
-    return NextResponse.json({ ok: true, ignored: true });
+    return NextResponse.json({ ok: true, inserted });
   } catch (error: any) {
     console.error("[Location Track Error]:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });

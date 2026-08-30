@@ -3,13 +3,25 @@ import { searchMemories } from "./memory";
 import { ULTRON_TOOLS } from "./ai-tools";
 import { getFileContent, writeAndProposeCode } from "@/services/github";
 
-export async function generateAIResponse(messages: { role: string, content: string }[], stream = false): Promise<any> {
+export async function generateAIResponse(messages: { role: string, content: string, audio?: Buffer }[], stream = false, tryPro = true): Promise<any> {
   const contents: any[] = messages
-    .filter(m => m.content && m.content.trim())
-    .map(msg => ({
-      role: msg.role === "user" ? "user" : "model",
-      parts: [{ text: msg.content }],
-    }));
+    .filter(m => (m.content && m.content.trim()) || m.audio)
+    .map(msg => {
+      const parts: any[] = [];
+      if (msg.content && msg.content.trim()) parts.push({ text: msg.content });
+      if (msg.audio) {
+        parts.push({
+          inlineData: {
+            data: msg.audio.toString("base64"),
+            mimeType: "audio/ogg"
+          }
+        });
+      }
+      return {
+        role: msg.role === "user" ? "user" : "model",
+        parts,
+      };
+    });
 
   while (contents.length > 0 && contents[0].role === "model") {
     contents.shift();
@@ -44,7 +56,7 @@ export async function generateAIResponse(messages: { role: string, content: stri
       generationConfig: { temperature: 0.8, maxOutputTokens: 8192 },
     });
 
-    const responseJson = await fetchWithRotation(payload, false, true);
+    const responseJson = await fetchWithRotation(payload, false, tryPro);
 
     const candidate = responseJson?.candidates?.[0];
     if (!candidate) {
