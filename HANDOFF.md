@@ -133,9 +133,11 @@ User Message → Telegram → /api/telegram/webhook (returns 200 OK instantly)
 | Telegram bot (AI responses) | ✅ Live — QStash async pattern |
 | `/dashboard` inline button | ✅ Live |
 | PnL Visualizer at `/dashboard/trading` | ✅ Live |
-| Vapi Persian voice (no markdown) | ✅ Live |
-| Telegram Web App theme sync | ✅ Live |
-| Paper trading engine | ✅ Live |
+| Vapi.ai voice integration | 🚧 Paused |
+| ElevenLabs + Gemini 1.5 Voice Notes | ✅ Live (V4.2) |
+| OwnTracks GPS tracking (Basic Auth + Reverse Geocoding) | ✅ Live |
+| Schedule Auditor Cron | ⏳ Planned |
+| Live Trading (Bybit Micro) | ⏳ Planned |
 | Divar arbitrage scanner (proxy rotation) | ✅ Live |
 | Live order book (CoinEx/Bybit WebSocket) | ✅ Live |
 | Nightly self-reflection cron | ✅ Scheduled |
