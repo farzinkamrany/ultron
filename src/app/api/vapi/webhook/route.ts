@@ -43,6 +43,12 @@ export async function POST(req: NextRequest) {
         content: m.content
       }));
 
+      // Inject system directive for Vapi Voice Optimization
+      messages.unshift({
+        role: "user",
+        content: "[SYSTEM DIRECTIVE FOR VAPI VOICE]: You are interacting via voice in Persian (Farsi). Keep your responses short, conversational, and highly engaging. DO NOT use any markdown formatting (no asterisks, bolding, italics, or code blocks)."
+      });
+
       // Generate non-streaming response for simplicity in webhook,
       // though Vapi supports streaming. Let's return JSON for now.
       const aiText = await generateAIResponse(messages, false);

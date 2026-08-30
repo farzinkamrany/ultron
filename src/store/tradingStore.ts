@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { supabase } from '@/lib/supabase';
 
 interface OrderBookData {
   bids: [string, string][]; // [price, amount]
@@ -9,12 +10,27 @@ interface OrderBookData {
   isConnected: boolean;
 }
 
+interface PaperTrade {
+  id: string;
+  symbol: string;
+  position_type: 'LONG' | 'SHORT';
+  entry_price: number;
+  stop_loss: number;
+  take_profit: number;
+  status: 'OPEN' | 'WON' | 'LOST';
+  pnl: number;
+  created_at: string;
+  closed_at: string | null;
+}
+
 interface TradingState {
   orderBooks: Record<string, OrderBookData>;
   setOrderBookData: (symbol: string, data: Partial<OrderBookData>) => void;
   favorites: string[];
   addFavorite: (symbol: string) => void;
   removeFavorite: (symbol: string) => void;
+  trades: PaperTrade[];
+  fetchPaperTrades: () => Promise<void>;
 }
 
 export const useTradingStore = create<TradingState>()(
@@ -22,6 +38,18 @@ export const useTradingStore = create<TradingState>()(
     (set) => ({
       orderBooks: {},
       favorites: ['BTCUSDT'],
+      trades: [],
+      fetchPaperTrades: async () => {
+        const { data, error } = await supabase
+          .from('paper_trades')
+          .select('*')
+          .order('created_at', { ascending: false });
+        if (!error && data) {
+          set({ trades: data as PaperTrade[] });
+        } else {
+          console.error("Failed to fetch paper trades:", error);
+        }
+      },
       setOrderBookData: (symbol, data) => set((state) => {
         const existing = state.orderBooks[symbol] || {
           bids: [], asks: [], lastPrice: '0.00', spread: '0.00', isConnected: false

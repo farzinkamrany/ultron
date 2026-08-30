@@ -1,4 +1,4 @@
-export async function sendTelegramMessage(chatId: string | number, text: string) {
+export async function sendTelegramMessage(chatId: string | number, text: string, reply_markup?: any) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) {
     console.warn("[Telegram] Token not set. Cannot send message.");
@@ -9,7 +9,7 @@ export async function sendTelegramMessage(chatId: string | number, text: string)
     const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML" }),
+      body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML", reply_markup }),
     });
 
     if (!response.ok) {

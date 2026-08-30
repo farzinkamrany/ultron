@@ -78,6 +78,16 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    if (text.startsWith('/dashboard')) {
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://ultron.vercel.app";
+      await sendTelegramMessage(chatId, "📊 Open Ultron Dashboard:", {
+        inline_keyboard: [
+          [{ text: "Open Dashboard", web_app: { url: `${appUrl}/dashboard/trading` } }]
+        ]
+      });
+      return new NextResponse('OK', { status: 200 });
+    }
+
     // 4. Fetch Short-Term Memory from Redis
     const historyKey = `chat_history:${chatId}`;
     let rawHistory: any[] = [];

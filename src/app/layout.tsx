@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { TelegramProvider } from "@/components/TelegramProvider";
 
 export const metadata: Metadata = {
   title: "Ultron OS",
@@ -14,7 +15,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         <Script src="https://telegram.org/js/telegram-web-app.js" strategy="beforeInteractive" />
       </head>
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <TelegramProvider>
+          {children}
+        </TelegramProvider>
+      </body>
     </html>
   );
 }
