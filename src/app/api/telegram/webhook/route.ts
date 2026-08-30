@@ -12,12 +12,13 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
 
     const message = body?.message;
-    if (!message || !message.text) {
+    if (!message || (!message.text && !message.voice)) {
       return new NextResponse('OK', { status: 200 });
     }
 
     const chatId = message.chat.id.toString();
-    const text = message.text;
+    const text = message.text || "";
+    const voiceFileId = message.voice?.file_id;
     const allowedChatIdsStr = process.env.TELEGRAM_ALLOWED_CHAT_IDS || process.env.TELEGRAM_CHAT_ID || "";
     const allowedChatIds = allowedChatIdsStr.split(',').map((id: string) => id.trim());
 
@@ -92,31 +93,31 @@ export async function POST(req: NextRequest) {
     }
 
     // ─── AI Messages: Offload to QStash worker ────────────────────────────────
-    // Send typing indicator immediately so user knows something is happening
-    await sendTelegramAction(chatId, 'typing');
+    await sendTelegramAction(chatId, voiceFileId ? 'record_voice' : 'typing');
 
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://ultron-assistant-iota.vercel.app";
     const qstashToken = process.env.QSTASH_TOKEN;
 
     if (!qstashToken) {
-      console.error("[Telegram Webhook] QSTASH_TOKEN not set — cannot offload AI task.");
-      await sendTelegramMessage(chatId, "⚠️ AI processing unavailable. Please try again later.");
-      return new NextResponse('OK', { status: 200 });
-    }
-
-    // Publish to QStash — this returns immediately while QStash calls the worker async
-    await fetch(`https://qstash.upstash.io/v2/publish/${appUrl}/api/telegram/ai-worker`, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${qstashToken}`,
-        "Content-Type": "application/json",
-        // Retry once if worker fails
-        "Upstash-Retries": "1",
-      },
-      body: JSON.stringify({ chatId, text }),
-    });
-
-    // Return 200 immediately — Telegram is satisfied, QStash handles the rest
+      console.warn("QSTASH_TOKEN not found. Bypassing QStash (local dev mode?).");
+      // Fallback: you could call the worker directly but it might timeout.
+    } else {
+      // Publish to QStash — this returns immediately while QStash calls the worker async
+      await fetch(`https://qstash.upstash.io/v2/publish/${appUrl}/api/telegram/ai-worker`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${qstashToken}`,
+          "Content-Type": "application/json",
+          "Upstash-Method": "POST",
+          "Upstash-Retries": "0" // Only try once for chat messages
+        },
+        body: JSON.stringify({
+          chatId,
+          text,
+          voiceFileId
+        })
+      });
+    } // Return 200 immediately — Telegram is satisfied, QStash handles the rest
     return new NextResponse('OK', { status: 200 });
 
   } catch (error: any) {

@@ -1,8 +1,9 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from 'next/server';
 import { redis } from '@/lib/redis';
-import { sendTelegramMessage, sendTelegramAction } from '@/lib/telegram';
+import { sendTelegramMessage, sendTelegramAction, getTelegramFileBuffer, sendTelegramVoice } from '@/lib/telegram';
 import { generateAIResponse } from '@/lib/ai';
+import { generateFarsiSpeech } from '@/lib/audio';
 import { verifyQStashSignature } from '@/lib/qstash';
 
 export const maxDuration = 60;
@@ -18,15 +19,21 @@ export async function POST(req: NextRequest) {
 
   let chatId = "";
   try {
-    const { chatId: id, text } = await req.json();
+    const { chatId: id, text, voiceFileId } = await req.json();
     chatId = id;
 
-    if (!chatId || !text) {
-      return NextResponse.json({ error: "Missing chatId or text" }, { status: 400 });
+    if (!chatId || (!text && !voiceFileId)) {
+      return NextResponse.json({ error: "Missing chatId, text, or voice" }, { status: 400 });
     }
 
-    // Send typing action to show user we're working
-    await sendTelegramAction(chatId, 'typing');
+    let audioBuffer: Buffer | undefined = undefined;
+    if (voiceFileId) {
+      await sendTelegramAction(chatId, 'record_voice');
+      const buf = await getTelegramFileBuffer(voiceFileId);
+      if (buf) audioBuffer = buf;
+    } else {
+      await sendTelegramAction(chatId, 'typing');
+    }
 
     // 1. Fetch short-term memory from Redis
     const historyKey = `chat_history:${chatId}`;
@@ -37,13 +44,19 @@ export async function POST(req: NextRequest) {
       console.error("Redis Fetch Error:", e);
     }
 
-    const messages = rawHistory
+    const messages: any[] = rawHistory
       .filter(msg => msg && typeof msg.content === 'string' && msg.content.trim())
       .map(msg => ({
         role: msg.role === 'model' ? 'model' : 'user',
         content: msg.content as string,
       }));
-    messages.push({ role: 'user', content: text });
+    
+    // Add current message (text or audio)
+    messages.push({ 
+      role: 'user', 
+      content: text || (audioBuffer ? "Please listen to this voice message and reply in Persian." : ""),
+      audio: audioBuffer 
+    });
 
     // 2. Fetch model preference
     let modelPref = 'pro';
@@ -62,7 +75,7 @@ export async function POST(req: NextRequest) {
 
       // 4. Save to Redis
       try {
-        await redis.rpush(historyKey, { role: "user", content: text });
+        await redis.rpush(historyKey, { role: "user", content: text || "[Voice Note]" });
         await redis.rpush(historyKey, { role: "model", content: replyText });
         await redis.ltrim(historyKey, -14, -1);
       } catch (e) {
@@ -72,8 +85,21 @@ export async function POST(req: NextRequest) {
       console.error('AI Provider Error:', e);
     }
 
-    // 5. Send reply to Telegram
-    await sendTelegramMessage(chatId, replyText);
+    // 5. Send reply to Telegram (Voice or Text)
+    if (voiceFileId) {
+      // If the user sent a voice note, reply with a voice note
+      try {
+        const speechBuffer = await generateFarsiSpeech(replyText);
+        await sendTelegramVoice(chatId, speechBuffer);
+      } catch (e) {
+        console.error("TTS Generation Error:", e);
+        // Fallback to text if TTS fails
+        await sendTelegramMessage(chatId, replyText);
+      }
+    } else {
+      // Normal text reply
+      await sendTelegramMessage(chatId, replyText);
+    }
 
     return NextResponse.json({ ok: true });
 
