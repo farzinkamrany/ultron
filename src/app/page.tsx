@@ -6,9 +6,12 @@ import {
   BrainCircuit, Terminal, Send, Loader2, Mic, MessageSquare,
   Target, TrendingUp, MapPin, Activity, ShieldAlert, Cpu, X, Database, AlertTriangle, Rocket
 , User } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { Toaster, toast } from "sonner";
 import TextareaAutosize from "react-textarea-autosize";
 import { useChatStore, Message } from "@/store/chatStore";
+import { LiveCryptoChart } from "@/components/LiveCryptoChart";
+import { useGPS } from "@/hooks/useGPS";
 
 // --- Sub-Components ---
 function ChatInterface({ messages, isLoading, sendMessage, input, setInput, isVoiceActive, setIsVoiceActive }: any) {
@@ -146,6 +149,8 @@ function DashboardModule({ title, icon: Icon, variant, children }: any) {
 
 // --- Main Page ---
 export default function UltronDashboard() {
+  const router = useRouter();
+  const { location, isLoading: isLocationLoading } = useGPS();
   const { 
     messages, input, isLoading, isVoiceActive, 
     addMessage, setInput, setIsLoading, setIsVoiceActive, updateLastMessage, setMessages
@@ -425,11 +430,34 @@ export default function UltronDashboard() {
             <div className="flex items-center justify-between bg-black/20 p-3 rounded-xl border border-white/5">
               <div>
                 <div className="text-xs text-slate-400 font-mono mb-1">CURRENT CONTEXT</div>
-                <div className="text-phase3 font-semibold text-sm">Target At Base (Home)</div>
+                <div className="text-phase3 font-semibold text-sm flex items-center gap-2">
+                  {isLocationLoading ? (
+                    <><Loader2 className="w-3 h-3 animate-spin" /> Fetching...</>
+                  ) : location ? (
+                    <>
+                      <span className="relative flex h-2 w-2 mr-1">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-phase3 opacity-75" />
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-phase3" />
+                      </span>
+                      {location.context} {location.battery && <span className="text-xs text-slate-500 ml-1">({location.battery}%)</span>}
+                    </>
+                  ) : (
+                    "Unknown Location"
+                  )}
+                </div>
               </div>
               <div className="text-right">
                 <div className="text-xs text-slate-400 font-mono mb-1">LAST SYNC</div>
-                <div className="text-slate-300 text-sm">2 mins ago</div>
+                <div className="text-slate-300 text-sm">
+                  {location ? (() => {
+                    const diffInMinutes = Math.floor((new Date().getTime() - new Date(location.recorded_at).getTime()) / 60000);
+                    if (diffInMinutes < 1) return 'Just now';
+                    if (diffInMinutes < 60) return `${diffInMinutes} mins ago`;
+                    const diffInHours = Math.floor(diffInMinutes / 60);
+                    if (diffInHours < 24) return `${diffInHours} hours ago`;
+                    return `${Math.floor(diffInHours / 24)} days ago`;
+                  })() : "--"}
+                </div>
               </div>
             </div>
           </DashboardModule>
@@ -437,6 +465,14 @@ export default function UltronDashboard() {
 
         {/* Right Column: Plugins (Phase 2, 4, 5, 6, 7, 8) */}
         <div className="lg:col-span-5 xl:col-span-4 flex flex-col gap-6">
+
+          {/* Market Overview */}
+          <DashboardModule title="LIVE MARKET OVERVIEW" icon={Activity} variant="phase1">
+            <div className="space-y-4">
+              <LiveCryptoChart symbol="BTCUSDT" color="#f59e0b" />
+              <LiveCryptoChart symbol="ETHUSDT" color="#3b82f6" />
+            </div>
+          </DashboardModule>
 
           {/* Phase 2 */}
           <DashboardModule title="COMMS INTERFACE (PHASE 2)" icon={Activity} variant="phase2">
@@ -478,7 +514,7 @@ export default function UltronDashboard() {
                 <span className="text-xs text-slate-400 font-mono">ASSET: BTC/USDT</span>
                 <span className="text-[10px] bg-phase5/10 text-phase5 px-2 py-0.5 rounded border border-phase5/20">RISK LIMIT 2%</span>
               </div>
-              <button onClick={() => setModalType("trading")} className="w-full py-2.5 bg-phase5 hover:bg-phase5 text-slate-900 rounded-lg font-bold text-sm transition-colors flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(245,158,11,0.2)]">
+              <button onClick={() => router.push('/trading')} className="w-full py-2.5 bg-phase5 hover:bg-phase5 text-slate-900 rounded-lg font-bold text-sm transition-colors flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(245,158,11,0.2)]">
                 <TrendingUp className="w-4 h-4" /> Open Trading Engine
               </button>
             </div>
