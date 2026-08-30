@@ -25,14 +25,19 @@ const MAX_DAILY_LOSS_USD = 15;
 
 // ─── Exchange Factory ────────────────────────────────────────────────────────
 function buildExchange() {
-  // Default to CoinEx — already integrated and accessible from Iran
-  const exchange = new ccxt.coinex({
-    apiKey: process.env.COINEX_API_KEY || "",
-    secret: process.env.COINEX_API_SECRET || "",
+  // Use Bybit V5 Perpetual Futures
+  const exchange = new ccxt.bybit({
+    apiKey: process.env.BYBIT_API_KEY || "",
+    secret: process.env.BYBIT_API_SECRET || "",
     enableRateLimit: true,
+    options: {
+      defaultType: 'swap', // Important: forces futures/perpetuals on Bybit
+    }
   });
 
-  const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
+  // Proxy Isolation: explicitly DO NOT use the global HTTPS_PROXY because it's Iranian.
+  // Only use a dedicated EU proxy for Bybit.
+  const proxyUrl = process.env.BYBIT_PROXY;
   if (proxyUrl) {
     (exchange as any).agent = new HttpsProxyAgent(proxyUrl);
   }
@@ -72,7 +77,8 @@ async function getTotalOpenMargin(exchange: Exchange): Promise<number> {
   try {
     const positions = await exchange.fetchPositions();
     return positions.reduce((sum: number, p: any) => {
-      return sum + Math.abs(parseFloat(p.notional || p.initialMargin || 0));
+      // Bybit specific margin fields
+      return sum + Math.abs(parseFloat(p.initialMargin || p.notional || 0));
     }, 0);
   } catch {
     return 0;
