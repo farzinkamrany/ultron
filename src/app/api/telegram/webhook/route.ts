@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic"
 import { NextRequest, NextResponse } from 'next/server';
 import { redis } from '@/lib/redis';
 import { logExpense } from '@/lib/ultron-tracker';
-import { sendTelegramMessage } from '@/lib/telegram';
+import { sendTelegramMessage, sendTelegramAction } from '@/lib/telegram';
 import { generateAIResponse } from '@/lib/ai';
 
 export const maxDuration = 60;
@@ -83,6 +83,9 @@ export async function POST(req: NextRequest) {
     messages.push({ role: 'user', content: text });
 
     // 5. Generate AI Response (Using proxy-aware helper)
+    // Send typing action to Telegram so user knows bot is processing
+    await sendTelegramAction(chatId, 'typing');
+    
     let replyText = "متاسفانه خطایی در ارتباط با هوش مصنوعی رخ داد.";
     try {
       replyText = await generateAIResponse(messages, false);

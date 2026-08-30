@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -8,9 +8,7 @@ import {
 , User } from "lucide-react";
 import { Toaster, toast } from "sonner";
 import TextareaAutosize from "react-textarea-autosize";
-
-// --- Types ---
-type Message = { id: string; role: "user" | "assistant" | "system"; content: string };
+import { useChatStore, Message } from "@/store/chatStore";
 
 // --- Sub-Components ---
 function ChatInterface({ messages, isLoading, sendMessage, input, setInput, isVoiceActive, setIsVoiceActive }: any) {
@@ -148,17 +146,28 @@ function DashboardModule({ title, icon: Icon, variant, children }: any) {
 
 // --- Main Page ---
 export default function UltronDashboard() {
-  const [messages, setMessages] = useState<Message[]>([
-    { id: "1", role: "assistant", content: "ULTRON INITIALIZED. Awaiting command directive." }
-  ]);
-  const [input, setInput] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  
-  const [isVoiceActive, setIsVoiceActive] = useState(false);
+  const { 
+    messages, input, isLoading, isVoiceActive, 
+    addMessage, setInput, setIsLoading, setIsVoiceActive, updateLastMessage, setMessages
+  } = useChatStore();
 
   const [modalType, setModalType] = useState<"telegram" | "vapi" | "arbitrage" | "trading" | "memory" | "system" | "deploy" | null>(null);
   const [isArbitrageRunning, setIsArbitrageRunning] = useState(false);
   const [isTradingRunning, setIsTradingRunning] = useState(false);
+
+  // TWA Initialization
+  useEffect(() => {
+    if (typeof window !== "undefined" && (window as any).Telegram && (window as any).Telegram.WebApp) {
+      const twa = (window as any).Telegram.WebApp;
+      twa.ready();
+      
+      // Apply TWA theme colors to CSS variables if you want to adapt to the user's theme
+      if (twa.themeParams) {
+        document.documentElement.style.setProperty('--tg-theme-bg-color', twa.themeParams.bg_color || '');
+        document.documentElement.style.setProperty('--tg-theme-text-color', twa.themeParams.text_color || '');
+      }
+    }
+  }, []);
 
   const [retryInput, setRetryInput] = useState<string | null>(null);
 
@@ -171,7 +180,7 @@ export default function UltronDashboard() {
     
     // Only append user message if it's not a retry
     if (!customInput) {
-      setMessages(prev => [...prev, userMsg]);
+      addMessage(userMsg);
       setInput("");
     }
     
@@ -201,18 +210,14 @@ export default function UltronDashboard() {
       const decoder = new TextDecoder();
       let assistantMsg = "";
       
-      setMessages(prev => [...prev, { id: (Date.now() + 1).toString(), role: "assistant", content: "" }]);
+      addMessage({ id: (Date.now() + 1).toString(), role: "assistant", content: "" });
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
         
         assistantMsg += decoder.decode(value, { stream: true });
-        setMessages(prev => {
-          const newMsgs = [...prev];
-          newMsgs[newMsgs.length - 1].content = assistantMsg;
-          return newMsgs;
-        });
+        updateLastMessage(assistantMsg);
       }
     } catch (err: any) {
       setRetryInput(textToSend);

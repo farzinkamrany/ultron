@@ -22,3 +22,18 @@ export async function sendTelegramMessage(chatId: string | number, text: string)
     throw error;
   }
 }
+
+export async function sendTelegramAction(chatId: string | number, action: string = 'typing') {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) return;
+
+  try {
+    await fetch(`https://api.telegram.org/bot${token}/sendChatAction`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, action }),
+    });
+  } catch (error) {
+    console.error("[Telegram] Action failed:", error);
+  }
+}
