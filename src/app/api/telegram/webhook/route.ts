@@ -49,6 +49,20 @@ export async function POST(req: NextRequest) {
       return new NextResponse('OK', { status: 200 });
     }
 
+    if (text.startsWith('/voice ')) {
+      const voiceChoice = text.replace('/voice ', '').trim().toLowerCase();
+      if (voiceChoice === 'de' || voiceChoice === 'fa') {
+        try {
+          await redis.set(`voice_lang:${chatId}`, voiceChoice);
+          const langName = voiceChoice === 'de' ? 'German (B2 Partner)' : 'Persian (Default)';
+          await sendTelegramMessage(chatId, `🗣️ Voice Mode switched to: ${langName}`);
+        } catch (e) {
+          console.error("Failed to save voice preference:", e);
+        }
+      }
+      return new NextResponse('OK', { status: 200 });
+    }
+
     if (text.startsWith('/spend ')) {
       const amountRegex = /(\d+k|\d+)\s+(.+)/i;
       const match = text.replace('/spend ', '').match(amountRegex);

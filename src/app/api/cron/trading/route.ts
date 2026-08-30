@@ -5,6 +5,7 @@ import { sendTelegramMessage } from "@/lib/telegram";
 import { logError } from "@/lib/logger";
 import { HttpsProxyAgent } from "https-proxy-agent";
 import { supabase } from "@/lib/supabase";
+import { executeTrade } from "@/lib/trading/executor";
 
 import { verifyQStashSignature } from "@/lib/qstash";
 
@@ -72,22 +73,8 @@ export async function POST(req: NextRequest) {
          await sendTelegramMessage(chatId, msg);
       }
       
-      // Log paper trade
-      const { error: dbError } = await supabase.from('paper_trades').insert({
-        symbol: signal.symbol,
-        position_type: signal.action,
-        entry_price: signal.entryPrice,
-        stop_loss: signal.stopLoss,
-        take_profit: signal.takeProfit,
-        status: 'OPEN',
-        pnl: 0
-      });
-      
-      if (dbError) {
-        console.error("[Trading Engine] Failed to log paper trade:", dbError);
-      } else {
-        console.log(`[Trading Engine] Logged OPEN paper trade for ${signal.symbol}`);
-      }
+      // Pass signal to the executor (handles both PAPER and MICRO modes)
+      await executeTrade(signal);
     }
 
     return NextResponse.json({ 

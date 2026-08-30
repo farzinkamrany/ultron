@@ -5,6 +5,7 @@ import { sendTelegramMessage } from "@/lib/telegram";
 import { logError } from "@/lib/logger";
 import { HttpsProxyAgent } from "https-proxy-agent";
 import { verifyQStashSignature } from "@/lib/qstash";
+import { closeMicroPosition } from "@/lib/trading/executor";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -91,6 +92,11 @@ export async function POST(req: NextRequest) {
           pnl: parseFloat(pnl.toFixed(2)),
           closed_at: new Date().toISOString()
         }).eq('id', trade.id);
+
+        // If in MICRO mode, also close the actual position on the exchange
+        if (process.env.TRADE_MODE === "MICRO") {
+          await closeMicroPosition(trade.symbol, trade.position_type as "LONG" | "SHORT");
+        }
 
         resolvedCount++;
 
