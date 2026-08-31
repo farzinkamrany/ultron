@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { redis } from '@/lib/redis';
 import { sendTelegramMessage, sendTelegramAction, getTelegramFileBuffer, sendTelegramVoice } from '@/lib/telegram';
 import { generateAIResponse } from '@/lib/ai';
-import { generateFarsiSpeech } from '@/lib/audio';
+import { generateSpeech } from '@/lib/audio';
 import { verifyQStashSignature } from '@/lib/qstash';
 
 export const maxDuration = 60;
@@ -59,8 +59,8 @@ export async function POST(req: NextRequest) {
     // Add current message (text, audio, or image)
     let contentStr = text;
     if (!text) {
-      if (audioBuffer) contentStr = "Please listen to this voice message and reply in Persian.";
-      if (imageBuffer) contentStr = "Please analyze this image and reply in Persian.";
+      if (audioBuffer) contentStr = "Please listen to this voice message and reply in English, unless I explicitly asked you to speak in Persian.";
+      if (imageBuffer) contentStr = "Please analyze this image and reply in English, unless requested otherwise.";
     }
 
     messages.push({ 
@@ -105,7 +105,7 @@ export async function POST(req: NextRequest) {
     if (voiceFileId) {
       // If the user sent a voice note, reply with a voice note
       try {
-        const speechBuffer = await generateFarsiSpeech(replyText);
+        const speechBuffer = await generateSpeech(replyText);
         await sendTelegramVoice(chatId, speechBuffer);
       } catch (e) {
         console.error("TTS Generation Error:", e);

@@ -24,24 +24,27 @@ function httpsRequestBuffer(urlStr: string, options: any, payload: string): Prom
 }
 
 /**
- * Generates Farsi speech.
- * Uses OpenAI TTS (tts-1) if OPENAI_API_KEY is set (Best for Farsi).
+ * Generates speech.
+ * Uses OpenAI TTS (tts-1) if OPENAI_API_KEY is set.
  * Falls back to ElevenLabs if ELEVENLABS_API_KEY is set.
  * Falls back to Google Translate TTS (free) if no key is found.
  */
-export async function generateFarsiSpeech(text: string): Promise<Buffer> {
+export async function generateSpeech(text: string): Promise<Buffer> {
   const openaiKey = process.env.OPENAI_API_KEY;
   const elevenKey = process.env.ELEVENLABS_API_KEY;
   
   const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
   const agent = proxyUrl ? new HttpsProxyAgent(proxyUrl) : undefined;
+  
+  // Auto-detect Farsi characters
+  const isFarsi = /[\u0600-\u06FF]/.test(text);
 
   if (openaiKey) {
     try {
       const payload = JSON.stringify({
         model: 'tts-1',
         input: text,
-        voice: 'onyx', // Professional male voice with excellent Farsi pronunciation
+        voice: 'onyx', // Professional male voice, works perfectly for EN and FA
         response_format: 'mp3',
       });
 
@@ -64,7 +67,6 @@ export async function generateFarsiSpeech(text: string): Promise<Buffer> {
 
   if (elevenKey) {
     try {
-      // Use Rachel (or any preferred female voice ID)
       const voiceId = process.env.ELEVENLABS_VOICE_ID || 'EXAVITQu4vr4xnSDxMaL'; 
       const payload = JSON.stringify({
         text,
@@ -92,9 +94,9 @@ export async function generateFarsiSpeech(text: string): Promise<Buffer> {
     }
   }
 
-  // Fallback to Google TTS
+  // Fallback to Google TTS with language auto-detection
   const results = await googleTTS.getAllAudioBase64(text, {
-    lang: 'fa',
+    lang: isFarsi ? 'fa' : 'en',
     slow: false,
     host: 'https://translate.google.com',
   });

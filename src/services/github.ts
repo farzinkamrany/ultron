@@ -72,9 +72,8 @@ export async function writeAndProposeCode(filePath: string, content: string, des
   const branchName = `ultron-update-${Date.now()}`;
   const commitMessage = `Ultron Auto-Commit: Update ${filePath}\n\n${description}`;
 
-  // 1. Get the repo's actual default branch (could be 'main' or 'master')
-  const repoData = await githubFetch(`/repos/${owner}/${repo}`);
-  const baseBranch = repoData.default_branch || 'main';
+  // 1. Force the base branch to be 'master' as requested
+  const baseBranch = 'master';
 
   // 2. Get SHA of base branch
   const mainRef = await githubFetch(`/repos/${owner}/${repo}/git/refs/heads/${baseBranch}`);
@@ -89,7 +88,7 @@ export async function writeAndProposeCode(filePath: string, content: string, des
     }),
   });
 
-  // 3. Check if file exists to get its SHA (required for updating)
+  // 4. Check if file exists to get its SHA (required for updating)
   let fileSha;
   try {
     const existingFile = await githubFetch(`/repos/${owner}/${repo}/contents/${filePath}?ref=${branchName}`);
@@ -98,7 +97,7 @@ export async function writeAndProposeCode(filePath: string, content: string, des
     // File doesn't exist, which is fine for creation.
   }
 
-  // 4. Create or update the file on the new branch
+  // 5. Create or update the file on the new branch
   await githubFetch(`/repos/${owner}/${repo}/contents/${filePath}`, {
     method: "PUT",
     body: JSON.stringify({
@@ -109,14 +108,14 @@ export async function writeAndProposeCode(filePath: string, content: string, des
     }),
   });
 
-  // 5. Create a Pull Request
+  // 6. Create a Pull Request targeting master
   const pr = await githubFetch(`/repos/${owner}/${repo}/pulls`, {
     method: "POST",
     body: JSON.stringify({
       title: `Ultron Code Proposal: Update ${filePath}`,
       body: `**Ultron Autonomous Modification**\n\n${description}\n\nReview this code before merging.`,
       head: branchName,
-      base: "main",
+      base: "master",
     }),
   });
 
