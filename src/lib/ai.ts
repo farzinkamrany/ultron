@@ -29,20 +29,33 @@ export async function generateAIResponse(messages: { role: string, content: stri
 
   if (contents.length === 0) throw new Error("No user messages provided");
 
-  // RAG: Retrieve context from deep memory based on the latest user message
+  // RAG: Skip embedding for very short messages to save time, run it concurrently otherwise
   const latestUserMsg = contents.slice().reverse().find(m => m.role === "user")?.parts[0]?.text;
   let memoryContext = "";
-  if (latestUserMsg) {
-    try {
-      const memories = await searchMemories(latestUserMsg);
-      if (memories && memories.length > 0) {
-        memoryContext = "\n\n[SYSTEM DIRECTIVE: RECALL PAST MEMORIES]\nBased on the user's query, here are relevant past events/decisions from your long-term vector memory. Use them to answer if applicable:\n"
-          + memories.map((m: any) => `- ${m.content} (Match: ${(m.similarity * 100).toFixed(1)}%)`).join("\n");
-      }
-    } catch (e) {
-      console.error("Memory retrieval error:", e);
-    }
+  let memoryPromise: Promise<string> = Promise.resolve("");
+
+  if (latestUserMsg && latestUserMsg.length > 10) {
+    memoryPromise = searchMemories(latestUserMsg)
+      .then((memories: any[]) => {
+        if (memories && memories.length > 0) {
+          return "\n\n[SYSTEM DIRECTIVE: RECALL PAST MEMORIES]\nBased on the user's query, here are relevant past events/decisions from your long-term vector memory. Use them to answer if applicable:\n"
+            + memories.map((m: any) => `- ${m.content} (Match: ${(m.similarity * 100).toFixed(1)}%)`).join("\n");
+        }
+        return "";
+      })
+      .catch((e: any) => {
+        console.error("Memory retrieval error:", e);
+        return "";
+      });
   }
+
+  // Resolve memory context (with a 6s max wait so we don't blow the budget)
+  try {
+    memoryContext = await Promise.race([
+      memoryPromise,
+      new Promise<string>((resolve) => setTimeout(() => resolve(""), 6000))
+    ]);
+  } catch (_) {}
 
   const { fetchWithRotation } = await import("@/utils/ai-fetcher");
 
