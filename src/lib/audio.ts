@@ -1,4 +1,27 @@
 import * as googleTTS from 'google-tts-api';
+import https from 'https';
+import { HttpsProxyAgent } from 'https-proxy-agent';
+
+function httpsRequestBuffer(urlStr: string, options: any, payload: string): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const url = new URL(urlStr);
+    const req = https.request(url, options, (res) => {
+      const chunks: Buffer[] = [];
+      res.on('data', chunk => chunks.push(chunk));
+      res.on('end', () => {
+        if (res.statusCode && res.statusCode >= 400) {
+          reject(new Error(`HTTP Error ${res.statusCode}: ${Buffer.concat(chunks).toString()}`));
+        } else {
+          resolve(Buffer.concat(chunks));
+        }
+      });
+    });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
+    if (payload) req.write(payload);
+    req.end();
+  });
+}
 
 /**
  * Generates Farsi speech.
@@ -9,37 +32,31 @@ import * as googleTTS from 'google-tts-api';
 export async function generateFarsiSpeech(text: string): Promise<Buffer> {
   const openaiKey = process.env.OPENAI_API_KEY;
   const elevenKey = process.env.ELEVENLABS_API_KEY;
+  
+  const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
+  const agent = proxyUrl ? new HttpsProxyAgent(proxyUrl) : undefined;
 
   if (openaiKey) {
     try {
-      const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
-      const fetchOptions: any = {
+      const payload = JSON.stringify({
+        model: 'tts-1',
+        input: text,
+        voice: 'onyx', // Professional male voice with excellent Farsi pronunciation
+        response_format: 'mp3',
+      });
+
+      const options = {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${openaiKey}`,
           'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(payload)
         },
-        body: JSON.stringify({
-          model: 'tts-1',
-          input: text,
-          voice: 'onyx', // Professional male voice with excellent Farsi pronunciation
-          response_format: 'mp3',
-        }),
+        agent: agent,
+        timeout: 30000
       };
 
-      if (proxyUrl) {
-        const { ProxyAgent } = require('undici');
-        fetchOptions.dispatcher = new ProxyAgent(proxyUrl);
-      }
-
-      const response = await fetch('https://api.openai.com/v1/audio/speech', fetchOptions);
-
-      if (!response.ok) {
-        throw new Error(`OpenAI TTS error: ${await response.text()}`);
-      }
-
-      const arrayBuffer = await response.arrayBuffer();
-      return Buffer.from(arrayBuffer);
+      return await httpsRequestBuffer('https://api.openai.com/v1/audio/speech', options, payload);
     } catch (e) {
       console.error("[TTS] OpenAI failed, falling back...", e);
     }
@@ -49,28 +66,27 @@ export async function generateFarsiSpeech(text: string): Promise<Buffer> {
     try {
       // Use Rachel (or any preferred female voice ID)
       const voiceId = process.env.ELEVENLABS_VOICE_ID || 'EXAVITQu4vr4xnSDxMaL'; 
-      const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_128`, {
+      const payload = JSON.stringify({
+        text,
+        model_id: 'eleven_multilingual_v2',
+        voice_settings: {
+          stability: 0.5,
+          similarity_boost: 0.75,
+        }
+      });
+
+      const options = {
         method: 'POST',
         headers: {
           'xi-api-key': elevenKey,
           'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(payload)
         },
-        body: JSON.stringify({
-          text,
-          model_id: 'eleven_multilingual_v2', // Multilingual v2 has amazing Farsi support
-          voice_settings: {
-            stability: 0.5,
-            similarity_boost: 0.75,
-          }
-        }),
-      });
+        agent: agent,
+        timeout: 30000
+      };
 
-      if (!response.ok) {
-        throw new Error(`ElevenLabs error: ${await response.text()}`);
-      }
-
-      const arrayBuffer = await response.arrayBuffer();
-      return Buffer.from(arrayBuffer);
+      return await httpsRequestBuffer(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_128`, options, payload);
     } catch (e) {
       console.error("[TTS] ElevenLabs failed, falling back to Google TTS", e);
     }

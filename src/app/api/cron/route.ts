@@ -59,25 +59,18 @@ export async function POST(request: NextRequest) {
         const volume24h = ticker.quoteVolume || 0;
         const change24h = ticker.percentage || 0;
 
-        // Fetch daily candles to get the recent major bottom for Gann
-        const ohlcv = await exchange.fetchOHLCV(symbol, "1d", undefined, 60); // 60 days
-        let lowest = Infinity;
-        for (const c of ohlcv) {
-          if (c && c[3] !== undefined && c[3] < lowest) lowest = c[3]; // c[3] is Low
-        }
-
-        const gann = calculateGannSquareOf9(lowest);
-        // Find nearest Gann support and resistance relative to current price
-        const closestSupport = [...gann.supports].reverse().find(s => currentPrice >= s) || gann.supports[0];
-        const closestResistance = gann.resistances.find(r => currentPrice <= r) || gann.resistances[gann.resistances.length - 1];
+        // Calculate immediate W.D. Gann Square of 9 levels around the current price
+        const gann = calculateGannSquareOf9(currentPrice);
+        const closestSupport = Math.max(...gann.supports);
+        const closestResistance = Math.min(...gann.resistances);
 
         marketDataStr += `
 Asset: ${symbol}
 Current Price: $${currentPrice.toFixed(2)}
 24h Change: ${change24h.toFixed(2)}%
 24h Volume: $${Math.floor(volume24h).toLocaleString()}
-W.D. Gann Nearest Support: $${closestSupport.toFixed(2)}
-W.D. Gann Nearest Resistance: $${closestResistance.toFixed(2)}
+W.D. Gann Immediate Support: $${closestSupport.toFixed(2)}
+W.D. Gann Immediate Resistance: $${closestResistance.toFixed(2)}
 ---`;
       } catch (err: any) {
         console.warn(`[Cron] CCXT fetch failed for ${symbol}:`, err.message);
