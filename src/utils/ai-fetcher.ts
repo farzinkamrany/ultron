@@ -17,6 +17,7 @@ async function makeHttpsRequest(model: string, apiKey: string, payload: string, 
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: payload,
+      signal: AbortSignal.timeout(45000), // 45s timeout to avoid Vercel 60s hard kill
     });
 
     if (!response.ok) {
