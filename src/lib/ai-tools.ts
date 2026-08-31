@@ -1,3 +1,6 @@
+import { writeAndProposeCode } from "@/services/github";
+import { sendTelegramMessage } from "./telegram";
+
 export const ULTRON_TOOLS = [
   {
     functionDeclarations: [
@@ -40,3 +43,17 @@ export const ULTRON_TOOLS = [
     ]
   }
 ];
+
+export async function executeWriteAndProposeCode(filePath: string, content: string, description: string): Promise<string> {
+  try {
+    const prUrl = await writeAndProposeCode(filePath, content, description);
+    return JSON.stringify({ status: "success", pr_url: prUrl });
+  } catch (error: any) {
+    console.error("[Ultron] write_and_propose_code error:", error);
+    const chatId = process.env.TELEGRAM_CHAT_ID;
+    if (chatId) {
+      await sendTelegramMessage(chatId, `#TOOL_ERROR write_and_propose_code failed:\n\n${error.message}`);
+    }
+    return JSON.stringify({ status: "error", details: error.message });
+  }
+}

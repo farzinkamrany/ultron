@@ -118,8 +118,8 @@ export async function generateAIResponse(messages: { role: string, content: stri
             const code = await getFileContent(args.filePath);
             functionOutput = JSON.stringify({ status: "success", content: code });
           } else if (name === "write_and_propose_code") {
-            const prUrl = await writeAndProposeCode(args.filePath, args.content, args.description);
-            functionOutput = JSON.stringify({ status: "success", pr_url: prUrl });
+            const { executeWriteAndProposeCode } = await import("./ai-tools");
+            functionOutput = await executeWriteAndProposeCode(args.filePath, args.content, args.description);
           } else {
             functionOutput = JSON.stringify({ status: "error", details: `Function '${name}' is not implemented.` });
           }
