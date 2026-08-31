@@ -3,9 +3,9 @@ import { searchMemories } from "./memory";
 import { ULTRON_TOOLS } from "./ai-tools";
 import { getFileContent, writeAndProposeCode } from "@/services/github";
 
-export async function generateAIResponse(messages: { role: string, content: string, audio?: Buffer }[], stream = false, tryPro = true): Promise<any> {
+export async function generateAIResponse(messages: { role: string, content: string, audio?: Buffer, image?: Buffer }[], stream = false, tryPro = true): Promise<any> {
   const contents: any[] = messages
-    .filter(m => (m.content && m.content.trim()) || m.audio)
+    .filter(m => (m.content && m.content.trim()) || m.audio || m.image)
     .map(msg => {
       const parts: any[] = [];
       if (msg.content && msg.content.trim()) parts.push({ text: msg.content });
@@ -14,6 +14,14 @@ export async function generateAIResponse(messages: { role: string, content: stri
           inlineData: {
             data: msg.audio.toString("base64"),
             mimeType: "audio/ogg"
+          }
+        });
+      }
+      if (msg.image) {
+        parts.push({
+          inlineData: {
+            data: msg.image.toString("base64"),
+            mimeType: "image/jpeg"
           }
         });
       }

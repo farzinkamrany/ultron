@@ -10,10 +10,36 @@ import { useRouter } from "next/navigation";
 import { Toaster, toast } from "sonner";
 import TextareaAutosize from "react-textarea-autosize";
 import { useChatStore, Message } from "@/store/chatStore";
+import { useTradingStore } from "@/store/tradingStore";
+import { EquityCurve } from "@/components/charts/EquityCurve";
 import dynamic from "next/dynamic";
 import { useGPS } from "@/hooks/useGPS";
 
 const LiveCryptoChart = dynamic(() => import("@/components/LiveCryptoChart").then(mod => mod.LiveCryptoChart), { ssr: false });
+
+function LivePnLDisplay() {
+  const { trades, fetchPaperTrades } = useTradingStore();
+  
+  useEffect(() => {
+    fetchPaperTrades();
+  }, [fetchPaperTrades]);
+
+  const totalPnl = trades
+    .filter((t: any) => t.status === "WON" || t.status === "LOST")
+    .reduce((sum: number, trade: any) => sum + (trade.pnl || 0), 0);
+
+  return (
+    <span className={totalPnl >= 0 ? "text-green-500" : "text-red-500"}>
+      {totalPnl > 0 ? "+" : ""}{totalPnl.toFixed(2)} <span className="text-sm opacity-80 font-normal">USDT</span>
+    </span>
+  );
+}
+
+function MiniEquityCurve() {
+  const { trades } = useTradingStore();
+  if (!trades || trades.length === 0) return <div className="text-xs text-slate-500 text-center mt-10">No data</div>;
+  return <EquityCurve trades={trades} />;
+}
 
 // --- Sub-Components ---
 function ChatInterface({ messages, isLoading, sendMessage, input, setInput, isVoiceActive, setIsVoiceActive }: any) {
@@ -426,6 +452,28 @@ export default function UltronDashboard() {
             sendMessage={sendMessage} input={input} setInput={setInput}
             isVoiceActive={isVoiceActive} setIsVoiceActive={setIsVoiceActive}
           />
+
+          {/* Quant Portfolio Widget */}
+          <DashboardModule title="QUANT PORTFOLIO PERFORMANCE" icon={TrendingUp} variant="phase5">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-black/20 p-4 rounded-xl border border-white/5 flex flex-col justify-between">
+                <div>
+                  <div className="text-xs text-slate-400 font-mono mb-1">TOTAL PNL</div>
+                  <div className="text-2xl font-bold text-phase5 flex items-baseline gap-1">
+                    <LivePnLDisplay />
+                  </div>
+                </div>
+                <div className="mt-4">
+                  <button onClick={() => router.push('/dashboard/trading')} className="w-full py-2 bg-phase5/10 hover:bg-phase5/20 text-phase5 rounded-lg border border-phase5/30 text-sm font-semibold transition-colors flex items-center justify-center gap-2">
+                    <Target className="w-4 h-4" /> View Full Analytics
+                  </button>
+                </div>
+              </div>
+              <div className="bg-black/20 p-4 rounded-xl border border-white/5 h-[150px]">
+                <MiniEquityCurve />
+              </div>
+            </div>
+          </DashboardModule>
 
           {/* Bottom Row: Phase 3 (GPS) */}
           <DashboardModule title="SPATIAL AWARENESS (PHASE 3)" icon={MapPin} variant="phase3">

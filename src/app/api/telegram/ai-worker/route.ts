@@ -19,18 +19,23 @@ export async function POST(req: NextRequest) {
 
   let chatId = "";
   try {
-    const { chatId: id, text, voiceFileId } = await req.json();
+    const { chatId: id, text, voiceFileId, photoFileId } = await req.json();
     chatId = id;
 
-    if (!chatId || (!text && !voiceFileId)) {
-      return NextResponse.json({ error: "Missing chatId, text, or voice" }, { status: 400 });
+    if (!chatId || (!text && !voiceFileId && !photoFileId)) {
+      return NextResponse.json({ error: "Missing chatId, text, voice, or photo" }, { status: 400 });
     }
 
     let audioBuffer: Buffer | undefined = undefined;
+    let imageBuffer: Buffer | undefined = undefined;
     if (voiceFileId) {
       await sendTelegramAction(chatId, 'record_voice');
       const buf = await getTelegramFileBuffer(voiceFileId);
       if (buf) audioBuffer = buf;
+    } else if (photoFileId) {
+      await sendTelegramAction(chatId, 'upload_photo');
+      const buf = await getTelegramFileBuffer(photoFileId);
+      if (buf) imageBuffer = buf;
     } else {
       await sendTelegramAction(chatId, 'typing');
     }
@@ -51,11 +56,18 @@ export async function POST(req: NextRequest) {
         content: msg.content as string,
       }));
     
-    // Add current message (text or audio)
+    // Add current message (text, audio, or image)
+    let contentStr = text;
+    if (!text) {
+      if (audioBuffer) contentStr = "Please listen to this voice message and reply in Persian.";
+      if (imageBuffer) contentStr = "Please analyze this image and reply in Persian.";
+    }
+
     messages.push({ 
       role: 'user', 
-      content: text || (audioBuffer ? "Please listen to this voice message and reply in Persian." : ""),
-      audio: audioBuffer 
+      content: contentStr,
+      audio: audioBuffer,
+      image: imageBuffer
     });
 
     // 2. Fetch model preference
@@ -75,7 +87,11 @@ export async function POST(req: NextRequest) {
 
       // 4. Save to Redis
       try {
-        await redis.rpush(historyKey, { role: "user", content: text || "[Voice Note]" });
+        let logContent = text;
+        if (!text) {
+          logContent = audioBuffer ? "[Voice Note]" : "[Image/Photo]";
+        }
+        await redis.rpush(historyKey, { role: "user", content: logContent });
         await redis.rpush(historyKey, { role: "model", content: replyText });
         await redis.ltrim(historyKey, -14, -1);
       } catch (e) {

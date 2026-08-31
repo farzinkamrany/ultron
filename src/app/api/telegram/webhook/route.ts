@@ -12,13 +12,14 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
 
     const message = body?.message;
-    if (!message || (!message.text && !message.voice)) {
+    if (!message || (!message.text && !message.voice && !message.photo)) {
       return new NextResponse('OK', { status: 200 });
     }
 
     const chatId = message.chat.id.toString();
-    const text = message.text || "";
+    const text = message.text || message.caption || "";
     const voiceFileId = message.voice?.file_id;
+    const photoFileId = message.photo && message.photo.length > 0 ? message.photo[message.photo.length - 1].file_id : undefined;
     const allowedChatIdsStr = process.env.TELEGRAM_ALLOWED_CHAT_IDS || process.env.TELEGRAM_CHAT_ID || "";
     const allowedChatIds = allowedChatIdsStr.split(',').map((id: string) => id.trim());
 
@@ -93,7 +94,10 @@ export async function POST(req: NextRequest) {
     }
 
     // ─── AI Messages: Offload to QStash worker ────────────────────────────────
-    await sendTelegramAction(chatId, voiceFileId ? 'record_voice' : 'typing');
+    let action = 'typing';
+    if (voiceFileId) action = 'record_voice';
+    else if (photoFileId) action = 'upload_photo';
+    await sendTelegramAction(chatId, action);
 
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://ultron-assistant-iota.vercel.app";
     const qstashToken = process.env.QSTASH_TOKEN;
@@ -114,7 +118,8 @@ export async function POST(req: NextRequest) {
         body: JSON.stringify({
           chatId,
           text,
-          voiceFileId
+          voiceFileId,
+          photoFileId
         })
       });
     } // Return 200 immediately — Telegram is satisfied, QStash handles the rest

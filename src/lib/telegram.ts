@@ -1,3 +1,12 @@
+let dispatcher: any = undefined;
+try {
+  const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
+  if (proxyUrl) {
+    const { ProxyAgent } = require('undici');
+    dispatcher = new ProxyAgent(proxyUrl);
+  }
+} catch (e) {}
+
 export async function sendTelegramMessage(chatId: string | number, text: string, reply_markup?: any) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) {
@@ -10,7 +19,8 @@ export async function sendTelegramMessage(chatId: string | number, text: string,
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML", reply_markup }),
-    });
+      dispatcher
+    } as RequestInit);
 
     if (!response.ok) {
       console.error("[Telegram] Error response:", await response.text());
@@ -32,7 +42,8 @@ export async function sendTelegramAction(chatId: string | number, action: string
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ chat_id: chatId, action }),
-    });
+      dispatcher
+    } as RequestInit);
   } catch (error) {
     console.error("[Telegram] Action failed:", error);
   }
@@ -43,7 +54,7 @@ export async function getTelegramFileBuffer(fileId: string): Promise<Buffer | nu
   if (!token) return null;
 
   try {
-    const infoRes = await fetch(`https://api.telegram.org/bot${token}/getFile?file_id=${fileId}`);
+    const infoRes = await fetch(`https://api.telegram.org/bot${token}/getFile?file_id=${fileId}`, { dispatcher } as RequestInit);
     const info = await infoRes.json();
     if (!info.ok) {
       console.error("[Telegram] getFile error:", info);
@@ -51,7 +62,7 @@ export async function getTelegramFileBuffer(fileId: string): Promise<Buffer | nu
     }
 
     const fileUrl = `https://api.telegram.org/file/bot${token}/${info.result.file_path}`;
-    const fileRes = await fetch(fileUrl);
+    const fileRes = await fetch(fileUrl, { dispatcher } as RequestInit);
     const arrayBuffer = await fileRes.arrayBuffer();
     return Buffer.from(arrayBuffer);
   } catch (error) {
@@ -72,7 +83,8 @@ export async function sendTelegramVoice(chatId: string | number, audioBuffer: Bu
     const response = await fetch(`https://api.telegram.org/bot${token}/sendVoice`, {
       method: "POST",
       body: formData,
-    });
+      dispatcher
+    } as RequestInit);
 
     if (!response.ok) {
       console.error("[Telegram] sendVoice error response:", await response.text());

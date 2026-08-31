@@ -2,11 +2,48 @@ import * as googleTTS from 'google-tts-api';
 
 /**
  * Generates Farsi speech.
- * Uses ElevenLabs for hyper-realistic TTS if ELEVENLABS_API_KEY is set.
+ * Uses OpenAI TTS (tts-1) if OPENAI_API_KEY is set (Best for Farsi).
+ * Falls back to ElevenLabs if ELEVENLABS_API_KEY is set.
  * Falls back to Google Translate TTS (free) if no key is found.
  */
 export async function generateFarsiSpeech(text: string): Promise<Buffer> {
+  const openaiKey = process.env.OPENAI_API_KEY;
   const elevenKey = process.env.ELEVENLABS_API_KEY;
+
+  if (openaiKey) {
+    try {
+      const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
+      const fetchOptions: any = {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${openaiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'tts-1',
+          input: text,
+          voice: 'onyx', // Professional male voice with excellent Farsi pronunciation
+          response_format: 'mp3',
+        }),
+      };
+
+      if (proxyUrl) {
+        const { ProxyAgent } = require('undici');
+        fetchOptions.dispatcher = new ProxyAgent(proxyUrl);
+      }
+
+      const response = await fetch('https://api.openai.com/v1/audio/speech', fetchOptions);
+
+      if (!response.ok) {
+        throw new Error(`OpenAI TTS error: ${await response.text()}`);
+      }
+
+      const arrayBuffer = await response.arrayBuffer();
+      return Buffer.from(arrayBuffer);
+    } catch (e) {
+      console.error("[TTS] OpenAI failed, falling back...", e);
+    }
+  }
 
   if (elevenKey) {
     try {

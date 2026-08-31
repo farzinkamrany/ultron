@@ -8,32 +8,65 @@ class ApiError extends Error {
   }
 }
 
+import https from 'https';
+import { HttpsProxyAgent } from 'https-proxy-agent';
+
 async function makeHttpsRequest(model: string, apiKey: string, payload: string, stream: boolean): Promise<any> {
   const action = stream ? "streamGenerateContent" : "generateContent";
-  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:${action}?key=${apiKey}${stream ? '&alt=sse' : ''}`;
+  // The URL string needs to be parsed for https.request
+  const urlString = `https://generativelanguage.googleapis.com/v1beta/models/${model}:${action}?key=${apiKey}${stream ? '&alt=sse' : ''}`;
+  
+  return new Promise((resolve, reject) => {
+    try {
+      const url = new URL(urlString);
+      const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
+      const agent = proxyUrl ? new HttpsProxyAgent(proxyUrl) : undefined;
 
-  try {
-    const response = await fetch(apiUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: payload,
-      signal: AbortSignal.timeout(45000), // 45s timeout to avoid Vercel 60s hard kill
-    });
+      const req = https.request(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(payload)
+        },
+        agent: agent,
+        timeout: 45000
+      }, (res) => {
+        let data = '';
+        res.on('data', chunk => data += chunk);
+        res.on('end', () => {
+          if (res.statusCode && res.statusCode >= 400) {
+            reject(new ApiError(res.statusCode, data));
+          } else {
+            try {
+              if (stream) {
+                // If stream was actually needed, this would need to return the raw response stream.
+                // But since ai.ts passes false for stream, we can just return the JSON object.
+                resolve(JSON.parse(data));
+              } else {
+                resolve(JSON.parse(data));
+              }
+            } catch (e: any) {
+              reject(new ApiError(500, "Failed to parse JSON: " + e.message));
+            }
+          }
+        });
+      });
 
-    if (!response.ok) {
-      const errData = await response.text();
-      throw new ApiError(response.status || 500, errData);
+      req.on('timeout', () => {
+        req.destroy();
+        reject(new ApiError(408, "Request Timeout"));
+      });
+
+      req.on('error', (err) => {
+        reject(new ApiError(500, err.message));
+      });
+
+      req.write(payload);
+      req.end();
+    } catch (err: any) {
+      reject(new ApiError(500, err.message));
     }
-
-    if (stream) {
-      return response;
-    } else {
-      return await response.json();
-    }
-  } catch (error: any) {
-    if (error instanceof ApiError) throw error;
-    throw new ApiError(500, error.message || "Unknown Fetch Error");
-  }
+  });
 }
 
 /**
@@ -55,7 +88,7 @@ export async function fetchWithRotation(payload: string, stream = false, tryPro 
         const statusCode = err.statusCode || 500;
         const keyHint = key.substring(0, 8) + "...";
         
-        console.warn(`[AI Rotation] Model: ${model} | Key: ${keyHint} | Failed with ${statusCode}`);
+        console.warn(`[AI Rotation] Model: ${model} | Key: ${keyHint} | Failed with ${statusCode} | Error: ${err.message}`);
 
         if (statusCode === 429 || statusCode === 403) {
           // Key exhausted or rate-limited. Rotate to the next KEY in the inner loop.
