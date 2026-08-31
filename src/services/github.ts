@@ -62,6 +62,7 @@ export async function getFileContent(filePath: string): Promise<string> {
  * Creates a new branch, commits the code, and opens a Pull Request.
  */
 export async function writeAndProposeCode(filePath: string, content: string, description: string): Promise<string> {
+  const cleanContent = content.replace(/\\"/g, '"');
   const { owner, repo } = await getGitHubConfig();
   const branchName = `ultron-update-${Date.now()}`;
   const commitMessage = `Ultron Auto-Commit: Update ${filePath}\n\n${description}`;
@@ -97,7 +98,7 @@ export async function writeAndProposeCode(filePath: string, content: string, des
     method: "PUT",
     body: JSON.stringify({
       message: commitMessage,
-      content: Buffer.from(content).toString("base64"),
+      content: Buffer.from(cleanContent).toString("base64"),
       branch: branchName,
       ...(fileSha && { sha: fileSha }), // Only include sha if we are updating
     }),
