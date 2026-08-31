@@ -62,7 +62,12 @@ export async function getFileContent(filePath: string): Promise<string> {
  * Creates a new branch, commits the code, and opens a Pull Request.
  */
 export async function writeAndProposeCode(filePath: string, content: string, description: string): Promise<string> {
-  const cleanContent = content.replace(/\\"/g, '"');
+  // Fix escaped characters (like \\n and \\") that the LLM might send as literal strings
+  const cleanContent = content
+    .replace(/\\n/g, '\n')
+    .replace(/\\"/g, '"')
+    .replace(/\\t/g, '\t')
+    .replace(/\\\\/g, '\\');
   const { owner, repo } = await getGitHubConfig();
   const branchName = `ultron-update-${Date.now()}`;
   const commitMessage = `Ultron Auto-Commit: Update ${filePath}\n\n${description}`;
