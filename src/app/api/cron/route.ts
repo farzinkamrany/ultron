@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
     // 2. Initialize CCXT with Proxy (if needed in local env)
     const exchange = new ccxt.binance({ enableRateLimit: true });
     if (proxyUrl) {
-      exchange.agent = new HttpsProxyAgent(proxyUrl);
+      exchange.httpsProxy = proxyUrl;
     }
 
     // 3. Fetch Top Liquid Coins (BTC & ETH) Data & Gann Levels
