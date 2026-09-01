@@ -1,22 +1,15 @@
 // Pro Models (for complex reasoning, decision-making, coding)
 export const PRO_MODELS = [
-  "gemini-3.1-pro",   // Best available
-  "gemini-2.5-pro",           // Stable high-quality
-  "gemini-1.5-pro",           // Classic fallback
+  "gemini-3-pro",
+  "gemini-2.5-pro",
+  "gemini-1.5-pro",
 ];
 
 // Flash Models (for speed, stability, and everyday conversations)
 export const FLASH_MODELS = [
-  "gemini-3.7-flash",         // Latest fast model
-  "gemini-3.6-flash",
-  "gemini-3.5-flash",
-  "gemini-3.1-flash-lite",
-  "gemini-3.5-flash-lite",
   "gemini-2.5-flash",
   "gemini-2.5-flash-lite",
   "gemini-2.0-flash",
-  "gemini-2.0-flash-lite",
-  "gemini-1.5-flash",         // Last resort stable
 ];
 
 
