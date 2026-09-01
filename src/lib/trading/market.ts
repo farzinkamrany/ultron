@@ -7,16 +7,27 @@ import { analyzeOrderBook, OrderBookData } from './orderbook';
 import { analyzeOrderFlow, Trade } from './tape';
 import { analyzeDerivatives } from './derivatives';
 
+const PROXY_LIST = [
+  'http://185.166.219.14:8080',
+  'http://193.176.241.13:3128',
+  'http://46.224.23.10:8080'
+];
+
+function getProxy() {
+  return PROXY_LIST[Math.floor(Math.random() * PROXY_LIST.length)];
+}
+
 export async function analyzeMarketData(asset: string, timeHorizonDays: number): Promise<string> {
   try {
-    const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
-    const exchange = new ccxt.binance({ enableRateLimit: true });
-    
-    if (proxyUrl) {
-      exchange.httpsProxy = proxyUrl;
-    }
+    const exchange = new ccxt.binance({ 
+      enableRateLimit: true,
+      options: {
+        defaultType: 'spot'
+      }
+    });
 
-    // Determine timeframe based on time horizon
+    exchange.httpsProxy = getProxy();
+    
     let timeframe = '1d';
     let label = 'Daily';
     
@@ -31,24 +42,19 @@ export async function analyzeMarketData(asset: string, timeHorizonDays: number):
       label = 'Weekly';
     }
 
-    // Fetch the last 15 candles for the selected timeframe
     const ohlcv = await exchange.fetchOHLCV(asset, timeframe, undefined, 15);
     const closes = ohlcv.map(candle => candle[4]);
     const currentPrice = closes[closes.length - 1] as number;
     
     const trendStr = closes.map(c => `$${c}`).join(" -> ");
     
-    // Calculate full spectrum of Gann levels
     const { supports, resistances } = calculateGannSquareOf9(currentPrice);
     
-    // Calculate Volume Climax (30-day average vs current)
     const recentVols = ohlcv.map(candle => candle[5] as number);
     const currentVol = recentVols[recentVols.length - 1];
     const avgVol = recentVols.reduce((a, b) => a + b, 0) / recentVols.length;
-    const isVolumeClimax = currentVol > (avgVol * 2.0); // 200% spike
+    const isVolumeClimax = currentVol > (avgVol * 2.0); 
 
-    // --- SMART MONEY CONCEPTS (LEFT HEMISPHERE) ---
-    // Fetch 4H data specifically for liquidity hunting (we need recent intraday action)
     let smcAnalysisStr = "SMC Data Unavailable";
     try {
       const ohlcv4hRaw = await exchange.fetchOHLCV(asset, '4h', undefined, 50);
@@ -64,7 +70,6 @@ export async function analyzeMarketData(asset: string, timeHorizonDays: number):
       const fvgs = findFairValueGaps(ohlcv4h);
       const obs = findOrderBlocks(ohlcv4h);
       
-      // Calculate Institutional VWAP (Volume Weighted Average Price) on the 4H dataset
       let cumulativeVolume = 0;
       let cumulativeVP = 0;
       ohlcv4h.forEach(c => {
@@ -75,16 +80,15 @@ export async function analyzeMarketData(asset: string, timeHorizonDays: number):
       const vwap = cumulativeVolume > 0 ? cumulativeVP / cumulativeVolume : currentPrice;
       const vwapStatus = currentPrice > vwap ? "BULLISH (Above VWAP)" : "BEARISH (Below VWAP)";
       
-      // Find the closest Bullish and Bearish OB to the current price
       const bullishOBs = obs.filter(ob => ob.type === 'BULLISH_OB' && ob.top < currentPrice).sort((a, b) => b.top - a.top);
       const bearishOBs = obs.filter(ob => ob.type === 'BEARISH_OB' && ob.bottom > currentPrice).sort((a, b) => a.bottom - b.bottom);
       
-      const nearestBullOB = bullishOBs.length > 0 ? `$${bullishOBs[0].top.toFixed(2)} - $${bullishOBs[0].bottom.toFixed(2)} (Swept: ${bullishOBs[0].sweptLiquidity ? "YES - High Prob" : "NO"})` : "None nearby";
-      const nearestBearOB = bearishOBs.length > 0 ? `$${bearishOBs[0].bottom.toFixed(2)} - $${bearishOBs[0].top.toFixed(2)} (Swept: ${bearishOBs[0].sweptLiquidity ? "YES - High Prob" : "NO"})` : "None nearby";
+      const nearestBullOB = bullishOBs.length > 0 ? `$${bullishOBs[0].top.toFixed(2)} - $${bullishOBs[0].bottom.toFixed(2)}` : "None nearby";
+      const nearestBearOB = bearishOBs.length > 0 ? `$${bearishOBs[0].bottom.toFixed(2)} - $${bearishOBs[0].top.toFixed(2)}` : "None nearby";
 
       smcAnalysisStr = `Institutional VWAP: $${vwap.toFixed(2)} | Trend: ${vwapStatus}
-Nearest Bullish Order Block (Demand): ${nearestBullOB}
-Nearest Bearish Order Block (Supply): ${nearestBearOB}
+Nearest Bullish OB: ${nearestBullOB}
+Nearest Bearish OB: ${nearestBearOB}
 Total Untested 4H FVGs: ${fvgs.length}`;
     } catch (err) {
       console.warn("Failed to fetch SMC data", err);
@@ -93,7 +97,6 @@ Total Untested 4H FVGs: ${fvgs.length}`;
     let xrayAnalysisStr = "Order Book X-Ray Unavailable";
     let tapeAnalysisStr = "Order Flow Tape Unavailable";
     try {
-      // X-Ray Order Book Scan (Level 2)
       const orderBookRaw = await exchange.fetchOrderBook(asset, 100);
       const obData: OrderBookData = {
         bids: orderBookRaw.bids as [number, number][],
@@ -102,10 +105,9 @@ Total Untested 4H FVGs: ${fvgs.length}`;
       const xray = analyzeOrderBook(obData);
       
       xrayAnalysisStr = `Order Book Imbalance (Bids/Asks): ${xray.imbalanceRatio.toFixed(2)}x
-Whale Buy Wall (Support): $${xray.whaleBuyWallPrice.toFixed(2)} (Vol: $${Math.floor(xray.whaleBuyWallVolumeUSD).toLocaleString()})
-Whale Sell Wall (Resistance): $${xray.whaleSellWallPrice.toFixed(2)} (Vol: $${Math.floor(xray.whaleSellWallVolumeUSD).toLocaleString()})`;
+Whale Buy Wall: $${xray.whaleBuyWallPrice.toFixed(2)}
+Whale Sell Wall: $${xray.whaleSellWallPrice.toFixed(2)}`;
 
-      // Tape Reader (Order Flow)
       const recentTradesRaw = await exchange.fetchTrades(asset, undefined, 500);
       const trades: Trade[] = recentTradesRaw.map(t => ({
         side: t.side || 'unknown',
@@ -115,22 +117,18 @@ Whale Sell Wall (Resistance): $${xray.whaleSellWallPrice.toFixed(2)} (Vol: $${Ma
       }));
       
       const tape = analyzeOrderFlow(trades);
-      tapeAnalysisStr = `Cumulative Volume Delta (CVD): $${Math.floor(tape.cvd).toLocaleString()}
-Aggression Status: ${tape.cvdStatus}
-Taker Buy Vol: $${Math.floor(tape.aggressiveBuyVolumeUSD).toLocaleString()} | Taker Sell Vol: $${Math.floor(tape.aggressiveSellVolumeUSD).toLocaleString()}`;
+      tapeAnalysisStr = `CVD: $${Math.floor(tape.cvd).toLocaleString()}
+Aggression: ${tape.cvdStatus}`;
       
     } catch (err) {
       console.warn("Failed to fetch order book or trades", err);
     }
 
-    // --- DERIVATIVES (FUTURES) ---
     const derivs = await analyzeDerivatives(asset);
     const derivsStr = `Funding Rate: ${(derivs.fundingRate * 100).toFixed(4)}%
-Open Interest (Contracts): ${derivs.openInterest.toLocaleString()}
-Retail Leverage Sentiment: ${derivs.sentiment}`;
+Open Interest: ${derivs.openInterest.toLocaleString()}
+Sentiment: ${derivs.sentiment}`;
 
-    // --- GANN MACRO (RIGHT HEMISPHERE) & CHAOS ENGINE ---
-    // Fetch Macro Pivot (Last 365 Days) to calculate Time Squaring, True Scale, and DEFCON level
     let timeAnalysisStr = "Time Cycle Data Unavailable";
     let defconStatusStr = "DEFCON Status Unavailable";
     try {
@@ -144,127 +142,76 @@ Retail Leverage Sentiment: ${derivs.sentiment}`;
         volume: c[5] as number
       }));
       
-      const latestMacroClose = macroOhlcv[macroOhlcv.length-1].close;
-      const firstMacroClose = macroOhlcv[0].close;
-      
-      // 1. Calculate Chaos / DEFCON Level
       const chaos = calculateChaosLevel(macroOhlcv);
       defconStatusStr = `Current Chaos Level: ${chaos.level}
 Description: ${chaos.description}`;
 
-      // 1.5 Calculate Volume Profile / Point of Control (POC)
       const macroPOC = calculatePointOfControl(macroOhlcv);
-      const pocStr = macroPOC ? `$${macroPOC.toFixed(2)}` : "Unavailable";
-      // We inject this POC string into the smcAnalysisStr
-      smcAnalysisStr += `\nMacro Point of Control (POC - Gravity Magnet): ${pocStr}`;
+      smcAnalysisStr += `\
+Macro POC (Gravity Magnet): $${macroPOC?.toFixed(2)}`;
 
-      // 2. Gann Mathematics
-      // Find Absolute Macro Low for True Scale calculation
       let absoluteLow = Infinity;
       let absoluteHigh = -Infinity;
       let pivotTimestamp = 0;
       let highTimestamp = 0;
       
       for (const candle of macroOhlcv) {
-        const low = candle.low;
-        const high = candle.high;
-        const ts = candle.timestamp;
-        if (low !== undefined && ts !== undefined && low < absoluteLow) {
-          absoluteLow = low; // Low price
-          pivotTimestamp = ts; // Timestamp
-        }
-        if (high !== undefined && ts !== undefined && high > absoluteHigh) {
-          absoluteHigh = high; // High price
-          highTimestamp = ts;
-        }
+        if (candle.low < absoluteLow) { absoluteLow = candle.low; pivotTimestamp = candle.timestamp; }
+        if (candle.high > absoluteHigh) { absoluteHigh = candle.high; highTimestamp = candle.timestamp; }
       }
       
       const trueScaleFactor = (absoluteHigh - absoluteLow) / 365;
       const daysSincePivot = Math.floor((Date.now() - pivotTimestamp) / (1000 * 60 * 60 * 24));
       const daysSinceHigh = Math.floor((Date.now() - highTimestamp) / (1000 * 60 * 60 * 24));
       
-      const { currentCyclePassed, nextCycle, daysToNextCycle, isReversalWindow } = calculateTimeCycles(daysSincePivot);
-      
-      // The Death Zone (Upward vs Downward)
+      const { isReversalWindow } = calculateTimeCycles(daysSincePivot);
       const upwardAngles = calculateGannAngles(absoluteLow, daysSincePivot, currentPrice, trueScaleFactor);
       const downwardAngles = calculateDownwardGannAngles(absoluteHigh, daysSinceHigh, currentPrice, trueScaleFactor);
       
-      const isApexZone = Math.abs(upwardAngles.angle1x1 - downwardAngles.angle1x1) / currentPrice < 0.05; // Lines crossing within 5%
-
-      const seasons = calculateAnniversaryCycles(pivotTimestamp);
-      const cosmos = calculateCosmicAlignment(currentPrice);
+      const isApexZone = Math.abs(upwardAngles.angle1x1 - downwardAngles.angle1x1) / currentPrice < 0.05; 
       const macro144 = calculateSquareOf144(absoluteLow, trueScaleFactor);
+      const cosmos = calculateCosmicAlignment(currentPrice);
       
       timeAnalysisStr = `Days Since Macro Bottom: ${daysSincePivot}
-Days Since Macro Top: ${daysSinceHigh}
-IS REVERSAL WINDOW (Time Squaring): ${isReversalWindow ? "YES" : "NO"}
-VOLUME CLIMAX DETECTED: ${isVolumeClimax ? "YES (Whale Activity)" : "NO"}
+IS REVERSAL WINDOW: ${isReversalWindow ? "YES" : "NO"}
+VOLUME CLIMAX: ${isVolumeClimax ? "YES" : "NO"}
 
-[GANN APEX GEOMETRY (TRUE SCALE: $${trueScaleFactor.toFixed(2)}/day)]
-Upward 1x1: $${upwardAngles.angle1x1.toFixed(2)} | Pos: ${upwardAngles.position}
-Downward 1x1: $${downwardAngles.angle1x1.toFixed(2)} | Pos: ${downwardAngles.position}
-IS DEATH ZONE APEX (Angles Crossing): ${isApexZone ? "YES - CRITICAL SQUEEZE" : "NO"}
+IS DEATH ZONE APEX: ${isApexZone ? "YES - CRITICAL SQUEEZE" : "NO"}
 
-[MACRO MATRIX: SQUARE OF 144]
-144-Block Macro Resistances: ${macro144.majorResistances.map(r => `$${r.toFixed(0)}`).join(" | ")}
+144-Block Resistances: ${macro144.majorResistances.map(r => `$${r.toFixed(0)}`).join(" | ")}
 
-[SEASONAL & ANNIVERSARY CYCLES]
-Is Anniversary of Macro Bottom: ${seasons.isAnniversary ? "YES" : "NO"}
-Active Solar Quarter: ${seasons.activeSolarQuarter || "None"}
-
-[ESOTERIC FINANCIAL ASTROLOGY]
-Price Degree (360 Wheel): ${cosmos.priceDegree.toFixed(2)}°
-Jupiter Longitude: ${cosmos.jupiterDegree.toFixed(2)}°
-Mars Longitude: ${cosmos.marsDegree.toFixed(2)}°
-ALIGNMENT STATUS: ${cosmos.alignmentString}
-Planetary Price Translation (Jupiter Level): $${cosmos.jupiterPriceSupport.toFixed(2)}
-Vernal Sine Wave (Natural Energy): ${cosmos.naturalEnergyWave > 0 ? "EXPANDING (+)" : "CONTRACTING (-)"} (${cosmos.naturalEnergyWave.toFixed(2)})`;
+Price Degree: ${cosmos.priceDegree.toFixed(2)}°
+Alignment: ${cosmos.alignmentString}`;
     } catch (err) {
       console.warn("Failed to fetch macro history", err);
     }
 
     return `
-[DYNAMIC MARKET ANALYSIS FOR ${timeHorizonDays} DAYS]
-Asset: ${asset}
-Current Price: $${currentPrice.toFixed(2)}
-Selected Timeframe: ${label} (${timeframe})
-Micro Trend (Last 15 ${label} closes):
-${trendStr}
+[DYNAMIC MARKET ANALYSIS - ${asset}]
+Price: $${currentPrice.toFixed(2)}
+Timeframe: ${label}
 
-Macro Trend (1D): See Time Analysis Below
-
-[DEFCON PROTOCOL STATUS]
+[DEFCON PROTOCOL]
 ${defconStatusStr}
 
-[LIVE ORDER BOOK (X-RAY)]
+[X-RAY & TAPE]
 ${xrayAnalysisStr}
-
-[LIVE ORDER FLOW (THE TAPE)]
 ${tapeAnalysisStr}
 
-[LIVE DERIVATIVES (SQUEEZE ZONES)]
+[SQUEEZE ZONES]
 ${derivsStr}
 
-W.D. Gann Support Levels (Closest to Farthest):
-${supports.map((s, i) => `S${i+1}: $${s.toFixed(2)}`).join(" | ")}
+[GANN SUPPORTS/RESISTANCES]
+Supports: ${supports.slice(0,3).map(s => `$${s.toFixed(2)}`).join(" | ")}
+Resistances: ${resistances.slice(0,3).map(r => `$${r.toFixed(2)}`).join(" | ")}
 
-W.D. Gann Resistance Levels (Closest to Farthest):
-${resistances.map((r, i) => `R${i+1}: $${r.toFixed(2)}`).join(" | ")}
-
-[MASTER TIME CYCLES (TIME SQUARING)]
+[TIME SQUARING & GEOMETRY]
 ${timeAnalysisStr}
 
-[SMART MONEY CONCEPTS (INSTITUTIONAL LIQUIDITY)]
+[LIQUIDITY]
 ${smcAnalysisStr}
-
-AI DIRECTIVE:
-1. Review the Trend above to determine if the market is Bullish or Bearish on this timeframe.
-2. Select an appropriate Target (Take Profit) from the Gann Resistances. For short horizons (e.g. 4 days), use R1 or R2. For long horizons (e.g. 180 days), use R5, R6, or R8.
-3. Select an appropriate Stop Loss from the Gann Supports.
-4. INCORPORATE TIME & GEOMETRY: If "IS REVERSAL WINDOW" or "IS SEASONAL REVERSAL" is YES, and price is near Gann Support/Resistance, this is a mathematical "Squaring of Time and Price". Highlight this as extremely high probability. Use the Geometric Position (Gann Fan) to confirm the strength of the trend.
-5. Output your final decision (STRONG BUY / STRONG SHORT / NO TRADE) and exact prices based on this data. If a GANN MASTER SIGNAL is triggered (Time + Price + Geometry align), output "GANN MASTER SIGNAL" instead.
 `;
   } catch (error: any) {
-    return `Failed to analyze market for ${asset}: ${error.message}`;
+    return `Failed to analyze ${asset}: ${error.message}`;
   }
 }
