@@ -1,6 +1,10 @@
 import ccxt from 'ccxt';
 import { calculateGannSquareOf9, calculateTimeCycles, calculateGannAngles, calculateDownwardGannAngles, calculateAnniversaryCycles, calculateCosmicAlignment, calculateSquareOf144 } from './gann';
-import { findFairValueGaps, findOrderBlocks, OHLCV } from './ict';
+import { findFairValueGaps, findOrderBlocks, OHLCV as IctOHLCV } from './ict';
+import { calculateChaosLevel, MacroOHLCV } from './chaos';
+import { calculatePointOfControl } from './volumeProfile';
+import { analyzeOrderBook, OrderBookData } from './orderbook';
+import { analyzeOrderFlow, Trade } from './tape';
 
 export async function analyzeMarketData(asset: string, timeHorizonDays: number): Promise<string> {
   try {
@@ -47,7 +51,7 @@ export async function analyzeMarketData(asset: string, timeHorizonDays: number):
     let smcAnalysisStr = "SMC Data Unavailable";
     try {
       const ohlcv4hRaw = await exchange.fetchOHLCV(asset, '4h', undefined, 50);
-      const ohlcv4h: OHLCV[] = ohlcv4hRaw.map(c => ({
+      const ohlcv4h: IctOHLCV[] = ohlcv4hRaw.map(c => ({
         timestamp: c[0] as number,
         open: c[1] as number,
         high: c[2] as number,
@@ -85,20 +89,79 @@ Total Untested 4H FVGs: ${fvgs.length}`;
       console.warn("Failed to fetch SMC data", err);
     }
 
-    // --- GANN MACRO (RIGHT HEMISPHERE) ---
-    // Fetch Macro Pivot (Last 365 Days) to calculate Time Squaring & True Scale
-    let timeAnalysisStr = "Time Cycle Data Unavailable";
+    let xrayAnalysisStr = "Order Book X-Ray Unavailable";
+    let tapeAnalysisStr = "Order Flow Tape Unavailable";
     try {
-      const macroOhlcv = await exchange.fetchOHLCV(asset, '1d', undefined, 365);
+      // X-Ray Order Book Scan (Level 2)
+      const orderBookRaw = await exchange.fetchOrderBook(asset, 100);
+      const obData: OrderBookData = {
+        bids: orderBookRaw.bids as [number, number][],
+        asks: orderBookRaw.asks as [number, number][]
+      };
+      const xray = analyzeOrderBook(obData);
+      
+      xrayAnalysisStr = `Order Book Imbalance (Bids/Asks): ${xray.imbalanceRatio.toFixed(2)}x
+Whale Buy Wall (Support): $${xray.whaleBuyWallPrice.toFixed(2)} (Vol: $${Math.floor(xray.whaleBuyWallVolumeUSD).toLocaleString()})
+Whale Sell Wall (Resistance): $${xray.whaleSellWallPrice.toFixed(2)} (Vol: $${Math.floor(xray.whaleSellWallVolumeUSD).toLocaleString()})`;
+
+      // Tape Reader (Order Flow)
+      const recentTradesRaw = await exchange.fetchTrades(asset, undefined, 500);
+      const trades: Trade[] = recentTradesRaw.map(t => ({
+        side: t.side || 'unknown',
+        price: t.price || 0,
+        amount: t.amount || 0,
+        timestamp: t.timestamp || 0
+      }));
+      
+      const tape = analyzeOrderFlow(trades);
+      tapeAnalysisStr = `Cumulative Volume Delta (CVD): $${Math.floor(tape.cvd).toLocaleString()}
+Aggression Status: ${tape.cvdStatus}
+Taker Buy Vol: $${Math.floor(tape.aggressiveBuyVolumeUSD).toLocaleString()} | Taker Sell Vol: $${Math.floor(tape.aggressiveSellVolumeUSD).toLocaleString()}`;
+      
+    } catch (err) {
+      console.warn("Failed to fetch order book or trades", err);
+    }
+
+    // --- GANN MACRO (RIGHT HEMISPHERE) & CHAOS ENGINE ---
+    // Fetch Macro Pivot (Last 365 Days) to calculate Time Squaring, True Scale, and DEFCON level
+    let timeAnalysisStr = "Time Cycle Data Unavailable";
+    let defconStatusStr = "DEFCON Status Unavailable";
+    try {
+      const macroOhlcvRaw = await exchange.fetchOHLCV(asset, '1d', undefined, 365);
+      const macroOhlcv: MacroOHLCV[] = macroOhlcvRaw.map(c => ({
+        timestamp: c[0] as number,
+        open: c[1] as number,
+        high: c[2] as number,
+        low: c[3] as number,
+        close: c[4] as number,
+        volume: c[5] as number
+      }));
+      
+      const latestMacroClose = macroOhlcv[macroOhlcv.length-1].close;
+      const firstMacroClose = macroOhlcv[0].close;
+      
+      // 1. Calculate Chaos / DEFCON Level
+      const chaos = calculateChaosLevel(macroOhlcv);
+      defconStatusStr = `Current Chaos Level: ${chaos.level}
+Description: ${chaos.description}`;
+
+      // 1.5 Calculate Volume Profile / Point of Control (POC)
+      const macroPOC = calculatePointOfControl(macroOhlcv);
+      const pocStr = macroPOC ? `$${macroPOC.toFixed(2)}` : "Unavailable";
+      // We inject this POC string into the smcAnalysisStr
+      smcAnalysisStr += `\nMacro Point of Control (POC - Gravity Magnet): ${pocStr}`;
+
+      // 2. Gann Mathematics
+      // Find Absolute Macro Low for True Scale calculation
       let absoluteLow = Infinity;
       let absoluteHigh = -Infinity;
       let pivotTimestamp = 0;
       let highTimestamp = 0;
       
       for (const candle of macroOhlcv) {
-        const low = candle[3] as number;
-        const high = candle[2] as number;
-        const ts = candle[0] as number;
+        const low = candle.low;
+        const high = candle.high;
+        const ts = candle.timestamp;
         if (low !== undefined && ts !== undefined && low < absoluteLow) {
           absoluteLow = low; // Low price
           pivotTimestamp = ts; // Timestamp
@@ -162,6 +225,15 @@ Micro Trend (Last 15 ${label} closes):
 ${trendStr}
 
 Macro Trend (1D): See Time Analysis Below
+
+[DEFCON PROTOCOL STATUS]
+${defconStatusStr}
+
+[LIVE ORDER BOOK (X-RAY)]
+${xrayAnalysisStr}
+
+[LIVE ORDER FLOW (THE TAPE)]
+${tapeAnalysisStr}
 
 W.D. Gann Support Levels (Closest to Farthest):
 ${supports.map((s, i) => `S${i+1}: $${s.toFixed(2)}`).join(" | ")}

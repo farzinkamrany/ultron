@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 1. Fetch Macro Sentiment (Fear & Greed Index)
-    let fearGreedValue = "Unknown";
+    let fearGreedValue: string | number = "Unknown";
     let fearGreedClass = "Unknown";
     try {
       const fgRes = await new Promise<any>((resolve, reject) => {
@@ -165,6 +165,10 @@ Rule 4: ESOTERIC MATH: If the Vernal Sine Wave is EXPANDING (+), it adds bullish
 Rule 5: MACRO 144: Use the 144-Block Macro Resistances as the ultimate multi-year targets.
 Rule 6: SMART MONEY CONCEPTS (SMC): You MUST use the Nearest Swept Order Block as the exact "نقطه ورود" (Entry Point). If the OB is NOT swept, it is low probability, so prefer a Gann Level instead.
 Rule 7: VWAP FILTER: You MUST NOT issue a STRONG BUY if the Institutional VWAP trend is BEARISH. You MUST NOT issue a STRONG SHORT if the VWAP trend is BULLISH. Output WAIT FOR LIMIT ORDER instead.
+Rule 8: DEFCON CHAOS OVERRIDE: If the DEFCON Protocol Status is LEVEL 1 or LEVEL 2, you MUST ABANDON ALL GANN AND SMC LOGIC. You must output "DEFCON EMERGENCY: LIQUIDATE TO CASH" as your final decision, and set Entry, Target, and Stop Loss to "N/A".
+Rule 9: POC GRAVITY: The Macro Point of Control (POC) is a massive magnet. If the price is far away from the POC, the macro probability is that it will return to the POC. Weight your directional bias towards the POC.
+Rule 10: X-RAY ORDER BOOK: If you are going to issue a STRONG BUY or GANN MASTER ASCENSION, you MUST cross-reference your entry price with the Order Book X-Ray. There MUST be a Whale Buy Wall at or near your entry price. If the order book is empty there, abort and issue WAIT FOR LIMIT ORDER.
+Rule 11: TAPE READING (ANTI-SPOOFING): Even if Rule 10 shows a Whale Wall, you MUST check the Live Order Flow (The Tape). If the Cumulative Volume Delta (CVD) shows "EXTREME AGGRESSIVE SELLING (PANIC DUMP)", the Buy Wall is likely a SPOOF (fake). Abort the trade and issue WAIT FOR LIMIT ORDER at a lower price.
 
 [LIVE HARD DATA]
 Macro Sentiment (Fear & Greed): ${fearGreedValue}/100 (${fearGreedClass})
@@ -177,7 +181,7 @@ Format EXACTLY like this for each asset. Output ONLY this format in Persian:
 ⏳ بُعد چهارم (زمان و هندسه): [وضعیت فعلی در فن‌های گن صعودی/نزولی و ماتریس ۱۴۴]
 🌌 بُعد پنجم (نجوم باطنی): [آلارم کیهانی، ترجمه قیمت سیاره مشتری و موج سینوسی بهاری]
 🏦 ردپای نهنگ‌ها (SMC): [وضعیت اوردر بلاک‌ها و نقدینگی]
-💡 تصمیم نهایی: [GANN MASTER ASCENSION SIGNAL / STRONG BUY / STRONG SHORT / SCALP BUY / SCALP SHORT / WAIT FOR LIMIT ORDER]
+💡 تصمیم نهایی: [GANN MASTER ASCENSION SIGNAL / STRONG BUY / STRONG SHORT / SCALP BUY / SCALP SHORT / WAIT FOR LIMIT ORDER / DEFCON EMERGENCY: LIQUIDATE TO CASH]
 🟢 نقطه ورود: [Exact Price from Swept OB or Gann Level]
 🎯 تارگت یک روزه: [Exact Price from Gann Resistance/Support]
 🔴 حد ضرر: [Exact Price below OB or Gann Level]`;
