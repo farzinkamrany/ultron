@@ -1,4 +1,6 @@
-// W.D. Gann Predictive Trading Engine - Basic Implementation
+// W.D. Gann Predictive Trading Engine - True Ascension
+
+import { AstroTime, Body, EclipticLongitude } from 'astronomy-engine';
 
 export interface Candle {
   timestamp: number;
@@ -20,13 +22,9 @@ export interface TradeSignal {
 
 /**
  * Calculates Support/Resistance levels based on Gann Square of 9
- * Formula: Level = (sqrt(Price) +/- increment)^2
  */
 export function calculateGannSquareOf9(price: number): { supports: number[], resistances: number[] } {
   const root = Math.sqrt(price);
-  
-  // Standard increments based on degrees (e.g. 0.25 = 45 degrees, 0.5 = 90 degrees, 1 = 360 degrees, 2 = 720 degrees)
-  // We include larger increments (2, 3, 4) to allow for 6-month macro targets.
   const increments = [0.125, 0.25, 0.5, 1, 1.5, 2, 3, 4]; 
   
   const supports = increments.map(inc => Math.pow(root - inc, 2));
@@ -37,13 +35,28 @@ export function calculateGannSquareOf9(price: number): { supports: number[], res
 
 /**
  * Gann Master Time Cycles (Days)
- * These represent key harmonic divisions of a 360-degree circle (year).
  */
 export const GANN_TIME_CYCLES = [7, 14, 21, 45, 90, 135, 144, 180, 270, 360];
 
+/**
+ * Gann Square of 144 (Master Macro Matrix)
+ * Divides the price action into 144 harmonic blocks.
+ */
+export function calculateSquareOf144(absoluteLow: number, trueScaleFactor: number) {
+  // A master 144 block cycle. 144 is the square of 12.
+  const blockHeight = trueScaleFactor * 144;
+  const majorResistances = [
+    absoluteLow + (blockHeight * 0.25), // 36 block
+    absoluteLow + (blockHeight * 0.50), // 72 block
+    absoluteLow + (blockHeight * 0.75), // 108 block
+    absoluteLow + blockHeight           // 144 block (The Master Completion)
+  ];
+  return { majorResistances, blockHeight };
+}
+
 export function calculateTimeCycles(daysSincePivot: number): { currentCyclePassed: number, nextCycle: number, daysToNextCycle: number, isReversalWindow: boolean } {
   let currentCyclePassed = 0;
-  let nextCycle = GANN_TIME_CYCLES[GANN_TIME_CYCLES.length - 1]; // default to max
+  let nextCycle = GANN_TIME_CYCLES[GANN_TIME_CYCLES.length - 1];
 
   for (const cycle of GANN_TIME_CYCLES) {
     if (daysSincePivot >= cycle) {
@@ -55,25 +68,19 @@ export function calculateTimeCycles(daysSincePivot: number): { currentCyclePasse
   }
 
   const daysToNextCycle = nextCycle - daysSincePivot;
-  
-  // A Reversal Window is considered +/- 3 days from an exact Gann Cycle
   const isReversalWindow = (daysToNextCycle <= 3) || (daysSincePivot - currentCyclePassed <= 3 && currentCyclePassed !== 0);
 
   return { currentCyclePassed, nextCycle, daysToNextCycle, isReversalWindow };
 }
 
 /**
- * Gann Angles (Gann Fans)
+ * Gann Angles (Gann Fans) - True Geometric Scaling
  * Calculates geometric support/resistance lines originating from a pivot.
- * Auto-scales the 1x1 angle based on 0.25% daily growth of the pivot price.
  */
-export function calculateGannAngles(pivotPrice: number, daysSincePivot: number, currentPrice: number) {
-  // Scale factor: 1x1 angle represents 0.25% daily growth of the pivot price
-  const scaleFactor = pivotPrice * 0.0025;
-  
-  const angle1x2 = pivotPrice + (daysSincePivot * scaleFactor * 0.5); // Slow growth
-  const angle1x1 = pivotPrice + (daysSincePivot * scaleFactor * 1.0); // Balanced growth (45 deg)
-  const angle2x1 = pivotPrice + (daysSincePivot * scaleFactor * 2.0); // Fast growth
+export function calculateGannAngles(pivotPrice: number, daysSincePivot: number, currentPrice: number, trueScaleFactor: number) {
+  const angle1x2 = pivotPrice + (daysSincePivot * trueScaleFactor * 0.5); 
+  const angle1x1 = pivotPrice + (daysSincePivot * trueScaleFactor * 1.0); 
+  const angle2x1 = pivotPrice + (daysSincePivot * trueScaleFactor * 2.0); 
 
   let position = "BELOW 1x2 (Extremely Bearish)";
   if (currentPrice > angle2x1) position = "ABOVE 2x1 (Extremely Bullish)";
@@ -84,8 +91,24 @@ export function calculateGannAngles(pivotPrice: number, daysSincePivot: number, 
 }
 
 /**
+ * Downward Gann Angles (Gann Fans)
+ * Calculates geometric resistance lines originating from a macro Top.
+ */
+export function calculateDownwardGannAngles(pivotHighPrice: number, daysSinceHigh: number, currentPrice: number, trueScaleFactor: number) {
+  const angle1x2 = pivotHighPrice - (daysSinceHigh * trueScaleFactor * 0.5); 
+  const angle1x1 = pivotHighPrice - (daysSinceHigh * trueScaleFactor * 1.0); 
+  const angle2x1 = pivotHighPrice - (daysSinceHigh * trueScaleFactor * 2.0); 
+
+  let position = "ABOVE 1x2 (Bearish exhaustion / Potential reversal)";
+  if (currentPrice < angle2x1) position = "BELOW 2x1 (Extremely Bearish / Freefall)";
+  else if (currentPrice < angle1x1) position = "BETWEEN 1x1 and 2x1 (Bearish)";
+  else if (currentPrice < angle1x2) position = "BETWEEN 1x2 and 1x1 (Weak Bearish)";
+
+  return { angle1x2, angle1x1, angle2x1, position };
+}
+
+/**
  * Gann Seasonal & Anniversary Cycles
- * Checks if today aligns with a historical pivot anniversary or a major Solar Equinox/Solstice.
  */
 export function calculateAnniversaryCycles(pivotTimestamp: number) {
   const today = new Date();
@@ -96,11 +119,8 @@ export function calculateAnniversaryCycles(pivotTimestamp: number) {
   const pivotMonth = pivot.getUTCMonth();
   const pivotDay = pivot.getUTCDate();
 
-  // 1. Anniversary Check (Same Month and Day as the Pivot)
   const isAnniversary = (currentMonth === pivotMonth && Math.abs(currentDay - pivotDay) <= 3);
 
-  // 2. Solar Quarters Check
-  // Mar 21 (02-21), Jun 21 (05-21), Sep 23 (08-23), Dec 21 (11-21)
   const solarDates = [
     { m: 2, d: 21, name: "Vernal Equinox" },
     { m: 5, d: 21, name: "Summer Solstice" },
@@ -122,50 +142,96 @@ export function calculateAnniversaryCycles(pivotTimestamp: number) {
 }
 
 /**
- * Analyzes market data to find Gann alignments and emit paper-trade signals.
- * Incorporates strict 2% risk management.
+ * Financial Astrology: Cosmic Alignment
+ * Checks if the current asset price harmonizes with the ecliptic longitudes of Jupiter or Mars.
  */
-export function analyzeGannSetup(symbol: string, currentPrice: number, recentCandles: Candle[]): TradeSignal {
-  // 1. Find recent major pivot (simplified: highest high and lowest low in lookback)
-  let highest = -Infinity;
-  let lowest = Infinity;
-  for (const c of recentCandles) {
-    if (c.high > highest) highest = c.high;
-    if (c.low < lowest) lowest = c.low;
-  }
-
-  // 2. Calculate Gann Levels
-  const { supports, resistances } = calculateGannSquareOf9(lowest); // using major bottom as base
-
-  // 3. Determine if current price is bouncing off a Gann Support
-  const closestSupport = supports.find(s => Math.abs(currentPrice - s) / currentPrice < 0.01); // 1% tolerance
+export function calculateCosmicAlignment(currentPrice: number) {
+  const time = new AstroTime(new Date());
   
-  if (closestSupport && currentPrice > closestSupport) {
-    // Structural bounce detected -> BUY SIGNAL
-    // Strict Guardrail: Stop-Loss just below support, max risk 2%
-    const stopLoss = closestSupport * 0.99; 
+  // Get Ecliptic Longitude (0 to 360 degrees)
+  const jupiterLon = EclipticLongitude(Body.Jupiter, time);
+  const marsLon = EclipticLongitude(Body.Mars, time);
+
+  // Normalize current price to a 360 degree wheel
+  // E.g., $65,000 -> 65000 % 360 = 200 degrees
+  const priceDegree = currentPrice % 360;
+
+  // Check for Conjunction (0 deg), Opposition (180 deg), or Square (90 deg)
+  const checkAlignment = (planetDeg: number, priceDeg: number) => {
+    const diff = Math.abs(planetDeg - priceDeg);
+    const minDiff = Math.min(diff, 360 - diff); // Shortest path on circle
     
-    // Validate max drawdown (Risk = Entry - StopLoss)
-    const riskPercent = (currentPrice - stopLoss) / currentPrice;
+    // Conjunction (Price directly on planet)
+    if (minDiff <= 5) return "Conjunction";
+    // Opposition (Price exactly opposite planet)
+    if (Math.abs(minDiff - 180) <= 5) return "Opposition";
+    // Square (Price at 90 deg to planet)
+    if (Math.abs(minDiff - 90) <= 5) return "Square";
     
-    if (riskPercent <= 0.02) {
-       return {
-         symbol,
-         action: "BUY",
-         entryPrice: currentPrice,
-         stopLoss: stopLoss,
-         takeProfit: resistances[0] || (currentPrice * 1.05), // First resistance or 5% gain
-         reason: `Price bounced off Gann Square of 9 support level (${closestSupport.toFixed(2)}). Risk is ${ (riskPercent*100).toFixed(2) }%.`
-       };
-    }
+    return null;
+  };
+
+  const jupiterAlign = checkAlignment(jupiterLon, priceDegree);
+  const marsAlign = checkAlignment(marsLon, priceDegree);
+
+  // Check Inter-Planetary Aspect (Jupiter vs Mars)
+  const planetDiff = Math.abs(jupiterLon - marsLon);
+  const minPlanetDiff = Math.min(planetDiff, 360 - planetDiff);
+  
+  let planetaryAspect = null;
+  if (minPlanetDiff <= 5) planetaryAspect = "CONJUNCTION (0°)";
+  else if (Math.abs(minPlanetDiff - 90) <= 5) planetaryAspect = "SQUARE (90°)";
+  else if (Math.abs(minPlanetDiff - 180) <= 5) planetaryAspect = "OPPOSITION (180°)";
+
+  let alignmentString = "No Cosmic Alignment";
+  if (planetaryAspect) {
+    alignmentString = `⚠️ PLANETARY ASPECT WARNING: Jupiter and Mars are in ${planetaryAspect}. Massive cosmic volatility expected.`;
+  } else if (jupiterAlign && marsAlign) {
+    alignmentString = `Double Cosmic Alignment: Jupiter (${jupiterAlign}) & Mars (${marsAlign})`;
+  } else if (jupiterAlign) {
+    alignmentString = `Cosmic Alignment: Jupiter (${jupiterAlign})`;
+  } else if (marsAlign) {
+    alignmentString = `Cosmic Alignment: Mars (${marsAlign})`;
   }
 
+  // --- ESOTERIC TRANSLATIONS ---
+  // 1. Planetary Price Translation (Jupiter Longitude mapped to Price)
+  // If Jupiter is at 144 degrees, a harmonic price support is $14400.
+  // We find the closest order of magnitude for the current price.
+  let orderOfMagnitude = Math.pow(10, Math.floor(Math.log10(currentPrice)));
+  if (orderOfMagnitude < 10) orderOfMagnitude = 10;
+  
+  // Normalize jupiter longitude to match the asset's magnitude (e.g., 200 degrees -> $20,000 for BTC)
+  let jupiterPriceSupport = (jupiterLon / 360) * orderOfMagnitude;
+  if (jupiterPriceSupport < currentPrice / 2) jupiterPriceSupport *= 10; // scale up if needed
+
+  // 2. Vernal Equinox Sine Wave (Natural Energy)
+  const date = new Date();
+  const currentYear = date.getFullYear();
+  const vernalEquinox = new Date(`${currentYear}-03-21T00:00:00Z`);
+  const daysSinceVernal = Math.floor((date.getTime() - vernalEquinox.getTime()) / (1000 * 60 * 60 * 24));
+  // A full cycle is 365.25 days. We convert days to radians.
+  const naturalEnergyWave = Math.sin((daysSinceVernal / 365.25) * Math.PI * 2);
+
+  return {
+    jupiterDegree: jupiterLon,
+    marsDegree: marsLon,
+    priceDegree: priceDegree,
+    planetaryAspect,
+    alignmentString,
+    jupiterPriceSupport,
+    naturalEnergyWave
+  };
+}
+
+export function analyzeGannSetup(symbol: string, currentPrice: number, recentCandles: Candle[]): TradeSignal {
+  // Legacy function kept for interface compatibility
   return {
     symbol,
     action: "HOLD",
     entryPrice: currentPrice,
     stopLoss: 0,
     takeProfit: 0,
-    reason: "No optimal Gann alignment or risk too high (>2%)."
+    reason: "Delegated to AI Agent"
   };
 }

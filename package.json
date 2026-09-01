@@ -13,6 +13,7 @@
     "@types/node-fetch": "^2.6.13",
     "@upstash/qstash": "^2.11.3",
     "@upstash/redis": "^1.38.3",
+    "astronomy-engine": "^2.1.19",
     "ccxt": "^4.5.76",
     "clsx": "^2.1.1",
     "framer-motion": "^11.0.0",

@@ -1,5 +1,5 @@
 import ccxt from 'ccxt';
-import { calculateGannSquareOf9, calculateTimeCycles, calculateGannAngles, calculateAnniversaryCycles } from './gann';
+import { calculateGannSquareOf9, calculateTimeCycles, calculateGannAngles, calculateDownwardGannAngles, calculateAnniversaryCycles, calculateCosmicAlignment, calculateSquareOf144 } from './gann';
 
 export async function analyzeMarketData(asset: string, timeHorizonDays: number): Promise<string> {
   try {
@@ -34,43 +34,76 @@ export async function analyzeMarketData(asset: string, timeHorizonDays: number):
     
     // Calculate full spectrum of Gann levels
     const { supports, resistances } = calculateGannSquareOf9(currentPrice);
+    
+    // Calculate Volume Climax (30-day average vs current)
+    const recentVols = ohlcv.map(candle => candle[5] as number);
+    const currentVol = recentVols[recentVols.length - 1];
+    const avgVol = recentVols.reduce((a, b) => a + b, 0) / recentVols.length;
+    const isVolumeClimax = currentVol > (avgVol * 2.0); // 200% spike
 
-    // Fetch Macro Pivot (Last 365 Days) to calculate Time Squaring
+    // Fetch Macro Pivot (Last 365 Days) to calculate Time Squaring & True Scale
     let timeAnalysisStr = "Time Cycle Data Unavailable";
     try {
       const macroOhlcv = await exchange.fetchOHLCV(asset, '1d', undefined, 365);
       let absoluteLow = Infinity;
+      let absoluteHigh = -Infinity;
       let pivotTimestamp = 0;
+      let highTimestamp = 0;
       
       for (const candle of macroOhlcv) {
         const low = candle[3] as number;
+        const high = candle[2] as number;
         const ts = candle[0] as number;
         if (low !== undefined && ts !== undefined && low < absoluteLow) {
           absoluteLow = low; // Low price
           pivotTimestamp = ts; // Timestamp
         }
+        if (high !== undefined && ts !== undefined && high > absoluteHigh) {
+          absoluteHigh = high; // High price
+          highTimestamp = ts;
+        }
       }
       
+      const trueScaleFactor = (absoluteHigh - absoluteLow) / 365;
       const daysSincePivot = Math.floor((Date.now() - pivotTimestamp) / (1000 * 60 * 60 * 24));
+      const daysSinceHigh = Math.floor((Date.now() - highTimestamp) / (1000 * 60 * 60 * 24));
+      
       const { currentCyclePassed, nextCycle, daysToNextCycle, isReversalWindow } = calculateTimeCycles(daysSincePivot);
-      const angles = calculateGannAngles(absoluteLow, daysSincePivot, currentPrice);
+      
+      // The Death Zone (Upward vs Downward)
+      const upwardAngles = calculateGannAngles(absoluteLow, daysSincePivot, currentPrice, trueScaleFactor);
+      const downwardAngles = calculateDownwardGannAngles(absoluteHigh, daysSinceHigh, currentPrice, trueScaleFactor);
+      
+      const isApexZone = Math.abs(upwardAngles.angle1x1 - downwardAngles.angle1x1) / currentPrice < 0.05; // Lines crossing within 5%
+
       const seasons = calculateAnniversaryCycles(pivotTimestamp);
+      const cosmos = calculateCosmicAlignment(currentPrice);
+      const macro144 = calculateSquareOf144(absoluteLow, trueScaleFactor);
       
       timeAnalysisStr = `Days Since Macro Bottom: ${daysSincePivot}
-Last Passed Gann Cycle: ${currentCyclePassed} Days
-Next Gann Cycle: ${nextCycle} Days (in ${daysToNextCycle} days)
+Days Since Macro Top: ${daysSinceHigh}
 IS REVERSAL WINDOW (Time Squaring): ${isReversalWindow ? "YES" : "NO"}
+VOLUME CLIMAX DETECTED: ${isVolumeClimax ? "YES (Whale Activity)" : "NO"}
 
-[GANN FAN GEOMETRY]
-1x2 Angle (Slow): $${angles.angle1x2.toFixed(2)}
-1x1 Angle (45 deg): $${angles.angle1x1.toFixed(2)}
-2x1 Angle (Fast): $${angles.angle2x1.toFixed(2)}
-Current Geometric Position: ${angles.position}
+[GANN APEX GEOMETRY (TRUE SCALE: $${trueScaleFactor.toFixed(2)}/day)]
+Upward 1x1: $${upwardAngles.angle1x1.toFixed(2)} | Pos: ${upwardAngles.position}
+Downward 1x1: $${downwardAngles.angle1x1.toFixed(2)} | Pos: ${downwardAngles.position}
+IS DEATH ZONE APEX (Angles Crossing): ${isApexZone ? "YES - CRITICAL SQUEEZE" : "NO"}
+
+[MACRO MATRIX: SQUARE OF 144]
+144-Block Macro Resistances: ${macro144.majorResistances.map(r => `$${r.toFixed(0)}`).join(" | ")}
 
 [SEASONAL & ANNIVERSARY CYCLES]
 Is Anniversary of Macro Bottom: ${seasons.isAnniversary ? "YES" : "NO"}
 Active Solar Quarter: ${seasons.activeSolarQuarter || "None"}
-IS SEASONAL REVERSAL: ${seasons.isSeasonalReversal ? "YES - CRITICAL REVERSAL EXPECTED" : "NO"}`;
+
+[ESOTERIC FINANCIAL ASTROLOGY]
+Price Degree (360 Wheel): ${cosmos.priceDegree.toFixed(2)}°
+Jupiter Longitude: ${cosmos.jupiterDegree.toFixed(2)}°
+Mars Longitude: ${cosmos.marsDegree.toFixed(2)}°
+ALIGNMENT STATUS: ${cosmos.alignmentString}
+Planetary Price Translation (Jupiter Level): $${cosmos.jupiterPriceSupport.toFixed(2)}
+Vernal Sine Wave (Natural Energy): ${cosmos.naturalEnergyWave > 0 ? "EXPANDING (+)" : "CONTRACTING (-)"} (${cosmos.naturalEnergyWave.toFixed(2)})`;
     } catch (err) {
       console.warn("Failed to fetch macro history", err);
     }
