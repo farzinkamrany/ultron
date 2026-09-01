@@ -1,9 +1,6 @@
 // Pro Models (for complex reasoning, decision-making, coding)
 export const PRO_MODELS = [
-  "gemini-3-pro",
   "gemini-3.1-pro",   // Best available
-  "gemini-2.5-pro",           // Stable high-quality
-  "gemini-1.5-pro",           // Classic fallback
 ];
 
 // Flash Models (for speed, stability, and everyday conversations)
