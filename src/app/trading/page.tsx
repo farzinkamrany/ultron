@@ -6,6 +6,7 @@ import { ArrowLeft, Activity, ShieldAlert, BarChart3, Database, Star, Plus, X } 
 import { createChart, IChartApi, ISeriesApi, LineSeries } from "lightweight-charts";
 import { useOrderBook } from "@/hooks/useOrderBook";
 import { useTradingStore } from "@/store/tradingStore";
+import { PaperTradesTable } from "@/components/trading/PaperTradesTable";
 
 const POPULAR_PAIRS = [
   "BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "ADAUSDT", 
@@ -24,9 +25,12 @@ export default function TradingDashboard() {
   const [showDropdown, setShowDropdown] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
   
-  const { favorites, addFavorite, removeFavorite } = useTradingStore();
+  const { favorites, addFavorite, removeFavorite, fetchPaperTrades } = useTradingStore();
 
-  useEffect(() => setIsMounted(true), []);
+  useEffect(() => {
+    setIsMounted(true);
+    fetchPaperTrades();
+  }, [fetchPaperTrades]);
   
   // Custom WebSocket Hook
   const orderBook = useOrderBook(symbol);
@@ -206,7 +210,7 @@ export default function TradingDashboard() {
       )}
 
       {/* Main Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-6">
         
         {/* Left Column: Charts & Metrics */}
         <div className="lg:col-span-8 flex flex-col gap-6">
@@ -305,6 +309,12 @@ export default function TradingDashboard() {
         </div>
 
       </div>
+
+      {/* Full Width Row: Paper Trades Ledger */}
+      <div className="mt-8">
+        <PaperTradesTable />
+      </div>
+
     </div>
   );
 }

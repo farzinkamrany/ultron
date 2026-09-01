@@ -15,11 +15,18 @@ export interface HuntResult {
   passed: boolean;
 }
 
+export interface HuntTrade {
+  symbol: string;
+  entryPrice: number;
+  targetPrice: number;
+  stopLoss: number;
+}
+
 /**
  * Scans the top altcoins to find one that can hit the target profit percentage.
  * Performs a "Fast Pass" checking Gann Supports/Resistances to avoid rate limits.
  */
-export async function huntForSetup(targetProfitPerc: number): Promise<string | null> {
+export async function huntForSetup(targetProfitPerc: number): Promise<HuntTrade | null> {
   const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
   const exchange = new ccxt.binance({ enableRateLimit: true });
   
@@ -27,7 +34,7 @@ export async function huntForSetup(targetProfitPerc: number): Promise<string | n
     exchange.httpsProxy = proxyUrl;
   }
 
-  let bestAsset: string | null = null;
+  let bestTrade: HuntTrade | null = null;
   let bestScore = -1000;
 
   for (const asset of TOP_ALTCOINS) {
@@ -69,7 +76,12 @@ export async function huntForSetup(targetProfitPerc: number): Promise<string | n
           const score = targetDistancePerc - distanceToSupportPerc;
           if (score > bestScore) {
             bestScore = score;
-            bestAsset = asset;
+            bestTrade = {
+              symbol: asset,
+              entryPrice: currentPrice,
+              targetPrice: closestResistance,
+              stopLoss: closestSupport * 0.99 // SL is 1% below the immediate Gann Support
+            };
           }
         }
       }
@@ -82,5 +94,5 @@ export async function huntForSetup(targetProfitPerc: number): Promise<string | n
     }
   }
 
-  return bestAsset;
+  return bestTrade;
 }

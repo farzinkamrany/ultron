@@ -97,14 +97,14 @@ export async function POST(req: NextRequest) {
         const bestAsset = await huntForSetup(targetPerc);
         
         if (bestAsset) {
-          await sendTelegramMessage(chatId, `🎯 शिकार یافت شد: ${bestAsset}. در حال اجرای X-Ray و نوارخوان...`);
+          await sendTelegramMessage(chatId, `🎯 شکار یافت شد: ${bestAsset.symbol}. در حال اجرای X-Ray و نوارخوان...`);
           // Run the full 11-rule analysis on this specific asset
-          const marketData = await analyzeMarketData(bestAsset, 30);
+          const marketData = await analyzeMarketData(bestAsset.symbol, 30);
           
           const hunterMessages = [
             { role: 'user', content: ULTRON_SYSTEM_PROMPT },
             { role: 'model', content: "Understood. I am Ultron. I will analyze the data with 100% mathematical precision." },
-            { role: 'user', content: `Run a full analysis on ${bestAsset} based on this data:\n${marketData}` }
+            { role: 'user', content: `Run a full analysis on ${bestAsset.symbol} based on this data:\n${marketData}` }
           ];
           replyText = await generateAIResponse(hunterMessages, false, tryPro);
         } else {
