@@ -1,5 +1,6 @@
 import ccxt from 'ccxt';
-import { calculateGannSquareOf9, calculateTimeCycles, calculateGannAngles, calculateDownwardGannAngles, calculateAnniversaryCycles, calculateCosmicAlignment, calculateSquareOf144 } from './gann';
+import { HttpsProxyAgent } from 'https-proxy-agent';
+import { calculateGannSquareOf9, calculateTimeCycles, calculateGannAngles, calculateDownwardGannAngles, calculateCosmicAlignment, calculateSquareOf144 } from './gann';
 import { findFairValueGaps, findOrderBlocks, OHLCV as IctOHLCV } from './ict';
 import { calculateChaosLevel, MacroOHLCV } from './chaos';
 import { calculatePointOfControl } from './volumeProfile';
@@ -13,20 +14,20 @@ const PROXY_LIST = [
   'http://46.224.23.10:8080'
 ];
 
-function getProxy() {
-  return PROXY_LIST[Math.floor(Math.random() * PROXY_LIST.length)];
+function getAgent() {
+  const proxy = PROXY_LIST[Math.floor(Math.random() * PROXY_LIST.length)];
+  return new HttpsProxyAgent(proxy);
 }
 
 export async function analyzeMarketData(asset: string, timeHorizonDays: number): Promise<string> {
   try {
     const exchange = new ccxt.binance({ 
       enableRateLimit: true,
+      agent: getAgent(),
       options: {
         defaultType: 'spot'
       }
     });
-
-    exchange.httpsProxy = getProxy();
     
     let timeframe = '1d';
     let label = 'Daily';
@@ -45,8 +46,6 @@ export async function analyzeMarketData(asset: string, timeHorizonDays: number):
     const ohlcv = await exchange.fetchOHLCV(asset, timeframe, undefined, 15);
     const closes = ohlcv.map(candle => candle[4]);
     const currentPrice = closes[closes.length - 1] as number;
-    
-    const trendStr = closes.map(c => `$${c}`).join(" -> ");
     
     const { supports, resistances } = calculateGannSquareOf9(currentPrice);
     
@@ -147,7 +146,7 @@ Sentiment: ${derivs.sentiment}`;
 Description: ${chaos.description}`;
 
       const macroPOC = calculatePointOfControl(macroOhlcv);
-      smcAnalysisStr += `\
+      smcAnalysisStr += `
 Macro POC (Gravity Magnet): $${macroPOC?.toFixed(2)}`;
 
       let absoluteLow = Infinity;
@@ -212,6 +211,6 @@ ${timeAnalysisStr}
 ${smcAnalysisStr}
 `;
   } catch (error: any) {
-    return `Failed to analyze ${asset}: ${error.message}`;
+    return \`Failed to analyze ${asset}: ${error.message}\`;
   }
 }
