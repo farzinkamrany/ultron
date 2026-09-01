@@ -5,6 +5,9 @@ import { sendTelegramMessage, sendTelegramAction, getTelegramFileBuffer, sendTel
 import { generateAIResponse } from '@/lib/ai';
 import { generateSpeech } from '@/lib/audio';
 import { verifyQStashSignature } from '@/lib/qstash';
+import { huntForSetup } from '@/lib/trading/hunter';
+import { analyzeMarketData } from '@/lib/trading/market';
+import { ULTRON_SYSTEM_PROMPT } from '@/lib/prompt';
 
 export const maxDuration = 60;
 export const runtime = "nodejs";
@@ -80,10 +83,37 @@ export async function POST(req: NextRequest) {
     }
     const tryPro = modelPref === 'pro';
 
-    // 3. Generate AI response (can take up to 60s — no Telegram timeout here!)
+    // 3. Check if it's a Hunter/Screener Command
     let replyText = "متاسفانه خطایی در ارتباط با هوش مصنوعی رخ داد.";
+    const huntRegex = /(\d+)\s*(درصد|%)/i;
+    const isHuntRequest = contentStr && (contentStr.includes('شکار') || contentStr.includes('پیدا کن') || contentStr.includes('ارز بگو')) && huntRegex.test(contentStr);
+
     try {
-      replyText = await generateAIResponse(messages, false, tryPro);
+      if (isHuntRequest) {
+        await sendTelegramMessage(chatId, "🐺 در حال اسکن بازار جهانی (Top 20)... این کار ممکن است ۲۰ ثانیه طول بکشد.");
+        const match = contentStr.match(huntRegex);
+        const targetPerc = match ? parseInt(match[1]) : 10;
+        
+        const bestAsset = await huntForSetup(targetPerc);
+        
+        if (bestAsset) {
+          await sendTelegramMessage(chatId, `🎯 शिकार یافت شد: ${bestAsset}. در حال اجرای X-Ray و نوارخوان...`);
+          // Run the full 11-rule analysis on this specific asset
+          const marketData = await analyzeMarketData(bestAsset, 30);
+          
+          const hunterMessages = [
+            { role: 'user', content: ULTRON_SYSTEM_PROMPT },
+            { role: 'model', content: "Understood. I am Ultron. I will analyze the data with 100% mathematical precision." },
+            { role: 'user', content: `Run a full analysis on ${bestAsset} based on this data:\n${marketData}` }
+          ];
+          replyText = await generateAIResponse(hunterMessages, false, tryPro);
+        } else {
+          replyText = `هیچ ارزی در ۲۰ کوین برتر پیدا نشد که در حال حاضر موقعیت امن برای تارگت ${targetPerc}٪ داشته باشد. (یا از حمایت دور هستند یا اردر بوک خالی است).`;
+        }
+      } else {
+        // Normal Chatbot AI Response
+        replyText = await generateAIResponse(messages, false, tryPro);
+      }
 
       // 4. Save to Redis
       try {
