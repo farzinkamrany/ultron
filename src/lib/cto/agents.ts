@@ -34,7 +34,7 @@ export async function executeAgentTask(role: AgentRole, taskDescription: string,
     parts: [{ text: taskDescription }]
   }];
 
-  const MAX_ITERATIONS = role === "DEVELOPER" ? 5 : 1; // Allow tool loops for dev
+  const MAX_ITERATIONS = role === "DEVELOPER" ? 15 : 1; // Allow tool loops for dev
 
   for (let i = 0; i < MAX_ITERATIONS; i++) {
     const payload = JSON.stringify({

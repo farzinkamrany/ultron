@@ -67,8 +67,8 @@ export async function generateAIResponse(messages: { role: string, content: stri
 
   const { fetchWithRotation } = await import("@/utils/ai-fetcher");
 
-  // Tool Execution Loop (max 5 iterations to prevent infinite loops)
-  const MAX_ITERATIONS = 5;
+  // Tool Execution Loop (max 15 iterations to allow deep research)
+  const MAX_ITERATIONS = 15;
   for (let i = 0; i < MAX_ITERATIONS; i++) {
     const payload = JSON.stringify({
       system_instruction: { parts: [{ text: ULTRON_SYSTEM_PROMPT + memoryContext }] },
