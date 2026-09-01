@@ -73,15 +73,32 @@ export async function POST(req: NextRequest) {
       image: imageBuffer
     });
 
-    // 2. Fetch model preference
+    // 2. Fetch model and voice preferences
     let modelPref = 'pro';
+    let voiceLang = 'fa';
+    let alwaysVoice = false;
     try {
       const pref = await redis.get(`model_pref:${chatId}`);
       if (pref === 'flash') modelPref = 'flash';
+      
+      voiceLang = await redis.get(`voice_lang:${chatId}`) as string || 'fa';
+      alwaysVoice = !!(await redis.get(`always_voice:${chatId}`));
     } catch (e) {
-      console.error("Redis Model Pref Error:", e);
+      console.error("Redis Pref Error:", e);
     }
     const tryPro = modelPref === 'pro';
+
+    // Apply Language Immersion if requested
+    if (voiceLang === 'de') {
+      messages.unshift({
+        role: 'user',
+        content: "[SYSTEM INSTRUCTION]: The user is currently in German Language Immersion Mode (B2 Level). You MUST reply completely in German. Do NOT use Persian or English unless absolutely necessary for technical code. Be encouraging and use natural conversational German."
+      });
+      messages.unshift({
+        role: 'model',
+        content: "Verstanden! Ich werde ab sofort auf Deutsch antworten, um dir beim Üben zu helfen."
+      });
+    }
 
     // 3. Check if it's a Hunter/Screener Command
     let replyText = "متاسفانه خطایی در ارتباط با هوش مصنوعی رخ داد.";
@@ -132,8 +149,8 @@ export async function POST(req: NextRequest) {
     }
 
     // 5. Send reply to Telegram (Voice or Text)
-    if (voiceFileId) {
-      // If the user sent a voice note, reply with a voice note
+    if (voiceFileId || alwaysVoice) {
+      // If the user sent a voice note, or Always Voice is on, reply with a voice note
       try {
         const speechBuffer = await generateSpeech(replyText);
         await sendTelegramVoice(chatId, speechBuffer);

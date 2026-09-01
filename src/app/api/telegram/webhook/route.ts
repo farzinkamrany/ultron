@@ -52,14 +52,24 @@ export async function POST(req: NextRequest) {
 
     if (text.startsWith('/voice ')) {
       const voiceChoice = text.replace('/voice ', '').trim().toLowerCase();
-      if (voiceChoice === 'de' || voiceChoice === 'fa') {
-        try {
+      
+      try {
+        if (voiceChoice === 'de' || voiceChoice === 'fa') {
           await redis.set(`voice_lang:${chatId}`, voiceChoice);
           const langName = voiceChoice === 'de' ? 'German (B2 Partner)' : 'Persian (Default)';
-          await sendTelegramMessage(chatId, `🗣️ Voice Mode switched to: ${langName}`);
-        } catch (e) {
-          console.error("Failed to save voice preference:", e);
+          await sendTelegramMessage(chatId, `🗣️ Language Immersion switched to: ${langName}`);
+        } else if (voiceChoice === 'always') {
+          await redis.set(`always_voice:${chatId}`, 'true');
+          await sendTelegramMessage(chatId, `🎙️ Always-Voice Mode ACTIVATED. I will always reply with audio.`);
+        } else if (voiceChoice === 'off' || voiceChoice === 'text') {
+          await redis.del(`always_voice:${chatId}`);
+          await redis.del(`voice_lang:${chatId}`);
+          await sendTelegramMessage(chatId, `📝 Always-Voice and Immersion DEACTIVATED. Reverting to standard text/Persian mode.`);
+        } else {
+          await sendTelegramMessage(chatId, `❌ Unknown voice command. Try: /voice de | /voice fa | /voice always | /voice off`);
         }
+      } catch (e) {
+        console.error("Failed to save voice preference:", e);
       }
       return new NextResponse('OK', { status: 200 });
     }
