@@ -169,6 +169,7 @@ Rule 8: DEFCON CHAOS OVERRIDE: If the DEFCON Protocol Status is LEVEL 1 or LEVEL
 Rule 9: POC GRAVITY: The Macro Point of Control (POC) is a massive magnet. If the price is far away from the POC, the macro probability is that it will return to the POC. Weight your directional bias towards the POC.
 Rule 10: X-RAY ORDER BOOK: If you are going to issue a STRONG BUY or GANN MASTER ASCENSION, you MUST cross-reference your entry price with the Order Book X-Ray. There MUST be a Whale Buy Wall at or near your entry price. If the order book is empty there, abort and issue WAIT FOR LIMIT ORDER.
 Rule 11: TAPE READING (ANTI-SPOOFING): Even if Rule 10 shows a Whale Wall, you MUST check the Live Order Flow (The Tape). If the Cumulative Volume Delta (CVD) shows "EXTREME AGGRESSIVE SELLING (PANIC DUMP)", the Buy Wall is likely a SPOOF (fake). Abort the trade and issue WAIT FOR LIMIT ORDER at a lower price.
+Rule 12: LIQUIDATION SNIPER (DERIVATIVES): Check the Derivatives Squeeze Zones. If Funding Rate is extremely negative (Short Squeeze imminent) and you have a BUY setup, INCREASE your confidence. If Funding Rate is euphorically positive (Long Squeeze dump imminent), DO NOT issue a Market Buy; you MUST issue WAIT FOR LIMIT ORDER at a much lower support to catch the liquidation wick.
 
 [LIVE HARD DATA]
 Macro Sentiment (Fear & Greed): ${fearGreedValue}/100 (${fearGreedClass})

@@ -5,6 +5,7 @@ import { calculateChaosLevel, MacroOHLCV } from './chaos';
 import { calculatePointOfControl } from './volumeProfile';
 import { analyzeOrderBook, OrderBookData } from './orderbook';
 import { analyzeOrderFlow, Trade } from './tape';
+import { analyzeDerivatives } from './derivatives';
 
 export async function analyzeMarketData(asset: string, timeHorizonDays: number): Promise<string> {
   try {
@@ -122,6 +123,12 @@ Taker Buy Vol: $${Math.floor(tape.aggressiveBuyVolumeUSD).toLocaleString()} | Ta
       console.warn("Failed to fetch order book or trades", err);
     }
 
+    // --- DERIVATIVES (FUTURES) ---
+    const derivs = await analyzeDerivatives(asset);
+    const derivsStr = `Funding Rate: ${(derivs.fundingRate * 100).toFixed(4)}%
+Open Interest (Contracts): ${derivs.openInterest.toLocaleString()}
+Retail Leverage Sentiment: ${derivs.sentiment}`;
+
     // --- GANN MACRO (RIGHT HEMISPHERE) & CHAOS ENGINE ---
     // Fetch Macro Pivot (Last 365 Days) to calculate Time Squaring, True Scale, and DEFCON level
     let timeAnalysisStr = "Time Cycle Data Unavailable";
@@ -234,6 +241,9 @@ ${xrayAnalysisStr}
 
 [LIVE ORDER FLOW (THE TAPE)]
 ${tapeAnalysisStr}
+
+[LIVE DERIVATIVES (SQUEEZE ZONES)]
+${derivsStr}
 
 W.D. Gann Support Levels (Closest to Farthest):
 ${supports.map((s, i) => `S${i+1}: $${s.toFixed(2)}`).join(" | ")}
