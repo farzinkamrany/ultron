@@ -1,5 +1,6 @@
 import ccxt from 'ccxt';
 import { calculateGannSquareOf9, calculateTimeCycles, calculateGannAngles, calculateDownwardGannAngles, calculateAnniversaryCycles, calculateCosmicAlignment, calculateSquareOf144 } from './gann';
+import { findFairValueGaps, findOrderBlocks, OHLCV } from './ict';
 
 export async function analyzeMarketData(asset: string, timeHorizonDays: number): Promise<string> {
   try {
@@ -41,6 +42,50 @@ export async function analyzeMarketData(asset: string, timeHorizonDays: number):
     const avgVol = recentVols.reduce((a, b) => a + b, 0) / recentVols.length;
     const isVolumeClimax = currentVol > (avgVol * 2.0); // 200% spike
 
+    // --- SMART MONEY CONCEPTS (LEFT HEMISPHERE) ---
+    // Fetch 4H data specifically for liquidity hunting (we need recent intraday action)
+    let smcAnalysisStr = "SMC Data Unavailable";
+    try {
+      const ohlcv4hRaw = await exchange.fetchOHLCV(asset, '4h', undefined, 50);
+      const ohlcv4h: OHLCV[] = ohlcv4hRaw.map(c => ({
+        timestamp: c[0] as number,
+        open: c[1] as number,
+        high: c[2] as number,
+        low: c[3] as number,
+        close: c[4] as number,
+        volume: c[5] as number
+      }));
+      
+      const fvgs = findFairValueGaps(ohlcv4h);
+      const obs = findOrderBlocks(ohlcv4h);
+      
+      // Calculate Institutional VWAP (Volume Weighted Average Price) on the 4H dataset
+      let cumulativeVolume = 0;
+      let cumulativeVP = 0;
+      ohlcv4h.forEach(c => {
+        const typicalPrice = (c.high + c.low + c.close) / 3;
+        cumulativeVolume += c.volume;
+        cumulativeVP += typicalPrice * c.volume;
+      });
+      const vwap = cumulativeVolume > 0 ? cumulativeVP / cumulativeVolume : currentPrice;
+      const vwapStatus = currentPrice > vwap ? "BULLISH (Above VWAP)" : "BEARISH (Below VWAP)";
+      
+      // Find the closest Bullish and Bearish OB to the current price
+      const bullishOBs = obs.filter(ob => ob.type === 'BULLISH_OB' && ob.top < currentPrice).sort((a, b) => b.top - a.top);
+      const bearishOBs = obs.filter(ob => ob.type === 'BEARISH_OB' && ob.bottom > currentPrice).sort((a, b) => a.bottom - b.bottom);
+      
+      const nearestBullOB = bullishOBs.length > 0 ? `$${bullishOBs[0].top.toFixed(2)} - $${bullishOBs[0].bottom.toFixed(2)} (Swept: ${bullishOBs[0].sweptLiquidity ? "YES - High Prob" : "NO"})` : "None nearby";
+      const nearestBearOB = bearishOBs.length > 0 ? `$${bearishOBs[0].bottom.toFixed(2)} - $${bearishOBs[0].top.toFixed(2)} (Swept: ${bearishOBs[0].sweptLiquidity ? "YES - High Prob" : "NO"})` : "None nearby";
+
+      smcAnalysisStr = `Institutional VWAP: $${vwap.toFixed(2)} | Trend: ${vwapStatus}
+Nearest Bullish Order Block (Demand): ${nearestBullOB}
+Nearest Bearish Order Block (Supply): ${nearestBearOB}
+Total Untested 4H FVGs: ${fvgs.length}`;
+    } catch (err) {
+      console.warn("Failed to fetch SMC data", err);
+    }
+
+    // --- GANN MACRO (RIGHT HEMISPHERE) ---
     // Fetch Macro Pivot (Last 365 Days) to calculate Time Squaring & True Scale
     let timeAnalysisStr = "Time Cycle Data Unavailable";
     try {
@@ -113,8 +158,10 @@ Vernal Sine Wave (Natural Energy): ${cosmos.naturalEnergyWave > 0 ? "EXPANDING (
 Asset: ${asset}
 Current Price: $${currentPrice.toFixed(2)}
 Selected Timeframe: ${label} (${timeframe})
-Trend (Last 15 ${label} closes):
+Micro Trend (Last 15 ${label} closes):
 ${trendStr}
+
+Macro Trend (1D): See Time Analysis Below
 
 W.D. Gann Support Levels (Closest to Farthest):
 ${supports.map((s, i) => `S${i+1}: $${s.toFixed(2)}`).join(" | ")}
@@ -124,6 +171,9 @@ ${resistances.map((r, i) => `R${i+1}: $${r.toFixed(2)}`).join(" | ")}
 
 [MASTER TIME CYCLES (TIME SQUARING)]
 ${timeAnalysisStr}
+
+[SMART MONEY CONCEPTS (INSTITUTIONAL LIQUIDITY)]
+${smcAnalysisStr}
 
 AI DIRECTIVE:
 1. Review the Trend above to determine if the market is Bullish or Bearish on this timeframe.

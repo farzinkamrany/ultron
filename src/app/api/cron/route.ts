@@ -156,13 +156,15 @@ Task: Analyze the LIVE 7-Day Trend and Gann Data below. You MUST make a definiti
 - TIER 1 (THE FLAWLESS MONSTER): If "IS DEATH ZONE APEX" is YES, OR "PLANETARY ASPECT WARNING" is present, OR "VOLUME CLIMAX" is YES while price is at Gann Support/Resistance, this is an absolute cosmic/geometric alignment. Your decision MUST be "GANN MASTER ASCENSION SIGNAL".
 - TIER 2 (SWING TRADE): If price is near a major Gann Support/Resistance and "IS REVERSAL WINDOW" is YES, but without planetary/apex alignment. Your decision MUST be "STRONG BUY (خرید قوی)" or "STRONG SHORT (فروش استقراضی)".
 - TIER 3 (SCALP TRADE): If there is no major cycle or cosmic alignment, base your decision purely on the Current Geometric Position and 7-day trend. Your decision MUST be "SCALP BUY (خرید کوتاه‌مدت)" or "SCALP SHORT (فروش کوتاه‌مدت)".
-- NO TRADE: Only use this if the market is extremely choppy and sitting perfectly between support/resistance with no clear trend.
+- WAIT FOR LIMIT ORDER: If the price is currently in a dangerous zone (e.g., conflicting MTF trend, or wrong side of VWAP), DO NOT output NO TRADE. Instead, output "WAIT FOR LIMIT ORDER (صبر برای لیمیت)". Instruct the user to set a limit order at the exact price of the "Nearest Swept Order Block" or Gann level.
 
 Rule 1: NEVER use words like "maybe", "consider", "risk", or add financial disclaimers. 
 Rule 2: Speak with absolute, cold, mathematical certainty. 
 Rule 3: Use the exact Gann levels provided for your calculations.
 Rule 4: ESOTERIC MATH: If the Vernal Sine Wave is EXPANDING (+), it adds bullish weight. If current price is near the "Planetary Price Translation (Jupiter Level)", it is an invisible master support.
 Rule 5: MACRO 144: Use the 144-Block Macro Resistances as the ultimate multi-year targets.
+Rule 6: SMART MONEY CONCEPTS (SMC): You MUST use the Nearest Swept Order Block as the exact "نقطه ورود" (Entry Point). If the OB is NOT swept, it is low probability, so prefer a Gann Level instead.
+Rule 7: VWAP FILTER: You MUST NOT issue a STRONG BUY if the Institutional VWAP trend is BEARISH. You MUST NOT issue a STRONG SHORT if the VWAP trend is BULLISH. Output WAIT FOR LIMIT ORDER instead.
 
 [LIVE HARD DATA]
 Macro Sentiment (Fear & Greed): ${fearGreedValue}/100 (${fearGreedClass})
@@ -174,10 +176,11 @@ Format EXACTLY like this for each asset. Output ONLY this format in Persian:
 📊 روند ۷ روزه: [تحلیل صعودی یا نزولی بودن بازار در یک خط]
 ⏳ بُعد چهارم (زمان و هندسه): [وضعیت فعلی در فن‌های گن صعودی/نزولی و ماتریس ۱۴۴]
 🌌 بُعد پنجم (نجوم باطنی): [آلارم کیهانی، ترجمه قیمت سیاره مشتری و موج سینوسی بهاری]
-💡 تصمیم نهایی: [GANN MASTER ASCENSION SIGNAL / STRONG BUY / STRONG SHORT / SCALP BUY / SCALP SHORT / NO TRADE]
-🟢 نقطه ورود: [Exact Price or N/A]
-🎯 تارگت یک روزه: [Exact Price or N/A]
-🔴 حد ضرر: [Exact Price or N/A]`;
+🏦 ردپای نهنگ‌ها (SMC): [وضعیت اوردر بلاک‌ها و نقدینگی]
+💡 تصمیم نهایی: [GANN MASTER ASCENSION SIGNAL / STRONG BUY / STRONG SHORT / SCALP BUY / SCALP SHORT / WAIT FOR LIMIT ORDER]
+🟢 نقطه ورود: [Exact Price from Swept OB or Gann Level]
+🎯 تارگت یک روزه: [Exact Price from Gann Resistance/Support]
+🔴 حد ضرر: [Exact Price below OB or Gann Level]`;
 
     const aiResponse = await generateAIResponse([
       { role: 'user', content: prompt }
