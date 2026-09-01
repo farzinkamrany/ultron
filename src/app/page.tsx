@@ -268,7 +268,7 @@ export default function UltronDashboard() {
   const handleManualArbitrage = async () => {
     setIsArbitrageRunning(true);
     try {
-      await fetch('/api/cron/arbitrage');
+      await fetch('/api/cron/divar');
       toast.success('Manual Scan Complete! Check Telegram for alerts.');
     } finally {
       setIsArbitrageRunning(false);

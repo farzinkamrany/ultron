@@ -21,8 +21,8 @@ export async function fetchDivarAds(city: string, category: string, query: strin
     urlStr += `?q=${encodeURIComponent(query)}`;
   }
 
-  // Use proxy if configured (useful when deployed on Vercel which is outside Iran)
-  const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
+  // Use specific DIVAR_PROXY if configured (useful when deployed on Vercel to route through Iran, separate from HTTPS_PROXY which routes to Europe)
+  const proxyUrl = process.env.DIVAR_PROXY;
   const agent = proxyUrl ? new HttpsProxyAgent(proxyUrl) : undefined;
 
   const options: https.RequestOptions = {
