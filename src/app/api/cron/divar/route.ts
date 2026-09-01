@@ -27,6 +27,14 @@ export async function POST(request: NextRequest) {
     const chatId = process.env.TELEGRAM_CHAT_ID;
     if (!chatId) throw new Error('TELEGRAM_CHAT_ID is missing');
 
+    // --- CIRCUIT BREAKER CHECK ---
+    const breakerKey = 'divar_circuit_breaker';
+    const isBroken = await redis.get(breakerKey);
+    if (isBroken) {
+      console.log("[Divar Cron] Circuit breaker active. Skipping scan to avoid permanent ban.");
+      return NextResponse.json({ success: true, message: "Circuit breaker active. Cooldown in progress." });
+    }
+
     const searchTargets = [
       { category: 'mobile-phones', query: 'آیفون 13 پرو', label: 'iPhone 13 Pro' },
       { category: 'game-consoles', query: 'ps5', label: 'PlayStation 5' },
@@ -35,12 +43,17 @@ export async function POST(request: NextRequest) {
 
     let foundOpportunities = 0;
     let messageStr = "";
+    
+    const errorCounterKey = 'divar_consecutive_errors';
 
     for (const target of searchTargets) {
       try {
         console.log(`[Divar Cron] Searching for ${target.label}...`);
         const ads = await fetchDivarAds('tehran', target.category, target.query);
         
+        // If we reach here, the request succeeded. Reset error counter.
+        await redis.set(errorCounterKey, 0);
+
         // Filter out extreme noise
         const realisticAds = ads.filter(ad => {
           if (target.label.includes('iPhone 13') && ad.price < 35000000) return false;
@@ -79,6 +92,23 @@ export async function POST(request: NextRequest) {
         }
       } catch (err: any) {
         console.error(`Error scraping ${target.label}:`, err.message);
+        
+        // Increment consecutive error counter
+        const currentErrors = (await redis.incr(errorCounterKey)) || 1;
+        
+        if (currentErrors >= 3) {
+          console.error("[Divar Cron] Anti-Bot Circuit Breaker TRIPPED!");
+          
+          // Activate Circuit Breaker for 2 hours (7200 seconds)
+          await redis.setex(breakerKey, 7200, "1");
+          
+          // Send SOS Alert to Telegram
+          const alertMsg = `🚨 **هشدار کوری اسکنر دیوار** 🚨\nدیوار ۳ بار پیاپی درخواست ما را مسدود کرد (احتمال بن شدن IP). من مدارِ اسکنر را قطع کردم تا به مدت ۲ ساعت استراحت کند.\n\nلطفاً در اسرع وقت پروکسی (DIVAR_PROXY) را بررسی یا تعویض کنید.`;
+          await sendTelegramMessage(chatId, alertMsg);
+          
+          // Stop checking other targets in this loop
+          break;
+        }
       }
     }
 

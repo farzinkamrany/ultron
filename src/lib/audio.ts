@@ -39,32 +39,7 @@ export async function generateSpeech(text: string): Promise<Buffer> {
   // Auto-detect Farsi characters
   const isFarsi = /[\u0600-\u06FF]/.test(text);
 
-  if (openaiKey) {
-    try {
-      const payload = JSON.stringify({
-        model: 'tts-1',
-        input: text,
-        voice: 'onyx', // Professional male voice, works perfectly for EN and FA
-        response_format: 'mp3',
-      });
-
-      const options = {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${openaiKey}`,
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(payload)
-        },
-        agent: agent,
-        timeout: 30000
-      };
-
-      return await httpsRequestBuffer('https://api.openai.com/v1/audio/speech', options, payload);
-    } catch (e) {
-      console.error("[TTS] OpenAI failed, falling back...", e);
-    }
-  }
-
+  // 1. ElevenLabs Priority
   if (elevenKey) {
     try {
       const voiceId = process.env.ELEVENLABS_VOICE_ID || 'EXAVITQu4vr4xnSDxMaL'; 
@@ -90,11 +65,38 @@ export async function generateSpeech(text: string): Promise<Buffer> {
 
       return await httpsRequestBuffer(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_128`, options, payload);
     } catch (e) {
-      console.error("[TTS] ElevenLabs failed, falling back to Google TTS", e);
+      console.error("[TTS] ElevenLabs failed, falling back to OpenAI/Google...", e);
     }
   }
 
-  // Fallback to Google TTS with language auto-detection
+  // 2. OpenAI Priority (Onyx)
+  if (openaiKey) {
+    try {
+      const payload = JSON.stringify({
+        model: 'tts-1',
+        input: text,
+        voice: 'onyx',
+        response_format: 'mp3',
+      });
+
+      const options = {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${openaiKey}`,
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(payload)
+        },
+        agent: agent,
+        timeout: 30000
+      };
+
+      return await httpsRequestBuffer('https://api.openai.com/v1/audio/speech', options, payload);
+    } catch (e) {
+      console.error("[TTS] OpenAI failed, falling back...", e);
+    }
+  }
+
+  // 3. Fallback to Google TTS with language auto-detection
   const results = await googleTTS.getAllAudioBase64(text, {
     lang: isFarsi ? 'fa' : 'en',
     slow: false,
