@@ -18,15 +18,24 @@ export function TelegramProvider({ children }: { children: React.ReactNode }) {
         const root = document.documentElement;
         if (tg.themeParams.bg_color) {
           root.style.setProperty("--background", tg.themeParams.bg_color);
+          root.style.setProperty("--card", tg.themeParams.bg_color);
         }
         if (tg.themeParams.text_color) {
           root.style.setProperty("--foreground", tg.themeParams.text_color);
+          root.style.setProperty("--card-foreground", tg.themeParams.text_color);
         }
         if (tg.themeParams.button_color) {
           root.style.setProperty("--primary", tg.themeParams.button_color);
         }
         if (tg.themeParams.button_text_color) {
           root.style.setProperty("--primary-foreground", tg.themeParams.button_text_color);
+        }
+        if (tg.themeParams.secondary_bg_color) {
+          root.style.setProperty("--muted", tg.themeParams.secondary_bg_color);
+          root.style.setProperty("--border", tg.themeParams.secondary_bg_color);
+        }
+        if (tg.themeParams.hint_color) {
+          root.style.setProperty("--muted-foreground", tg.themeParams.hint_color);
         }
       }
     }

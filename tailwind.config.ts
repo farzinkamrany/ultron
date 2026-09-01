@@ -1,4 +1,4 @@
-﻿import type { Config } from "tailwindcss";
+import type { Config } from "tailwindcss";
 
 const config: Config = {
   content: [
@@ -18,6 +18,15 @@ const config: Config = {
         phase6: 'rgb(var(--color-phase6) / <alpha-value>)',
         phase7: 'rgb(var(--color-phase7) / <alpha-value>)',
         phase8: 'rgb(var(--color-phase8) / <alpha-value>)',
+        background: "var(--background)",
+        foreground: "var(--foreground)",
+        card: "var(--card)",
+        "card-foreground": "var(--card-foreground)",
+        border: "var(--border)",
+        primary: "var(--primary)",
+        "primary-foreground": "var(--primary-foreground)",
+        muted: "var(--muted)",
+        "muted-foreground": "var(--muted-foreground)",
         surface: {
           DEFAULT: "#050B14",
           card: "#0a1120",

@@ -1,4 +1,4 @@
-﻿@tailwind base;
+@tailwind base;
 @tailwind components;
 @tailwind utilities;
 
@@ -13,6 +13,17 @@
     --color-phase6: 59 130 246;  /* Royal Blue */
     --color-phase7: 225 29 72;   /* Ultron Crimson / Rose-600 */
     --color-phase8: 34 197 94;   /* Launch Green */
+
+    /* Shadcn/TWA Default Theme (Dark Mode) */
+    --background: #050B14;
+    --foreground: #f8fafc;
+    --card: #0a1120;
+    --card-foreground: #f8fafc;
+    --border: #1e293b;
+    --primary: #00bfff;
+    --primary-foreground: #020617;
+    --muted: #1e293b;
+    --muted-foreground: #94a3b8;
   }
 }
 
