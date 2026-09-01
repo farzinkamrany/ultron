@@ -122,7 +122,28 @@ export async function POST(req: NextRequest) {
       resolved: resolvedCount 
     });
   } catch (error: any) {
-    await logError("API_TRADING_CHECKER", error, {}, true);
-    return NextResponse.json({ error: "Trading checker failed" }, { status: 500 });
+    const errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
+    const stackTrace = error instanceof Error ? error.stack : null;
+    
+    // Log directly to Supabase
+    try {
+      await supabase.from("system_logs").insert([{
+        level: "CRITICAL",
+        context: "API_TRADING_CHECKER",
+        message: errorMessage,
+        stack_trace: stackTrace
+      }]);
+    } catch (e) {
+      console.error("Failed to write to system_logs:", e);
+    }
+
+    // Send Telegram Alert
+    const chatId = process.env.TELEGRAM_ADMIN_CHAT_ID;
+    if (chatId) {
+      const alertMsg = `🚨 <b>SYSTEM DEGRADED</b>\n\n<b>Context:</b> API_TRADING_CHECKER\n<b>Error:</b> ${errorMessage}\n\n<i>Check Supabase system_logs for stack trace.</i>`;
+      await sendTelegramMessage(chatId, alertMsg);
+    }
+    
+    return NextResponse.json({ error: "Trading checker failed", details: errorMessage }, { status: 500 });
   }
 }
