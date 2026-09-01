@@ -134,11 +134,9 @@ export async function POST(req: NextRequest) {
           replyText = "لطفا یک وظیفه مشخص برای مدیر فنی تعریف کنید. مثال: `/cto یک معماری دیتابیس برای پروژه رزرو هتل طراحی کن`";
         } else {
           try {
-            const { executeCtoWorkflow } = await import("@/lib/cto/orchestrator");
-            replyText = await executeCtoWorkflow(ctoTask, async (msg: string) => {
-              // Real-time status updates back to Telegram
-              await sendTelegramMessage(chatId, msg);
-            });
+            const { startCtoWorkflow } = await import("@/lib/cto/orchestrator");
+            // This kicks off the background QStash worker and returns immediately
+            replyText = await startCtoWorkflow(ctoTask, chatId);
           } catch (ctoError: any) {
             console.error("[CTO Mode Error]", ctoError);
             replyText = `❌ خطای داخلی در سیستم CTO: ${ctoError.message}`;

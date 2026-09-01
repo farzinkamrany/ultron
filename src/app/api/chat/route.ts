@@ -1,6 +1,5 @@
 import { NextRequest } from "next/server";
 import { generateAIResponse } from "@/lib/ai";
-import { executeCtoWorkflow } from "@/lib/cto/orchestrator";
 import "@/lib/env";
 
 export const dynamic = "force-dynamic";
@@ -25,11 +24,10 @@ export async function POST(req: NextRequest) {
             if (!ctoTask) {
               controller.enqueue(encoder.encode("لطفا یک وظیفه مشخص برای مدیر فنی تعریف کنید. مثال: `/cto یک معماری دیتابیس طراحی کن`"));
             } else {
-              const finalSummary = await executeCtoWorkflow(ctoTask, async (msg: string) => {
-                // Stream real-time updates to the Web UI
-                controller.enqueue(encoder.encode(`> ${msg}\n\n`));
-              });
-              controller.enqueue(encoder.encode(`\n\n---\n\n${finalSummary}`));
+              const { startCtoWorkflow } = await import("@/lib/cto/orchestrator");
+              // Empty chatId for Web UI for now (they won't get Telegram updates unless they link it later)
+              const msg = await startCtoWorkflow(ctoTask, "");
+              controller.enqueue(encoder.encode(`\n\n---\n\n${msg}\n(Note: Web UI real-time streaming is disabled for background tasks. Please check your system logs or Telegram.)`));
             }
           } else {
             // Normal Chatbot AI Response

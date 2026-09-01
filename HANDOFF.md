@@ -1,9 +1,9 @@
-# ULTRON: The Quantitative AI Engine (Ultimate Handoff Document)
+# ULTRON: The Quantitative AI Engine & Autonomous CTO (Ultimate Handoff Document)
 
-**Version:** 1.0 (The Flawless Monster)
-**Core Philosophy:** 100% Mathematical Certainty, Multi-Disciplinary Analysis, Capital Preservation, High-Frequency Anti-Spoofing.
+**Version:** 2.0 (The Flawless Monster)
+**Core Philosophy:** 100% Mathematical Certainty, Multi-Disciplinary Analysis, Capital Preservation, High-Frequency Anti-Spoofing, and Autonomous Self-Development.
 
-This document serves as the encyclopedic technical and operational manual for Ultron. It contains every detail, mathematical formula, architectural decision, and operational instruction required to run, maintain, and trade with this system.
+This document serves as the encyclopedic technical and operational manual for Ultron. It contains every detail, mathematical formula, architectural decision, and operational instruction required to run, maintain, trade with, and develop this system.
 
 ---
 
@@ -58,9 +58,20 @@ Ultron Abandons traditional technical analysis in favor of a 7-pillar mathematic
 
 ---
 
-## 2. The AI Arbitrator (The Brain)
+## 2. The Autonomous CTO (Multi-Agent V2)
 
-*Location: `src/app/api/cron/route.ts`*
+*Location: `src/lib/cto/agents.ts` & `src/lib/cto/orchestrator.ts`*
+
+Ultron can write its own code and upgrade itself through the `/cto` command (accessible via Telegram or Web Dashboard). It delegates tasks to three specialized sub-agents running in an iterative feedback loop (`MAX_ITERATIONS = 15`):
+- **RESEARCHER:** Uses Google Search Grounding to read live documentation and plan architectures.
+- **DEVELOPER:** Has file system read/write access and GitHub PR integration (`write_and_propose_code`). It generates code and submits it to QA.
+- **REVIEWER:** The QA firewall. It checks the Developer's code for bugs. If a bug is found (`VERDICT: FAIL`), it loops the task back to the Developer.
+
+---
+
+## 3. The AI Arbitrator (The Brain)
+
+*Location: `src/app/api/cron/route.ts` & `src/lib/ai.ts`*
 
 The Gemini AI acts as the final judge. It reads the raw data from all 7 pillars and must strictly obey these **12 Directives**:
 
@@ -79,7 +90,7 @@ The Gemini AI acts as the final judge. It reads the raw data from all 7 pillars 
 
 ---
 
-## 3. Operator's Execution Guide (How to Trade)
+## 4. Operator's Execution Guide (How to Trade)
 
 When the bot sends a Telegram message, follow these execution rules:
 
@@ -90,13 +101,14 @@ When the bot sends a Telegram message, follow these execution rules:
 
 ---
 
-## 4. Setup, Deployment, and Infrastructure
+## 5. Setup, Deployment, and Infrastructure
 
 ### Tech Stack
 - **Framework:** Next.js (App Router) + TypeScript.
 - **Data Provider:** CCXT (Binance API).
-- **AI Engine:** Google Gemini (`@google/genai`).
-- **Notification:** Telegram Bot API.
+- **AI Engine:** Google Gemini (`@google/genai` natively via REST for fine-grained tool control).
+- **Notification:** Telegram Webhooks (`/api/telegram/webhook`).
+- **Memory Database:** Supabase (PostgreSQL with `pgvector`).
 
 ### Environment Variables (`.env.local`)
 ```env
@@ -104,32 +116,31 @@ When the bot sends a Telegram message, follow these execution rules:
 GEMINI_API_KEY_1=your_key_here
 GEMINI_API_KEY_2=your_key_here
 
-# Telegram
+# Telegram & Queues
 TELEGRAM_BOT_TOKEN=your_bot_token
 TELEGRAM_CHAT_ID=your_chat_id
+QSTASH_TOKEN=your_qstash_token
+
+# Autonomous GitHub Deployer
+GITHUB_PAT=your_github_token
+GITHUB_OWNER=your_github_username
+GITHUB_REPO=ultron
 
 # Network (If in restricted regions like Iran)
 HTTP_PROXY=http://127.0.0.1:v2ray_port
 HTTPS_PROXY=http://127.0.0.1:v2ray_port
 ```
 
-### Local Execution
-1. Install dependencies: `npm install`
-2. Start the API server: `npm run dev` (Runs on `http://localhost:3000`)
-3. Open a new terminal and run the background worker: `node local-cron.js`. This script will ping the server every 3 hours and trigger the analysis.
-
-### Production Deployment
-To run Ultron 24/7 in the cloud:
-1. Push the code to GitHub.
-2. Deploy the repository to **Vercel** (Free Tier is sufficient). Add your `.env` variables in the Vercel dashboard.
-3. Vercel shuts down sleeping apps, so `local-cron.js` won't work. Instead, create a free account on **cron-job.org**.
-4. Set cron-job.org to send an HTTP GET request to `https://your-domain.vercel.app/api/cron` every 3 hours.
+### Local Execution vs Production
+- **Local:** Run `npm run dev` to enable Hot Reloading. (Do not use `npm start` for development, as it will cache the production build).
+- **Production (Vercel):** Ultron is configured for 24/7 Vercel deployment (`vercel.json`). Cron jobs are heavily reliant on Vercel's Cron architecture or QStash. 
+  - *Note:* Vercel's Edge limits executions to 60s. Complex AI tool-loops (like the 15-loop CTO) must finish within this window or face `504 Gateway Timeout`.
 
 ---
 
-## 5. Future Roadmap
+## 6. Future Roadmap
 
-The analytical brain is finished. Future developers can implement:
-1. **Auto-Trading Execution Layer:** Use CCXT (`exchange.createOrder()`) to automatically place the `WAIT FOR LIMIT ORDER` traps directly on Binance using API Keys.
-2. **React Dashboard:** Build out `src/app/page.tsx` using a library like `lightweight-charts` to visually draw the Gann angles, Order Blocks, and Tape CVD visually.
-3. **Historical Backtester:** A script to simulate the last 5 years of data against the 11 Rules to print exact PnL metrics.
+The analytical brain, dashboard, and agentic workflows are finished. Next milestones:
+1. **Live Trading Execution (Micro Mode):** Transition the `PaperTradesTable` and CCXT engine to execute real trades on Bybit with small capital (e.g., $5) and send Telegram receipts.
+2. **Morning Voice Briefing (Podcaster):** A cron job that triggers every morning at 7:30 AM, summarizes the market, scans Divar, and sends an audio `Voice Message` to Telegram.
+3. **Background Workers for CTO:** Offloading the `/cto` task processing from Vercel's 60s synchronous API route to an asynchronous queue (e.g., Upstash QStash background jobs) so the CTO can work on tasks that take 10+ minutes.

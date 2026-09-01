@@ -1,5 +1,26 @@
 import { executeAgentTask } from "./agents";
 import { fetchWithRotation } from "@/utils/ai-fetcher";
+import { redis } from "@/lib/redis";
+import { sendTelegramMessage } from "@/lib/telegram";
+
+export type CtoStep = "PLANNING" | "RESEARCHING" | "DEVELOPING" | "REVIEWING" | "SUMMARIZING" | "COMPLETED";
+
+export interface CtoState {
+  taskId: string;
+  chatId: string;
+  userPrompt: string;
+  step: CtoStep;
+  plan?: {
+    research_task: string;
+    develop_task: string;
+    review_task: string;
+  };
+  researchOutput?: string;
+  devOutput?: string;
+  reviewOutput?: string;
+  devAttempt: number;
+  currentDevTask?: string;
+}
 
 const CTO_SYSTEM_PROMPT = `You are ULTRON-CTO, an advanced orchestrator AI.
 The user has provided a complex task. Your job is to break it down into exactly 3 sequential sub-tasks that will be assigned to specialized sub-agents:
@@ -14,74 +35,169 @@ Output ONLY a valid JSON object with the following structure (no markdown blocks
   "review_task": "instructions for reviewer"
 }`;
 
-export async function executeCtoWorkflow(userPrompt: string, sendUpdate: (msg: string) => Promise<void>): Promise<string> {
-  await sendUpdate("🧠 [CTO] Analyzing task and formulating execution plan...");
-  
-  // 1. Formulate Plan
-  const planPayload = JSON.stringify({
-    system_instruction: { parts: [{ text: CTO_SYSTEM_PROMPT }] },
-    contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-    generationConfig: { temperature: 0.1, responseMimeType: "application/json" }
-  });
+const MAX_DEV_RETRIES = 2;
 
-  let plan;
+/**
+ * Triggers the next QStash worker execution
+ */
+async function triggerNextStep(taskId: string) {
+  const qstashToken = process.env.QSTASH_TOKEN;
+  if (!qstashToken) {
+    console.warn("⚠️ No QSTASH_TOKEN. Skipping QStash trigger.");
+    return;
+  }
+  
+  // App URL resolution
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : 'https://ultron.vercel.app');
+
   try {
-    const res = await fetchWithRotation(planPayload, false, true);
-    const text = res?.candidates?.[0]?.content?.parts?.find((p: any) => p.text)?.text;
-    if (!text) throw new Error("Empty plan response");
-    plan = JSON.parse(text);
-  } catch (error: any) {
-    console.error("[CTO] Planning Error:", error);
-    return `❌ CTO Orchestrator failed to parse the task: ${error.message}`;
+    // Delay next step slightly to allow Vercel/LLM limits to reset if needed
+    await fetch(`https://qstash.upstash.io/v2/publish/${appUrl}/api/worker/cto`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${qstashToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ taskId }),
+    });
+    console.log(`[QStash] Triggered next step for task ${taskId}`);
+  } catch (error) {
+    console.error("[QStash] Trigger Error:", error);
   }
+}
 
-  // 2. Execute Researcher
-  await sendUpdate(`🔍 [CTO -> RESEARCHER] Delegating research task:\n"${plan.research_task.substring(0, 50)}..."`);
-  const researchOutput = await executeAgentTask("RESEARCHER", plan.research_task);
-
-  // 3 & 4. Execute Developer with Reviewer Loop
-  let devOutput = "";
-  let reviewOutput = "";
-  let currentDevTask = `${plan.develop_task}\n\n[CONTEXT FROM RESEARCHER]:\n${researchOutput}`;
+/**
+ * Starts a new CTO workflow and pushes it to the QStash background queue.
+ */
+export async function startCtoWorkflow(userPrompt: string, chatId: string): Promise<string> {
+  const taskId = `cto_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+  const stateKey = `cto_state:${taskId}`;
   
-  const MAX_RETRIES = 2;
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    await sendUpdate(`💻 [CTO -> DEVELOPER] Attempt ${attempt}/${MAX_RETRIES}: Writing code...`);
-    devOutput = await executeAgentTask("DEVELOPER", currentDevTask);
+  const initialState: CtoState = {
+    taskId,
+    chatId,
+    userPrompt,
+    step: "PLANNING",
+    devAttempt: 1
+  };
+  
+  await redis.set(stateKey, initialState);
+  await triggerNextStep(taskId);
+  
+  return `CTO Task started in the background (Task ID: \`${taskId}\`).\nI will notify you here as it progresses! 🚀`;
+}
 
-    await sendUpdate(`🛡️ [CTO -> REVIEWER] Attempt ${attempt}/${MAX_RETRIES}: Submitting for QA review...`);
-    const reviewTask = `${plan.review_task}\n\n[CODE FROM DEVELOPER]:\n${devOutput}`;
-    reviewOutput = await executeAgentTask("REVIEWER", reviewTask);
+/**
+ * Executes a single step of the CTO workflow based on the current state.
+ */
+export async function processCtoStep(taskId: string): Promise<void> {
+  const stateKey = `cto_state:${taskId}`;
+  const rawState = await redis.get(stateKey);
+  
+  if (!rawState) {
+    console.error(`[CTO Worker] State not found for task ${taskId}`);
+    return;
+  }
+  
+  // Handle Upstash Redis JSON parsing
+  const state: CtoState = typeof rawState === "string" ? JSON.parse(rawState) : rawState;
 
-    if (reviewOutput.includes("VERDICT: PASS")) {
-      await sendUpdate(`✅ [REVIEWER] Code passed QA!`);
-      break;
-    } else {
-      await sendUpdate(`❌ [REVIEWER] Code rejected. Sending back to Developer...`);
-      if (attempt < MAX_RETRIES) {
-        currentDevTask += `\n\n[REVIEWER FEEDBACK - ATTEMPT ${attempt} FAILED. PLEASE FIX]:\n${reviewOutput}`;
-      }
+  const notify = async (msg: string) => {
+    if (state.chatId) {
+      // Small delay to ensure order in Telegram
+      await new Promise(resolve => setTimeout(resolve, 500));
+      await sendTelegramMessage(state.chatId, msg);
     }
-  }
+    console.log(msg);
+  };
 
-  // 5. Compile Final Summary
-  await sendUpdate("✅ [CTO] Aggregating results into final executive report...");
-  
-  const finalSummaryPrompt = `You are ULTRON-CTO. Synthesize the findings of your sub-agents into a final, highly readable Executive Summary for the user.
-Original Task: ${userPrompt}
-Reviewer Verdict: ${reviewOutput}
+  try {
+    if (state.step === "PLANNING") {
+      await notify("🧠 [CTO] Analyzing task and formulating execution plan...");
+      
+      const planPayload = JSON.stringify({
+        system_instruction: { parts: [{ text: CTO_SYSTEM_PROMPT }] },
+        contents: [{ role: "user", parts: [{ text: state.userPrompt }] }],
+        generationConfig: { temperature: 0.1, responseMimeType: "application/json" }
+      });
+
+      const res = await fetchWithRotation(planPayload, false, true);
+      const text = res?.candidates?.[0]?.content?.parts?.find((p: any) => p.text)?.text;
+      if (!text) throw new Error("Empty plan response");
+      
+      state.plan = JSON.parse(text);
+      state.step = "RESEARCHING";
+      
+    } else if (state.step === "RESEARCHING") {
+      await notify(`🔍 [CTO -> RESEARCHER] Delegating research task:\n"${state.plan!.research_task.substring(0, 50)}..."`);
+      
+      const output = await executeAgentTask("RESEARCHER", state.plan!.research_task);
+      state.researchOutput = output;
+      state.currentDevTask = `${state.plan!.develop_task}\n\n[CONTEXT FROM RESEARCHER]:\n${output}`;
+      state.step = "DEVELOPING";
+      
+    } else if (state.step === "DEVELOPING") {
+      await notify(`💻 [CTO -> DEVELOPER] Attempt ${state.devAttempt}/${MAX_DEV_RETRIES}: Writing code...`);
+      
+      const output = await executeAgentTask("DEVELOPER", state.currentDevTask!);
+      state.devOutput = output;
+      state.step = "REVIEWING";
+      
+    } else if (state.step === "REVIEWING") {
+      await notify(`🛡️ [CTO -> REVIEWER] Attempt ${state.devAttempt}/${MAX_DEV_RETRIES}: Submitting for QA review...`);
+      
+      const reviewTask = `${state.plan!.review_task}\n\n[CODE FROM DEVELOPER]:\n${state.devOutput}`;
+      const output = await executeAgentTask("REVIEWER", reviewTask);
+      state.reviewOutput = output;
+      
+      if (output.includes("VERDICT: PASS")) {
+        await notify(`✅ [REVIEWER] Code passed QA!`);
+        state.step = "SUMMARIZING";
+      } else {
+        await notify(`❌ [REVIEWER] Code rejected.`);
+        if (state.devAttempt < MAX_DEV_RETRIES) {
+          state.devAttempt += 1;
+          state.currentDevTask += `\n\n[REVIEWER FEEDBACK - ATTEMPT ${state.devAttempt - 1} FAILED. PLEASE FIX]:\n${output}`;
+          state.step = "DEVELOPING";
+          await notify(`🔄 Sending back to Developer (Attempt ${state.devAttempt})...`);
+        } else {
+          await notify(`⚠️ [REVIEWER] Max retries reached. Moving to summary.`);
+          state.step = "SUMMARIZING";
+        }
+      }
+      
+    } else if (state.step === "SUMMARIZING") {
+      await notify("✅ [CTO] Aggregating results into final executive report...");
+      
+      const prompt = `You are ULTRON-CTO. Synthesize the findings of your sub-agents into a final, highly readable Executive Summary for the user.
+Original Task: ${state.userPrompt}
+Reviewer Verdict: ${state.reviewOutput}
 
 Include snippets of the Developer's code if it passed review. Use beautiful markdown formatting.`;
 
-  const summaryPayload = JSON.stringify({
-    system_instruction: { parts: [{ text: "You are ULTRON-CTO." }] },
-    contents: [{ role: "user", parts: [{ text: finalSummaryPrompt }] }]
-  });
+      const payload = JSON.stringify({
+        system_instruction: { parts: [{ text: "You are ULTRON-CTO." }] },
+        contents: [{ role: "user", parts: [{ text: prompt }] }]
+      });
 
-  try {
-    const res = await fetchWithRotation(summaryPayload, false, true);
-    return res?.candidates?.[0]?.content?.parts?.find((p: any) => p.text)?.text || "Summary compilation failed.";
+      const res = await fetchWithRotation(payload, false, true);
+      const text = res?.candidates?.[0]?.content?.parts?.find((p: any) => p.text)?.text || "Summary compilation failed.";
+      
+      await notify(`📋 **[CTO FINAL REPORT]**\n\n${text}`);
+      state.step = "COMPLETED";
+    }
+
+    // Save state back to Redis
+    await redis.set(stateKey, state);
+
+    // If not completed, trigger next step via QStash
+    if (state.step !== "COMPLETED") {
+      await triggerNextStep(taskId);
+    }
+    
   } catch (error: any) {
-    return `❌ Final compilation failed: ${error.message}\n\n[Reviewer Output]:\n${reviewOutput}`;
+    console.error(`[CTO Worker] Error at step ${state.step}:`, error);
+    await notify(`❌ CTO Error at ${state.step}: ${error.message}`);
+    // Do not trigger next step, halt execution.
   }
 }
