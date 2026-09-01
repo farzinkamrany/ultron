@@ -122,6 +122,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, opportunitiesCount: foundOpportunities });
   } catch (error: any) {
     console.error('Divar Cron Error:', error);
+    
+    // Auto-Heal the error
+    const { healError } = await import('@/lib/error-healer');
+    await healError(error, "Divar Arbitrage Cron (/api/cron/divar)");
+
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }

@@ -78,16 +78,28 @@ export async function sendTelegramVoice(chatId: string | number, audioBuffer: Bu
   if (!token) return;
 
   try {
-    // node-fetch supports native FormData or form-data package.
-    // For node-fetch v2, we should use form-data. Let's try FormData from undici if available, 
-    // or just construct a multipart body manually. But actually, Node 18+ FormData works with node-fetch v2.
-    const formData = new FormData();
-    formData.append("chat_id", String(chatId));
-    formData.append("voice", new Blob([new Uint8Array(audioBuffer)], { type: "audio/mp3" }), "voice.mp3");
+    // Fix for node-fetch v2 multipart file upload
+    const boundary = '----UltronFormBoundary7MA4YWxkTrZu0gW';
+    
+    let head = Buffer.from(
+      `--${boundary}\r\n` +
+      `Content-Disposition: form-data; name="chat_id"\r\n\r\n` +
+      `${chatId}\r\n` +
+      `--${boundary}\r\n` +
+      `Content-Disposition: form-data; name="voice"; filename="voice.mp3"\r\n` +
+      `Content-Type: audio/mpeg\r\n\r\n`
+    );
+    
+    const tail = Buffer.from(`\r\n--${boundary}--\r\n`);
+    
+    const body = Buffer.concat([head, audioBuffer, tail]);
 
     const response = await fetch(`https://api.telegram.org/bot${token}/sendVoice`, {
       method: "POST",
-      body: formData as any,
+      headers: {
+        'Content-Type': `multipart/form-data; boundary=${boundary}`
+      },
+      body: body,
       agent
     });
 

@@ -183,10 +183,15 @@ export async function POST(req: NextRequest) {
 
   } catch (error: any) {
     console.error('[AI Worker Error]:', error);
+    
+    // Auto-Heal the error
+    const { healError } = await import('@/lib/error-healer');
+    await healError(error, "Telegram AI Worker (/api/telegram/ai-worker)");
+
     // Try to send an error message if we have chatId
     if (chatId) {
       try {
-        await sendTelegramMessage(chatId, "⚠️ متاسفانه در پردازش درخواست شما خطایی رخ داد.");
+        await sendTelegramMessage(chatId, "⚠️ متاسفانه در پردازش درخواست شما خطایی رخ داد. من مهندس فنی را خبر کردم.");
       } catch (_) {}
     }
     return NextResponse.json({ error: error.message }, { status: 500 });
