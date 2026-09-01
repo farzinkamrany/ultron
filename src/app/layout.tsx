@@ -5,6 +5,19 @@ import { TelegramProvider } from "@/components/TelegramProvider";
 export const metadata: Metadata = {
   title: "Ultron OS",
   description: "Global Peace Program",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Ultron OS"
+  }
+};
+
+export const viewport = {
+  themeColor: "#000000",
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
 };
 
 import Script from "next/script";
