@@ -1,4 +1,4 @@
-﻿import { supabase } from "./supabase";
+import { supabase } from "./supabase";
 import { sendTelegramMessage } from "./telegram";
 
 type LogLevel = "INFO" | "WARN" | "ERROR" | "CRITICAL";
@@ -9,7 +9,9 @@ export async function logError(
   metadata: any = {},
   isCritical: boolean = false
 ) {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = error instanceof Error 
+    ? error.message 
+    : (typeof error === 'object' && error !== null ? JSON.stringify(error) : String(error));
   const stack_trace = error instanceof Error ? error.stack : null;
   const level: LogLevel = isCritical ? "CRITICAL" : "ERROR";
 

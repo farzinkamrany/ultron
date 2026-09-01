@@ -23,20 +23,20 @@ export async function POST(req: NextRequest) {
       .select('*')
       .eq('status', 'OPEN');
 
-    if (dbError) throw dbError;
+    if (dbError) throw new Error(dbError.message || JSON.stringify(dbError));
     if (!openTrades || openTrades.length === 0) {
       return NextResponse.json({ ok: true, message: "No open trades to check" });
     }
 
     // 2. Init Exchange to fetch live prices
-    const exchange = new ccxt.binance({ enableRateLimit: true });
     const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
-    if (proxyUrl) {
-      exchange.agent = new HttpsProxyAgent(proxyUrl);
-    }
+    const exchange = new ccxt.binance({ 
+      enableRateLimit: true,
+      agent: proxyUrl ? new HttpsProxyAgent(proxyUrl) : undefined
+    });
 
-    // Map unique symbols to fetch minimal tickers
-    const symbols = [...new Set(openTrades.map(t => t.symbol.replace('', '')))];
+    // Map unique symbols to fetch minimal tickers (convert BTCUSDT to BTC/USDT for CCXT)
+    const symbols = [...new Set(openTrades.map(t => t.symbol.includes('/') ? t.symbol : t.symbol.replace('USDT', '/USDT')))];
     
     // We can fetch tickers for all needed symbols
     let tickers: any = {};
@@ -47,7 +47,8 @@ export async function POST(req: NextRequest) {
     let resolvedCount = 0;
 
     for (const trade of openTrades) {
-      const ticker = tickers[trade.symbol];
+      const ccxtSymbol = trade.symbol.includes('/') ? trade.symbol : trade.symbol.replace('USDT', '/USDT');
+      const ticker = tickers[ccxtSymbol];
       if (!ticker) continue;
       
       const currentPrice = ticker.last;
