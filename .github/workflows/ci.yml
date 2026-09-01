@@ -1,0 +1,40 @@
+name: Ultron AI Continuous Integration
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+jobs:
+  build-and-test:
+    name: Build & Type Check
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v3
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: 20
+        cache: 'npm'
+
+    - name: Install Dependencies
+      run: npm install
+
+    - name: TypeScript Strict Type Check
+      run: npx tsc --noEmit
+      continue-on-error: false
+
+    - name: ESLint Check
+      run: npm run lint
+      continue-on-error: false
+      
+    - name: Next.js Production Build Test
+      run: npm run build
+      continue-on-error: false
+      env:
+        # We define a dummy key so the build doesn't fail if it requires env vars at build time
+        TELEGRAM_BOT_TOKEN: "dummy_token_for_build"
