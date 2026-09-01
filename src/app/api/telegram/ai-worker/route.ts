@@ -86,7 +86,7 @@ export async function POST(req: NextRequest) {
     } catch (e) {
       console.error("Redis Pref Error:", e);
     }
-    const tryPro = modelPref === 'pro';
+    const tryPro = false; // Forced to Flash to prevent 504 timeouts
 
     // Apply Language Immersion if requested
     if (voiceLang === 'de') {
@@ -140,7 +140,7 @@ export async function POST(req: NextRequest) {
         }
         await redis.rpush(historyKey, { role: "user", content: logContent });
         await redis.rpush(historyKey, { role: "model", content: replyText });
-        await redis.ltrim(historyKey, -14, -1);
+        await redis.ltrim(historyKey, -5, -1);
       } catch (e) {
         console.error("Redis Save Error:", e);
       }
