@@ -127,6 +127,23 @@ export async function POST(req: NextRequest) {
         } else {
           replyText = `هیچ ارزی در ۲۰ کوین برتر پیدا نشد که در حال حاضر موقعیت امن برای تارگت ${targetPerc}٪ داشته باشد. (یا از حمایت دور هستند یا اردر بوک خالی است).`;
         }
+      } else if (contentStr && contentStr.startsWith('/cto')) {
+        // [MULTI-AGENT CTO MODE] Isolated execution path
+        const ctoTask = contentStr.replace('/cto', '').trim();
+        if (!ctoTask) {
+          replyText = "لطفا یک وظیفه مشخص برای مدیر فنی تعریف کنید. مثال: `/cto یک معماری دیتابیس برای پروژه رزرو هتل طراحی کن`";
+        } else {
+          try {
+            const { executeCtoWorkflow } = await import("@/lib/cto/orchestrator");
+            replyText = await executeCtoWorkflow(ctoTask, async (msg: string) => {
+              // Real-time status updates back to Telegram
+              await sendTelegramMessage(chatId, msg);
+            });
+          } catch (ctoError: any) {
+            console.error("[CTO Mode Error]", ctoError);
+            replyText = `❌ خطای داخلی در سیستم CTO: ${ctoError.message}`;
+          }
+        }
       } else {
         // Normal Chatbot AI Response
         replyText = await generateAIResponse(messages, false, tryPro);
