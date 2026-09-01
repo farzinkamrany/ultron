@@ -14,8 +14,6 @@ if (process.env.HTTPS_PROXY || process.env.HTTP_PROXY) {
 }
 
 const nextConfig = {
-  experimental: {
-    serverComponentsExternalPackages: ["ccxt"]
-  }
+  // Remove ccxt from external packages to allow Webpack to bundle it
 };
 export default nextConfig;
