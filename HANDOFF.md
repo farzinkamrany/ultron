@@ -7,9 +7,9 @@ This document serves as the encyclopedic technical and operational manual for Ul
 
 ---
 
-## 1. System Architecture (The 6 Pillars)
+## 1. System Architecture (The 7 Pillars & The Hunter)
 
-Ultron abandons traditional technical analysis (like RSI or MACD) in favor of a 6-pillar mathematical engine.
+Ultron Abandons traditional technical analysis in favor of a 7-pillar mathematical engine and a global market screener.
 
 ### Pillar 1: Time & Geometry (W.D. Gann Engine)
 *Location: `src/lib/trading/gann.ts`*
@@ -46,13 +46,23 @@ Ultron abandons traditional technical analysis (like RSI or MACD) in favor of a 
 - **X-Ray Scanner (Order Book Imbalance):** Scans the Level 2 Order Book (top 100 live Limit Orders) to find "Whale Walls". It calculates the Bid/Ask imbalance ratio to see if there is massive cash waiting to defend a price level.
 - **Lie Detector (CVD Tape Reading):** Analyzes the last 500 finalized *Market Orders* (The Tape) to calculate Cumulative Volume Delta (CVD). If X-Ray shows a Buy Wall but the Tape shows aggressive panic selling (Taker Sells > Taker Buys), the AI flags the Wall as a "Spoof" (Fake) and aborts the trade.
 
+### Pillar 7: The Liquidation Sniper (Derivatives Engine)
+*Location: `src/lib/trading/derivatives.ts`*
+- **Funding Rates:** Connects to Binance Futures to track retail leverage sentiment. If Funding Rates are extremely negative, retail is heavily shorting. The AI recognizes this as a "Short Squeeze" setup and buys aggressively to profit off their liquidations.
+- **Open Interest:** Tracks trapped leverage capital in the market.
+
+### The Altcoin Hunter (Global Market Screener)
+*Location: `src/lib/trading/hunter.ts` & `src/app/api/telegram/ai-worker/route.ts`*
+- **Natural Language Parsing:** The Telegram webhook intercepts commands like "شکار 10 درصد" (Hunt 10% profit). 
+- **The Fast Pass:** Instead of analyzing 1 coin, it pulls the Top 20 liquid altcoins on Binance. It rapidly calculates their distance to Gann Supports and Resistances. It instantly filters out any coin that cannot mathematically hit the requested Target %, delivering only the absolute perfect apex setup to the AI Arbitrator.
+
 ---
 
 ## 2. The AI Arbitrator (The Brain)
 
 *Location: `src/app/api/cron/route.ts`*
 
-The Gemini AI acts as the final judge. It reads the raw data from all 6 pillars and must strictly obey these **11 Directives**:
+The Gemini AI acts as the final judge. It reads the raw data from all 7 pillars and must strictly obey these **12 Directives**:
 
 1. **No Financial Advice Disclaimers:** Speak with absolute, cold, mathematical certainty.
 2. **Precision:** Never use words like "maybe", "consider", or "risk".
@@ -65,6 +75,7 @@ The Gemini AI acts as the final judge. It reads the raw data from all 6 pillars 
 9. **POC Gravity:** If the price is far from the Macro POC, assume a gravitational pull back to it.
 10. **X-RAY ORDER BOOK:** If issuing a STRONG BUY, the AI MUST verify a Whale Buy Wall exists at or near the entry price. If the order book is empty there, abort and issue WAIT FOR LIMIT ORDER.
 11. **TAPE READING (ANTI-SPOOFING):** Even if Rule 10 shows a Whale Wall, the AI MUST check the Tape. If the Cumulative Volume Delta (CVD) shows "EXTREME AGGRESSIVE SELLING (PANIC DUMP)", the Buy Wall is likely a SPOOF (fake). Abort the trade and issue WAIT FOR LIMIT ORDER at a lower price.
+12. **LIQUIDATION SNIPER (DERIVATIVES):** Check the Derivatives Squeeze Zones. If Funding Rate is extremely negative (Short Squeeze imminent) and you have a BUY setup, INCREASE your confidence. If Funding Rate is euphorically positive (Long Squeeze dump imminent), DO NOT issue a Market Buy; you MUST issue WAIT FOR LIMIT ORDER at a much lower support to catch the liquidation wick.
 
 ---
 
