@@ -2,6 +2,7 @@ import { executeAgentTask } from "./agents";
 import { fetchWithRotation } from "@/utils/ai-fetcher";
 import { redis } from "@/lib/redis";
 import { sendTelegramMessage } from "@/lib/telegram";
+import { searchMemories, storeMemory } from "@/lib/memory";
 
 export type CtoStep = "PLANNING" | "RESEARCHING" | "DEVELOPING" | "REVIEWING" | "SUMMARIZING" | "COMPLETED";
 
@@ -73,10 +74,27 @@ export async function startCtoWorkflow(userPrompt: string, chatId: string): Prom
   const taskId = `cto_${Date.now()}_${Math.random().toString(36).substring(7)}`;
   const stateKey = `cto_state:${taskId}`;
   
+  // RAG: Fetch relevant past memories
+  let enrichedPrompt = userPrompt;
+  try {
+    const memories = await searchMemories(userPrompt, 0.7, 3);
+    if (memories && memories.length > 0) {
+      enrichedPrompt = `[LONG-TERM MEMORY RAG]
+Here is context from past CTO debugging sessions and user preferences that might be highly relevant. Use this knowledge to avoid repeating past mistakes:
+${memories.map((m: any) => `- ${m.content}`).join("\n")}
+
+[CURRENT TASK]
+${userPrompt}`;
+      console.log(`[CTO RAG] Injected ${memories.length} past memories into prompt.`);
+    }
+  } catch (ragError) {
+    console.error("[CTO RAG] Failed to fetch memories, continuing without RAG:", ragError);
+  }
+
   const initialState: CtoState = {
     taskId,
     chatId,
-    userPrompt,
+    userPrompt: enrichedPrompt,
     step: "PLANNING",
     devAttempt: 1
   };
@@ -184,6 +202,15 @@ Include snippets of the Developer's code if it passed review. Use beautiful mark
       const text = res?.candidates?.[0]?.content?.parts?.find((p: any) => p.text)?.text || "Summary compilation failed.";
       
       await notify(`📋 **[CTO FINAL REPORT]**\n\n${text}`);
+      
+      // Store RAG Memory for future tasks
+      try {
+        await storeMemory(`CTO completed task: ${state.userPrompt}\nResolution: ${text.substring(0, 500)}`);
+        console.log("[CTO RAG] Successfully stored memory for this task.");
+      } catch (e) {
+        console.error("[CTO RAG] Failed to store memory:", e);
+      }
+      
       state.step = "COMPLETED";
     }
 

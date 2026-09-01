@@ -4,10 +4,10 @@ export async function generateEmbedding(text: string): Promise<number[]> {
   const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
   if (!apiKey) throw new Error("GOOGLE_GENERATIVE_AI_API_KEY not set");
 
-  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${apiKey}`;
+  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key=${apiKey}`;
 
   const payload = JSON.stringify({
-    model: "models/text-embedding-004",
+    model: "models/gemini-embedding-001",
     content: {
       parts: [{ text }]
     }

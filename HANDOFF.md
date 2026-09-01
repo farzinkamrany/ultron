@@ -58,14 +58,17 @@ Ultron Abandons traditional technical analysis in favor of a 7-pillar mathematic
 
 ---
 
-## 2. The Autonomous CTO (Multi-Agent V2)
+## 2. The Autonomous CTO & Auto-Healing (Multi-Agent V2)
 
-*Location: `src/lib/cto/agents.ts` & `src/lib/cto/orchestrator.ts`*
+*Location: `src/lib/cto/agents.ts`, `src/lib/cto/orchestrator.ts`, & `src/lib/error-healer.ts`*
 
-Ultron can write its own code and upgrade itself through the `/cto` command (accessible via Telegram or Web Dashboard). It delegates tasks to three specialized sub-agents running in an iterative feedback loop (`MAX_ITERATIONS = 15`):
-- **RESEARCHER:** Uses Google Search Grounding to read live documentation and plan architectures.
-- **DEVELOPER:** Has file system read/write access and GitHub PR integration (`write_and_propose_code`). It generates code and submits it to QA.
-- **REVIEWER:** The QA firewall. It checks the Developer's code for bugs. If a bug is found (`VERDICT: FAIL`), it loops the task back to the Developer.
+Ultron can write its own code, upgrade itself, and **heal its own bugs**. 
+- **The Stateful QStash Loop:** To bypass Vercel's 60-second limit, the CTO runs as an asynchronous state machine via Upstash QStash (Plan -> Research -> Dev -> Review -> Summary). It can run for hours if necessary.
+- **The Sub-Agents:**
+  - **RESEARCHER:** Uses Google Search Grounding to read live documentation.
+  - **DEVELOPER:** Has file system read/write access and GitHub PR integration.
+  - **REVIEWER:** The QA firewall. It checks the Developer's code.
+- **Auto-Healing (Cybernetic Survival):** If any critical API (like Divar or Telegram) throws a 500 Error, the `healError()` function intercepts it, locks it in Redis for 24h (to prevent infinite loops), sends a Telegram SOS, and instantly wakes up the CTO to read the stack trace and propose a bug fix PR.
 
 ---
 
@@ -106,41 +109,20 @@ When the bot sends a Telegram message, follow these execution rules:
 ### Tech Stack
 - **Framework:** Next.js (App Router) + TypeScript.
 - **Data Provider:** CCXT (Binance API).
-- **AI Engine:** Google Gemini (`@google/genai` natively via REST for fine-grained tool control).
-- **Notification:** Telegram Webhooks (`/api/telegram/webhook`).
-- **Memory Database:** Supabase (PostgreSQL with `pgvector`).
+- **AI Engine:** Google Gemini (REST) & ElevenLabs (Voice/TTS).
+- **Notification:** Telegram Webhooks (with Raw Buffer Multipart for Voice processing).
+- **Memory Database:** Supabase (PostgreSQL with `pgvector`) & Upstash Redis.
+- **CI/CD:** GitHub Actions (Strictly enforces `tsc --noEmit` and `eslint` before merging CTO code).
 
-### Environment Variables (`.env.local`)
-```env
-# AI Keys (Rotated automatically to bypass rate limits)
-GEMINI_API_KEY_1=your_key_here
-GEMINI_API_KEY_2=your_key_here
-
-# Telegram & Queues
-TELEGRAM_BOT_TOKEN=your_bot_token
-TELEGRAM_CHAT_ID=your_chat_id
-QSTASH_TOKEN=your_qstash_token
-
-# Autonomous GitHub Deployer
-GITHUB_PAT=your_github_token
-GITHUB_OWNER=your_github_username
-GITHUB_REPO=ultron
-
-# Network (If in restricted regions like Iran)
-HTTP_PROXY=http://127.0.0.1:v2ray_port
-HTTPS_PROXY=http://127.0.0.1:v2ray_port
-```
-
-### Local Execution vs Production
-- **Local:** Run `npm run dev` to enable Hot Reloading. (Do not use `npm start` for development, as it will cache the production build).
-- **Production (Vercel):** Ultron is configured for 24/7 Vercel deployment (`vercel.json`). Cron jobs are heavily reliant on Vercel's Cron architecture or QStash. 
-  - *Note:* Vercel's Edge limits executions to 60s. Complex AI tool-loops (like the 15-loop CTO) must finish within this window or face `504 Gateway Timeout`.
+### Resiliency Modules
+- **Divar Anti-Bot Circuit Breaker:** If Divar blocks the scraper 3 consecutive times, it triggers a 2-hour Redis lock and sends an SOS to Telegram, preventing a permanent IP ban.
+- **QStash Webhooks:** Vercel limits executions to 60s. Ultron circumvents this by breaking heavy tasks (like CTO loops) into smaller chunks via QStash Webhooks.
 
 ---
 
 ## 6. Future Roadmap
 
-The analytical brain, dashboard, and agentic workflows are finished. Next milestones:
-1. **Live Trading Execution (Micro Mode):** Transition the `PaperTradesTable` and CCXT engine to execute real trades on Bybit with small capital (e.g., $5) and send Telegram receipts.
-2. **Morning Voice Briefing (Podcaster):** A cron job that triggers every morning at 7:30 AM, summarizes the market, scans Divar, and sends an audio `Voice Message` to Telegram.
-3. **Background Workers for CTO:** Offloading the `/cto` task processing from Vercel's 60s synchronous API route to an asynchronous queue (e.g., Upstash QStash background jobs) so the CTO can work on tasks that take 10+ minutes.
+The analytical brain, dashboard, autonomous self-healing CTO, and Telegram UI are completely finished. Next milestones:
+1. **Live Trading Execution (Wealth Manager):** Transition the `PaperTradesTable` and CCXT engine to execute real trades on Bybit with small capital (e.g., $5) and send Telegram receipts.
+2. **Morning Voice Briefing (Podcaster):** A cron job that triggers every morning at 7:30 AM, summarizes the market, scans Divar, and sends an audio `Voice Message` to Telegram using ElevenLabs TTS.
+3. **Long-Term Memory RAG (Supabase):** Upgrading the CTO so it remembers all past debugging sessions and user preferences indefinitely by using `pgvector` embeddings in Supabase.
