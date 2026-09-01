@@ -123,8 +123,21 @@ export async function generateAIResponse(messages: { role: string, content: stri
           }
 
           if (name === "read_source_code") {
+            const { getFileContent } = await import("@/services/github");
             const code = await getFileContent(args.filePath);
             functionOutput = JSON.stringify({ status: "success", content: code });
+          } else if (name === "list_directory") {
+            const { listDirectory } = await import("@/services/github");
+            const dirContents = await listDirectory(args.dirPath || "");
+            functionOutput = JSON.stringify({ status: "success", content: dirContents });
+          } else if (name === "search_codebase") {
+            const { searchCodebase } = await import("@/services/github");
+            const searchResults = await searchCodebase(args.query);
+            functionOutput = JSON.stringify({ status: "success", content: searchResults });
+          } else if (name === "analyze_market") {
+            const { analyzeMarketData } = await import("@/lib/trading/market");
+            const data = await analyzeMarketData(args.asset, args.time_horizon_days);
+            functionOutput = JSON.stringify({ status: "success", content: data });
           } else if (name === "write_and_propose_code") {
             const { executeWriteAndProposeCode } = await import("./ai-tools");
             functionOutput = await executeWriteAndProposeCode(args.filePath, args.content, args.description);

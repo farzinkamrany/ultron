@@ -10,6 +10,7 @@
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
     "@supabase/supabase-js": "^2.112.4",
+    "@types/node-fetch": "^2.6.13",
     "@upstash/qstash": "^2.11.3",
     "@upstash/redis": "^1.38.3",
     "ccxt": "^4.5.76",
@@ -20,6 +21,7 @@
     "lightweight-charts": "^5.2.1",
     "lucide-react": "^0.427.0",
     "next": "14.2.5",
+    "node-fetch": "^2.7.0",
     "protobufjs": "^7.6.6",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

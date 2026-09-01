@@ -59,6 +59,53 @@ export async function getFileContent(filePath: string): Promise<string> {
 }
 
 /**
+ * Lists the contents of a directory in the repository.
+ */
+export async function listDirectory(dirPath: string): Promise<string> {
+  const { owner, repo } = await getGitHubConfig();
+  try {
+    const safePath = (dirPath === "." || dirPath === "/" || !dirPath) ? "" : dirPath;
+    const data = await githubFetch(`/repos/${owner}/${repo}/contents/${safePath}`);
+    
+    if (Array.isArray(data)) {
+      return `Directory contents of /${safePath || "root"}:\n` + data.map((item: any) => `- ${item.name} (${item.type})`).join("\n");
+    }
+    
+    if (data.type === "file") {
+      return `Error: ${dirPath} is a file, not a directory. Use read_source_code instead.`;
+    }
+    return `Error: ${dirPath} is not a valid directory.`;
+  } catch (error: any) {
+    if (error.message.includes("404")) {
+      return `Directory ${dirPath} does not exist.`;
+    }
+    throw error;
+  }
+}
+
+/**
+ * Searches the codebase using the GitHub Search API.
+ */
+export async function searchCodebase(query: string): Promise<string> {
+  const { owner, repo } = await getGitHubConfig();
+  try {
+    // GitHub search API requires query encoding
+    const encodedQuery = encodeURIComponent(query);
+    const data = await githubFetch(`/search/code?q=${encodedQuery}+repo:${owner}/${repo}`);
+    
+    if (!data.items || data.items.length === 0) {
+      return `No results found for query: "${query}"`;
+    }
+    
+    // Format the results concisely to save tokens
+    const results = data.items.slice(0, 10).map((item: any) => `- ${item.path}`).join("\n");
+    return `Search results for "${query}" (Top 10):\n${results}\n\nUse read_source_code to inspect these files.`;
+  } catch (error: any) {
+    throw error;
+  }
+}
+
+/**
  * Creates a new branch, commits the code, and opens a Pull Request.
  */
 export async function writeAndProposeCode(filePath: string, content: string, description: string): Promise<string> {

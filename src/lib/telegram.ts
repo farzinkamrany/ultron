@@ -1,9 +1,11 @@
-let dispatcher: any = undefined;
+import fetch from 'node-fetch';
+import { HttpsProxyAgent } from 'https-proxy-agent';
+
+let agent: any = undefined;
 try {
   const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
   if (proxyUrl) {
-    const { ProxyAgent } = require('undici');
-    dispatcher = new ProxyAgent(proxyUrl);
+    agent = new HttpsProxyAgent(proxyUrl);
   }
 } catch (e) {}
 
@@ -19,8 +21,8 @@ export async function sendTelegramMessage(chatId: string | number, text: string,
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML", reply_markup }),
-      dispatcher
-    } as RequestInit);
+      agent
+    });
 
     if (!response.ok) {
       console.error("[Telegram] Error response:", await response.text());
@@ -42,8 +44,8 @@ export async function sendTelegramAction(chatId: string | number, action: string
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ chat_id: chatId, action }),
-      dispatcher
-    } as RequestInit);
+      agent
+    });
   } catch (error) {
     console.error("[Telegram] Action failed:", error);
   }
@@ -54,15 +56,15 @@ export async function getTelegramFileBuffer(fileId: string): Promise<Buffer | nu
   if (!token) return null;
 
   try {
-    const infoRes = await fetch(`https://api.telegram.org/bot${token}/getFile?file_id=${fileId}`, { dispatcher } as RequestInit);
-    const info = await infoRes.json();
+    const infoRes = await fetch(`https://api.telegram.org/bot${token}/getFile?file_id=${fileId}`, { agent });
+    const info = (await infoRes.json()) as any;
     if (!info.ok) {
       console.error("[Telegram] getFile error:", info);
       return null;
     }
 
     const fileUrl = `https://api.telegram.org/file/bot${token}/${info.result.file_path}`;
-    const fileRes = await fetch(fileUrl, { dispatcher } as RequestInit);
+    const fileRes = await fetch(fileUrl, { agent });
     const arrayBuffer = await fileRes.arrayBuffer();
     return Buffer.from(arrayBuffer);
   } catch (error) {
@@ -76,15 +78,18 @@ export async function sendTelegramVoice(chatId: string | number, audioBuffer: Bu
   if (!token) return;
 
   try {
+    // node-fetch supports native FormData or form-data package.
+    // For node-fetch v2, we should use form-data. Let's try FormData from undici if available, 
+    // or just construct a multipart body manually. But actually, Node 18+ FormData works with node-fetch v2.
     const formData = new FormData();
     formData.append("chat_id", String(chatId));
     formData.append("voice", new Blob([new Uint8Array(audioBuffer)], { type: "audio/mp3" }), "voice.mp3");
 
     const response = await fetch(`https://api.telegram.org/bot${token}/sendVoice`, {
       method: "POST",
-      body: formData,
-      dispatcher
-    } as RequestInit);
+      body: formData as any,
+      agent
+    });
 
     if (!response.ok) {
       console.error("[Telegram] sendVoice error response:", await response.text());
@@ -93,3 +98,5 @@ export async function sendTelegramVoice(chatId: string | number, audioBuffer: Bu
     console.error("[Telegram] sendVoice failed:", error);
   }
 }
+
+
