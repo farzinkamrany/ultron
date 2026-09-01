@@ -24,7 +24,6 @@ export async function POST(req: NextRequest) {
     const allowedChatIds = allowedChatIdsStr.split(',').map((id: string) => id.trim());
 
     const botToken = process.env.TELEGRAM_BOT_TOKEN;
-    const geminiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
 
     // Security Check
     if (!allowedChatIds.includes(chatId)) {
@@ -32,7 +31,7 @@ export async function POST(req: NextRequest) {
       return new NextResponse('OK', { status: 200 });
     }
 
-    if (!botToken || !geminiKey) {
+    if (!botToken) {
       return new NextResponse('OK', { status: 200 });
     }
 
