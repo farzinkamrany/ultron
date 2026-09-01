@@ -10,8 +10,9 @@ export const FLASH_MODELS = [
   "gemini-3.7-flash",         // Latest fast model
   "gemini-3.6-flash",
   "gemini-3.5-flash",
-  "gemini-3.1-flash-lite",
   "gemini-3.5-flash-lite",
+  "gemini-3.1-flash-lite",
+  "gemini-3.0-flash",         // Added from screenshot
   "gemini-2.5-flash",
   "gemini-2.5-flash-lite",
   "gemini-2.0-flash",
@@ -29,6 +30,8 @@ export function getApiKeysPool(): string[] {
     process.env.GEMINI_API_KEY_PRIMARY,
     process.env.GEMINI_API_KEY_SECONDARY,
     process.env.GEMINI_API_KEY_FALLBACK,
+    process.env.GEMINI_API_KEY_4,
+    process.env.GEMINI_API_KEY_5,
     // Keep the old generic key as a final fallback just in case
     process.env.GOOGLE_GENERATIVE_AI_API_KEY
   ].filter(Boolean) as string[];
@@ -38,5 +41,6 @@ export function getApiKeysPool(): string[] {
     throw new Error("No Gemini API keys are configured in the environment variables.");
   }
 
-  return keys;
+  // Deduplicate keys (in case user pasted the same key twice)
+  return Array.from(new Set(keys));
 }
