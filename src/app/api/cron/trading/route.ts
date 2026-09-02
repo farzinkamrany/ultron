@@ -19,14 +19,14 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-
-    // Initialize CCXT Exchange (Binance as default for high liquidity)
-    const exchange = new ccxt.binance({ enableRateLimit: true });
+    // Initialize CCXT Exchange
+    // Use binanceus if configured, otherwise default to binance
+    const useBinanceUS = process.env.USE_BINANCE_US === 'true';
+    const exchange = useBinanceUS ? new ccxt.binanceus({ enableRateLimit: true }) : new ccxt.binance({ enableRateLimit: true });
     
-    // Config proxy if needed for CCXT (since Binance is blocked in some regions including US/Iran)
+    // Config proxy if needed for CCXT
     const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
     if (proxyUrl) {
-      
       exchange.agent = new HttpsProxyAgent(proxyUrl);
     }
 
@@ -35,8 +35,19 @@ export async function POST(req: NextRequest) {
     
     console.log(`[Trading Engine] Fetching ${timeframe} candles for ${symbol}...`);
     
-    // Fetch last 100 days
-    const ohlcv = await exchange.fetchOHLCV(symbol, timeframe, undefined, 100);
+    // Fetch last 100 days with robust error handling
+    let ohlcv;
+    try {
+      ohlcv = await exchange.fetchOHLCV(symbol, timeframe, undefined, 100);
+    } catch (error: any) {
+      // Handle ExchangeNotAvailable or HTTP 451 (Unavailable For Legal Reasons)
+      if (error instanceof ccxt.ExchangeNotAvailable || error.message.includes('451') || error.message.includes('403')) {
+        console.error(`[Trading Engine] Exchange access restricted or unavailable: ${error.message}`);
+        await logError("API_TRADING_FETCH", error, { symbol }, false);
+        return NextResponse.json({ error: "Exchange temporarily unavailable or restricted" }, { status: 503 });
+      }
+      throw error; // Re-throw unexpected errors
+    }
     
     // Map CCXT format [timestamp, open, high, low, close, volume] to our interface
     const candles: Candle[] = ohlcv.map(c => ({
@@ -61,12 +72,20 @@ export async function POST(req: NextRequest) {
     if (signal.action !== "HOLD") {
       const chatId = process.env.TELEGRAM_ADMIN_CHAT_ID;
       
-      const msg = `📈 <b>GANN TRADE SIGNAL ALARM</b> 📈\n\n` +
-                  `<b>Asset:</b> ${signal.symbol}\n` +
-                  `<b>Action:</b> ${signal.action}\n` +
-                  `<b>Entry:</b> $${signal.entryPrice.toFixed(2)}\n` +
-                  `<b>Stop-Loss:</b> $${signal.stopLoss.toFixed(2)}\n` +
-                  `<b>Target:</b> $${signal.takeProfit.toFixed(2)}\n\n` +
+      const msg = `📈 <b>GANN TRADE SIGNAL ALARM</b> 📈
+
+` +
+                  `<b>Asset:</b> ${signal.symbol}
+` +
+                  `<b>Action:</b> ${signal.action}
+` +
+                  `<b>Entry:</b> $${signal.entryPrice.toFixed(2)}
+` +
+                  `<b>Stop-Loss:</b> $${signal.stopLoss.toFixed(2)}
+` +
+                  `<b>Target:</b> $${signal.takeProfit.toFixed(2)}
+
+` +
                   `<i>${signal.reason}</i>`;
                   
       if (chatId) {
@@ -88,6 +107,3 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Trading execution failed" }, { status: 500 });
   }
 }
-
-
-
