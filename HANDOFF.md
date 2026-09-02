@@ -69,6 +69,7 @@ Ultron can write its own code, upgrade itself, and **heal its own bugs**.
   - **DEVELOPER:** Has file system read/write access and GitHub PR integration.
   - **REVIEWER:** The QA firewall. It checks the Developer's code.
 - **Auto-Healing (Cybernetic Survival):** If any critical API (like Divar or Telegram) throws a 500 Error, the `healError()` function intercepts it, locks it in Redis for 24h (to prevent infinite loops), sends a Telegram SOS, and instantly wakes up the CTO to read the stack trace and propose a bug fix PR.
+- **Zero-Trust Architecture & QA Firewall:** Enforced via `.agents/rules/zero_trust_architecture.md`. Sub-agents are strictly constrained: they must use `grep_search` to Read-Before-Write, cannot truncate code with lazy comments, must run self-tests before declaring completion, and are strictly forbidden from modifying the Bybit core or re-introducing proxies.
 
 ---
 
@@ -117,6 +118,8 @@ When the bot sends a Telegram message, follow these execution rules:
 ### Resiliency Modules
 - **Divar Anti-Bot Circuit Breaker:** If Divar blocks the scraper 3 consecutive times, it triggers a 2-hour Redis lock and sends an SOS to Telegram, preventing a permanent IP ban.
 - **QStash Webhooks:** Vercel limits executions to 60s. Ultron circumvents this by breaking heavy tasks (like CTO loops) into smaller chunks via QStash Webhooks.
+- **Vercel Region Migration (US-Block Bypass):** Vercel Serverless Functions are routed to Frankfurt (`fra1`) via `vercel.json`. This completely bypasses CloudFront US-IP bans from Bybit/Binance without requiring flaky proxies, maximizing speed.
+- **System Diagnostics Engine:** A dedicated module (`src/lib/diagnostics.ts`) that pings Bybit, Gemini, Supabase, and Redis. Accessible via Telegram (`/status`) and locally (`scripts/doctor.ts`) to instantly measure API latencies.
 
 ---
 
@@ -129,7 +132,7 @@ The analytical brain, dashboard, autonomous self-healing CTO, and Telegram UI ar
 - **Morning Voice Podcaster:** Fully autonomous daily brief (market analysis + motivational speech) sent via Telegram Voice using ElevenLabs.
 - **TWA / PWA Phase 1:** Web dashboard converted into a standalone Native App structure (Manifest, Asset Links, PWA Meta tags).
 - **Project Berlin (Euro Arbitrage):** Automated scanner mathematically comparing Direct Euro vs. Indirect Euro (via USDT) and alerting `[PROJECT GOLD USDT]`.
-- **Architectural Proxy Eradication (Bybit Migration):** 100% of proxy logic (`HttpsProxyAgent`) and Binance connections were completely ripped out. The entire analytical engine now runs directly on `ccxt.bybit`. This solved severe Vercel 504 timeouts and QStash 30-minute hangs caused by dead Iranian proxies, ensuring Telegram queries respond in < 1 second.
+- **Architectural Proxy Eradication & Bybit Migration:** 100% of proxy logic (`HttpsProxyAgent`) was completely ripped out from `ccxt.bybit` and Gemini's `ai-fetcher.ts`. The Vercel region was migrated to Frankfurt (`fra1`) to bypass US-IP CloudFront blocks. This solved severe Vercel 504 timeouts and QStash 30-minute hangs, ensuring Telegram queries respond in < 1 second.
 
 **🚀 Next Milestones:**
 1. **Live Trading Execution (Micro Mode):** Transition the `PaperTradesTable` and CCXT engine to execute real trades on Bybit with small capital (e.g., $5) and send Telegram receipts.

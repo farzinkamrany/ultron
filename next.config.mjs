@@ -1,3 +1,4 @@
+import { withSentryConfig } from "@sentry/nextjs";
 /** @type {import('next').NextConfig} */
 
 // Bootstrap the undici global proxy so Next.js's native fetch goes through it.
@@ -16,4 +17,18 @@ if (process.env.HTTPS_PROXY || process.env.HTTP_PROXY) {
 const nextConfig = {
   // Remove ccxt from external packages to allow Webpack to bundle it
 };
-export default nextConfig;
+
+export default withSentryConfig(
+  nextConfig,
+  {
+    silent: true,
+    org: "ultron",
+    project: "ultron-ai",
+  },
+  {
+    widenClientFileUpload: true,
+    transpileClientSDK: true,
+    hideSourceMaps: true,
+    disableLogger: true,
+  }
+);

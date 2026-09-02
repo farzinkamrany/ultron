@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { redis } from '@/lib/redis';
 import { sendTelegramMessage } from '@/lib/telegram';
 import { startCtoWorkflow } from '@/lib/cto/orchestrator';
+import * as Sentry from '@sentry/nextjs';
 
 /**
  * Handles a fatal system error by automatically alerting the admin
@@ -17,6 +18,9 @@ export async function healError(error: Error, context: string) {
     const errorStr = `${error.name}: ${error.message}`;
     const stackStr = error.stack || "No stack trace available";
     
+    // 0. Capture in Sentry (APM / Telemetry)
+    Sentry.captureException(error, { extra: { context } });
+
     // 1. Create a unique hash for this specific error to debounce it
     const hashInput = `${context}-${errorStr}`;
     const hash = crypto.createHash('md5').update(hashInput).digest('hex');

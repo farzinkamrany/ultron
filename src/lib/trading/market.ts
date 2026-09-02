@@ -85,7 +85,10 @@ Total Untested 4H FVGs: ${fvgs.length}`;
     let xrayAnalysisStr = "Order Book X-Ray Unavailable";
     let tapeAnalysisStr = "Order Flow Tape Unavailable";
     try {
-      const orderBookRaw = await exchange.fetchOrderBook(asset, 100);
+      // HFT UPGRADE: Use WebSockets for Live Tape & Orderbook (Bypassing REST delay)
+      const wsExchange = new ccxt.pro.bybit({ enableRateLimit: false, options: { defaultType: 'spot' }});
+      
+      const orderBookRaw = await wsExchange.watchOrderBook(asset, 100);
       const obData: OrderBookData = {
         bids: orderBookRaw.bids as [number, number][],
         asks: orderBookRaw.asks as [number, number][]
@@ -96,8 +99,15 @@ Total Untested 4H FVGs: ${fvgs.length}`;
 Whale Buy Wall: $${xray.whaleBuyWallPrice.toFixed(2)}
 Whale Sell Wall: $${xray.whaleSellWallPrice.toFixed(2)}`;
 
-      const recentTradesRaw = await exchange.fetchTrades(asset, undefined, 500);
-      const trades: Trade[] = recentTradesRaw.map(t => ({
+      // Stream live tape for aggressive spoofing detection
+      let recentTradesRaw = await wsExchange.watchTrades(asset, undefined, 500);
+      await new Promise(resolve => setTimeout(resolve, 800)); // Listen to tape for ~1 second
+      recentTradesRaw = await wsExchange.watchTrades(asset, undefined, 500); // Fetch latest buffer
+      
+      // Close WS connection cleanly so Vercel Serverless Function can exit
+      await wsExchange.close();
+
+      const trades: Trade[] = recentTradesRaw.map((t: any) => ({
         side: t.side || 'unknown',
         price: t.price || 0,
         amount: t.amount || 0,
@@ -109,7 +119,7 @@ Whale Sell Wall: $${xray.whaleSellWallPrice.toFixed(2)}`;
 Aggression: ${tape.cvdStatus}`;
 
     } catch (err) {
-      console.warn("Failed to fetch order book or trades", err);
+      console.warn("Failed to fetch order book or trades via WebSocket", err);
     }
 
     // --- DERIVATIVES (FUTURES) ---
