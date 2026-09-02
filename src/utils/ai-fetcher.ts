@@ -9,7 +9,6 @@ class ApiError extends Error {
 }
 
 import https from 'https';
-import { HttpsProxyAgent } from 'https-proxy-agent';
 
 async function makeHttpsRequest(model: string, apiKey: string, payload: string, stream: boolean): Promise<any> {
   const action = stream ? "streamGenerateContent" : "generateContent";
@@ -19,16 +18,12 @@ async function makeHttpsRequest(model: string, apiKey: string, payload: string, 
   return new Promise((resolve, reject) => {
     try {
       const url = new URL(urlString);
-      const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
-      const agent = proxyUrl ? new HttpsProxyAgent(proxyUrl) : undefined;
-
       const req = https.request(url, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "Content-Length": Buffer.byteLength(payload)
         },
-        agent: agent,
         timeout: 45000
       }, (res) => {
         let data = '';
