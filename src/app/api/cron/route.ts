@@ -37,11 +37,25 @@ export async function POST(request: NextRequest) {
     // 2. Initialize CCXT
     const exchange = new ccxt.bybit({ enableRateLimit: true });
 
-    // 3. Fetch Top Liquid Coins (BTC & ETH) Data & Gann Levels
-    const symbols = ["BTC/USDT", "ETH/USDT"];
+    // 3. Fetch Top Liquid Coins Data & Gann Levels, with robust error handling for BadSymbol/unsupported pairs
+    const symbols = ["BTC/USDT", "ETH/USDT", "EUR/USDT"];
     
     const promises = symbols.map(async (symbol) => {
       try {
+        // Check if market exists on exchange to avoid BadSymbol crash if possible, or catch it
+        // CCXT loadMarkets ensures markets are loaded
+        try {
+          if (!exchange.markets || Object.keys(exchange.markets).length === 0) {
+            await exchange.loadMarkets();
+          }
+          if (exchange.markets && !exchange.markets[symbol]) {
+            console.warn(`[Cron] Symbol ${symbol} is not supported on Bybit exchange. Skipping.`);
+            return null;
+          }
+        } catch (loadErr) {
+          // If loadMarkets fails or isn't strictly needed before fetchTicker, proceed to fetchTicker with try/catch
+        }
+
         const ticker = await exchange.fetchTicker(symbol);
         const currentPrice = ticker.last || 0;
         const volume24h = ticker.quoteVolume || 0;
@@ -103,7 +117,7 @@ Jupiter Longitude: ${cosmos.jupiterDegree.toFixed(2)}°
 Mars Longitude: ${cosmos.marsDegree.toFixed(2)}°
 ALIGNMENT STATUS: ${cosmos.alignmentString}`;
         } catch (e) {
-          console.warn(`[Cron] OHLCV fetch failed for ${symbol}`);
+          console.warn(`[Cron] OHLCV fetch failed for ${symbol}:`, e);
         }
 
         // Calculate immediate W.D. Gann Square of 9 levels around the current price
@@ -124,13 +138,25 @@ W.D. Gann Immediate Resistance: $${closestResistance.toFixed(2)}
 ${timeAnalysisStr}
 ---`;
       } catch (err: any) {
-        console.warn(`[Cron] CCXT fetch failed for ${symbol}:`, err.message);
-        return "";
+        // Specifically catch BadSymbol or network/CCXT exchange errors for this individual symbol without failing the cron
+        if (err instanceof ccxt.BadSymbol || err?.name === 'BadSymbol' || err?.message?.includes('BadSymbol') || err?.message?.includes('does not exist')) {
+          console.warn(`[Cron] Gracefully skipped unsupported symbol '${symbol}': ${err.message}`);
+        } else {
+          console.error(`[Cron] CCXT fetch failed for symbol '${symbol}':`, err?.message || err);
+        }
+        return null;
       }
     });
 
     const results = await Promise.all(promises);
-    const marketDataStr = results.join("\n");
+    const validResults = results.filter((res): res is string => res !== null && res.trim() !== "");
+    
+    if (validResults.length === 0) {
+      throw new Error("All symbols failed or were unsupported by the exchange.");
+    }
+
+    const marketDataStr = validResults.join("
+");
 
     // 4. Construct AI Prompt combining Strict Rules + Hard Data
     const prompt = `[SIMULATION OVERRIDE: ACTIVE]
@@ -167,7 +193,7 @@ Format EXACTLY like this for each asset. Output ONLY this format in Persian:
 ⏳ بُعد چهارم (زمان و هندسه): [وضعیت فعلی در فن‌های گن صعودی/نزولی و ماتریس ۱۴۴]
 🌌 بُعد پنجم (نجوم باطنی): [آلارم کیهانی، ترجمه قیمت سیاره مشتری و موج سینوسی بهاری]
 🏦 ردپای نهنگ‌ها (SMC): [وضعیت اوردر بلاک‌ها و نقدینگی]
-💡 تصمیم نهایی: [GANN MASTER ASCENSION SIGNAL / STRONG BUY / STRONG SHORT / SCALP BUY / SCALP SHORT / WAIT FOR LIMIT ORDER / DEFCON EMERGENCY: LIQUIDATE TO CASH]
+💡 تصمیم نهایی: [GANN MASTER ASCENSION SIGNAL / STRONG BUY /STRONG SHORT / SCALP BUY / SCALP SHORT / WAIT FOR LIMIT ORDER / DEFCON EMERGENCY: LIQUIDATE TO CASH]
 🟢 نقطه ورود: [Exact Price from Swept OB or Gann Level]
 🎯 تارگت یک روزه: [Exact Price from Gann Resistance/Support]
 🔴 حد ضرر: [Exact Price below OB or Gann Level]`;
