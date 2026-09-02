@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from 'next/server';
 import { redis } from '@/lib/redis';
 import { sendTelegramMessage, sendTelegramAction, getTelegramFileBuffer, sendTelegramVoice } from '@/lib/telegram';
-import { generateAIResponse } from '@/lib/ai';
+import { generateAIResponse, generateStructuredTradeResponse } from '@/lib/ai';
 import { generateSpeech } from '@/lib/audio';
 import { verifyQStashSignature } from '@/lib/qstash';
 import { huntForSetup } from '@/lib/trading/hunter';
@@ -119,12 +119,15 @@ export async function POST(req: NextRequest) {
           const includeLiq = contentStr ? (contentStr.toLowerCase().includes("liquidation") || contentStr.includes("لیکوید")) : false;
           const marketData = await analyzeMarketData(bestAsset.symbol, 30, includeLiq);
           
-          const hunterMessages = [
-            { role: 'user', content: ULTRON_SYSTEM_PROMPT },
-            { role: 'model', content: "Understood. I am Ultron. I will analyze the data with 100% mathematical precision." },
-            { role: 'user', content: `Run a full analysis on ${bestAsset.symbol} based on this data:\n${marketData}` }
-          ];
-          replyText = await generateAIResponse(hunterMessages, false, tryPro);
+          const decision = await generateStructuredTradeResponse(JSON.stringify(marketData, null, 2), tryPro);
+          replyText = `🎯 Trade Setup: ${bestAsset.symbol}\n\n` +
+                      `Action: ${decision.action}\n` +
+                      `Entry: ${decision.entryPrice ? '$' + decision.entryPrice : 'N/A'}\n` +
+                      `Stop Loss: ${decision.stopLoss ? '$' + decision.stopLoss : 'N/A'}\n` +
+                      `Take Profit: ${decision.takeProfit ? '$' + decision.takeProfit : 'N/A'}\n` +
+                      `Leverage: ${decision.leverage}x\n` +
+                      `Confidence: ${decision.confidenceScore}%\n\n` +
+                      `Reasoning:\n${decision.reasoning}`;
         } else {
           replyText = `هیچ ارزی در ۲۰ کوین برتر پیدا نشد که در حال حاضر موقعیت امن برای تارگت ${targetPerc}٪ داشته باشد. (یا از حمایت دور هستند یا اردر بوک خالی است).`;
         }
@@ -149,7 +152,18 @@ export async function POST(req: NextRequest) {
         }
       } else {
         // Normal Chatbot AI Response
-        replyText = await generateAIResponse(messages, false, tryPro);
+        let persona: 'dev' | 'quant' = 'quant';
+        const textLower = (contentStr || "").toLowerCase();
+        const devKeywords = ['react', 'next.js', 'zustand', 'typescript', 'bug'];
+        const quantKeywords = ['چارت', 'لانگ', 'شورت', 'شکار', 'gann'];
+
+        if (textLower.startsWith('/dev') || devKeywords.some(kw => textLower.includes(kw))) {
+          persona = 'dev';
+        } else if (quantKeywords.some(kw => textLower.includes(kw))) {
+          persona = 'quant';
+        }
+
+        replyText = await generateAIResponse(messages, false, tryPro, persona);
       }
 
       // 4. Save to Redis

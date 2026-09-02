@@ -7,9 +7,22 @@ import { analyzeOrderBook, OrderBookData } from './orderbook';
 import { analyzeOrderFlow, Trade } from './tape';
 import { analyzeDerivatives } from './derivatives';
 
-export async function analyzeMarketData(asset: string, timeHorizonDays: number, includeLiquidation: boolean = false): Promise<string> {
+export interface MarketState {
+  asset: string;
+  price: number;
+  timeframeLabel: string;
+  defcon: { level: string | number; description: string; } | null;
+  orderBook: { imbalanceRatio: number; whaleBuyWallPrice: number; whaleSellWallPrice: number; } | null;
+  tape: { cvd: number; aggression: string; } | null;
+  derivatives: { fundingRate: number; openInterest: number; sentiment: string; } | null;
+  gann: { supports: number[]; resistances: number[]; };
+  timeGeometry: { daysSinceMacroBottom: number; isReversalWindow: boolean; isVolumeClimax: boolean; isDeathZoneApex: boolean; resistances144: number[]; priceDegree: number; alignment: string; } | null;
+  liquidity: { vwap: number; trend: string; nearestBullOB: string; nearestBearOB: string; untested4hFvgsCount: number; macroPoc: number | null; } | null;
+}
+
+export async function analyzeMarketData(asset: string, timeHorizonDays: number, includeLiquidation: boolean = false): Promise<MarketState> {
   try {
-    const exchange = new ccxt.bybit({ 
+    const exchange = new ccxt.bybit({
       enableRateLimit: true,
       options: {
         defaultType: 'spot'
@@ -43,7 +56,7 @@ export async function analyzeMarketData(asset: string, timeHorizonDays: number, 
     const avgVol = recentVols.reduce((a, b) => a + b, 0) / recentVols.length;
     const isVolumeClimax = currentVol > (avgVol * 2.0);
 
-    let smcAnalysisStr = "SMC Data Unavailable";
+    let liquidityData: MarketState['liquidity'] = null;
     try {
       const ohlcv4hRaw = await exchange.fetchOHLCV(asset, '4h', undefined, 50);
       const ohlcv4h: IctOHLCV[] = ohlcv4hRaw.map(c => ({
@@ -74,36 +87,42 @@ export async function analyzeMarketData(asset: string, timeHorizonDays: number, 
       const nearestBullOB = bullishOBs.length > 0 ? `$${bullishOBs[0].top.toFixed(2)} - $${bullishOBs[0].bottom.toFixed(2)}` : "None nearby";
       const nearestBearOB = bearishOBs.length > 0 ? `$${bearishOBs[0].bottom.toFixed(2)} - $${bearishOBs[0].top.toFixed(2)}` : "None nearby";
 
-      smcAnalysisStr = `Institutional VWAP: $${vwap.toFixed(2)} | Trend: ${vwapStatus}
-Nearest Bullish OB: ${nearestBullOB}
-Nearest Bearish OB: ${nearestBearOB}
-Total Untested 4H FVGs: ${fvgs.length}`;
+      liquidityData = {
+        vwap,
+        trend: vwapStatus,
+        nearestBullOB,
+        nearestBearOB,
+        untested4hFvgsCount: fvgs.length,
+        macroPoc: null
+      };
     } catch (err) {
       console.warn("Failed to fetch SMC data", err);
     }
 
-    let xrayAnalysisStr = "Order Book X-Ray Unavailable";
-    let tapeAnalysisStr = "Order Flow Tape Unavailable";
+    let orderBookData: MarketState['orderBook'] = null;
+    let tapeData: MarketState['tape'] = null;
     try {
       // HFT UPGRADE: Use WebSockets for Live Tape & Orderbook (Bypassing REST delay)
-      const wsExchange = new ccxt.pro.bybit({ enableRateLimit: false, options: { defaultType: 'spot' }});
-      
-      const orderBookRaw = await wsExchange.watchOrderBook(asset, 100);
+      const wsExchange = new ccxt.pro.bybit({ enableRateLimit: false, options: { defaultType: 'spot' } });
+
+      const rawOrderBook = await wsExchange.watchOrderBook(asset, 100);
       const obData: OrderBookData = {
-        bids: orderBookRaw.bids as [number, number][],
-        asks: orderBookRaw.asks as [number, number][]
+        bids: rawOrderBook.bids as [number, number][],
+        asks: rawOrderBook.asks as [number, number][]
       };
       const xray = analyzeOrderBook(obData);
 
-      xrayAnalysisStr = `Order Book Imbalance (Bids/Asks): ${xray.imbalanceRatio.toFixed(2)}x
-Whale Buy Wall: $${xray.whaleBuyWallPrice.toFixed(2)}
-Whale Sell Wall: $${xray.whaleSellWallPrice.toFixed(2)}`;
+      orderBookData = {
+        imbalanceRatio: xray.imbalanceRatio,
+        whaleBuyWallPrice: xray.whaleBuyWallPrice,
+        whaleSellWallPrice: xray.whaleSellWallPrice
+      };
 
       // Stream live tape for aggressive spoofing detection
       let recentTradesRaw = await wsExchange.watchTrades(asset, undefined, 500);
       await new Promise(resolve => setTimeout(resolve, 800)); // Listen to tape for ~1 second
       recentTradesRaw = await wsExchange.watchTrades(asset, undefined, 500); // Fetch latest buffer
-      
+
       // Close WS connection cleanly so Vercel Serverless Function can exit
       await wsExchange.close();
 
@@ -115,24 +134,32 @@ Whale Sell Wall: $${xray.whaleSellWallPrice.toFixed(2)}`;
       }));
 
       const tape = analyzeOrderFlow(trades);
-      tapeAnalysisStr = `CVD: $${Math.floor(tape.cvd).toLocaleString()}
-Aggression: ${tape.cvdStatus}`;
+      tapeData = {
+        cvd: tape.cvd,
+        aggression: tape.cvdStatus
+      };
 
     } catch (err) {
       console.warn("Failed to fetch order book or trades via WebSocket", err);
     }
 
     // --- DERIVATIVES (FUTURES) ---
-    let derivsStr = "Liquidation/Derivatives module is disabled. Activate by mentioning 'Liquidation' or 'لیکوید'.";
+    let derivsData: MarketState['derivatives'] = null;
     if (includeLiquidation) {
-      const derivs = await analyzeDerivatives(asset);
-      derivsStr = `Funding Rate: ${(derivs.fundingRate * 100).toFixed(4)}%
-Open Interest: ${derivs.openInterest.toLocaleString()}
-Sentiment: ${derivs.sentiment}`;
+      try {
+        const derivs = await analyzeDerivatives(asset);
+        derivsData = {
+          fundingRate: derivs.fundingRate,
+          openInterest: derivs.openInterest,
+          sentiment: derivs.sentiment
+        };
+      } catch (err) {
+        console.warn("Failed to fetch derivatives data", err);
+      }
     }
 
-    let timeAnalysisStr = "Time Cycle Data Unavailable";
-    let defconStatusStr = "DEFCON Status Unavailable";
+    let timeGeometryData: MarketState['timeGeometry'] = null;
+    let defconData: MarketState['defcon'] = null;
     try {
       const macroOhlcvRaw = await exchange.fetchOHLCV(asset, '1d', undefined, 365);
       const macroOhlcv: MacroOHLCV[] = macroOhlcvRaw.map(c => ({
@@ -145,12 +172,15 @@ Sentiment: ${derivs.sentiment}`;
       }));
 
       const chaos = calculateChaosLevel(macroOhlcv);
-      defconStatusStr = `Current Chaos Level: ${chaos.level}
-Description: ${chaos.description}`;
+      defconData = {
+        level: chaos.level,
+        description: chaos.description
+      };
 
       const macroPOC = calculatePointOfControl(macroOhlcv);
-      smcAnalysisStr += `\
-Macro POC (Gravity Magnet): $${macroPOC?.toFixed(2)}`;
+      if (liquidityData) {
+        liquidityData.macroPoc = macroPOC;
+      }
 
       let absoluteLow = Infinity;
       let absoluteHigh = -Infinity;
@@ -174,46 +204,36 @@ Macro POC (Gravity Magnet): $${macroPOC?.toFixed(2)}`;
       const macro144 = calculateSquareOf144(absoluteLow, trueScaleFactor);
       const cosmos = calculateCosmicAlignment(currentPrice);
 
-      timeAnalysisStr = `Days Since Macro Bottom: ${daysSincePivot}
-IS REVERSAL WINDOW: ${isReversalWindow ? "YES" : "NO"}
-VOLUME CLIMAX: ${isVolumeClimax ? "YES" : "NO"}
-
-IS DEATH ZONE APEX: ${isApexZone ? "YES - CRITICAL SQUEEZE" : "NO"}
-
-144-Block Resistances: ${macro144.majorResistances.map(r => `$${r.toFixed(0)}`).join(" | ")}
-
-Price Degree: ${cosmos.priceDegree.toFixed(2)}°
-Alignment: ${cosmos.alignmentString}`;
+      timeGeometryData = {
+        daysSinceMacroBottom: daysSincePivot,
+        isReversalWindow: isReversalWindow,
+        isVolumeClimax: isVolumeClimax,
+        isDeathZoneApex: isApexZone,
+        resistances144: macro144.majorResistances,
+        priceDegree: cosmos.priceDegree,
+        alignment: cosmos.alignmentString
+      };
     } catch (err) {
       console.warn("Failed to fetch macro history", err);
     }
 
-    return `
-[DYNAMIC MARKET ANALYSIS - ${asset}]
-Price: $${currentPrice.toFixed(2)}
-Timeframe: ${label}
-
-[DEFCON PROTOCOL]
-${defconStatusStr}
-
-[X-RAY & TAPE]
-${xrayAnalysisStr}
-${tapeAnalysisStr}
-
-[SQUEEZE ZONES]
-${derivsStr}
-
-[GANN SUPPORTS/RESISTANCES]
-Supports: ${supports.slice(0, 3).map(s => `$${s.toFixed(2)}`).join(" | ")}
-Resistances: ${resistances.slice(0, 3).map(r => `$${r.toFixed(2)}`).join(" | ")}
-
-[TIME SQUARING & GEOMETRY]
-${timeAnalysisStr}
-
-[LIQUIDITY]
-${smcAnalysisStr}
-`;
+    return Object.freeze({
+      asset,
+      price: currentPrice,
+      timeframeLabel: label,
+      defcon: defconData,
+      orderBook: orderBookData,
+      tape: tapeData,
+      derivatives: derivsData,
+      gann: {
+        supports: supports.slice(0, 3),
+        resistances: resistances.slice(0, 3)
+      },
+      timeGeometry: timeGeometryData,
+      liquidity: liquidityData
+    });
   } catch (error: any) {
-    return `Failed to analyze ${asset}: ${error.message}`;
+    throw new Error(`Failed to analyze ${asset}: ${error.message}`);
   }
 }
+

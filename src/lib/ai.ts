@@ -2,8 +2,14 @@ import { ULTRON_SYSTEM_PROMPT } from "./prompt";
 import { searchMemories } from "./memory";
 import { ULTRON_TOOLS } from "./ai-tools";
 import { getFileContent, writeAndProposeCode } from "@/services/github";
+import { TradeSchema, TradeDecision } from "./validators";
 
-export async function generateAIResponse(messages: { role: string, content: string, audio?: Buffer, image?: Buffer }[], stream = false, tryPro = true): Promise<any> {
+export const DEV_MODE_PROMPT = `تو یک مهندس ارشد نرم‌افزار و همکار من هستی. تخصصت معماری‌های فرانت‌اند، Next.js، TypeScript، و مدیریت State (مانند Zustand و Redux) است. تمام قوانین ترید، Gann و SMC در این حالت غیرفعال هستند. لحن تو باید کاملاً همکارانه، کوتاه و مختص به حل مسئله مهندسی باشد.
+
+[Telegram Code Formatter]
+ارسال کدهای طولانی در تلگرام ممنوع است. فقط نقطه‌ی دقیقِ باگ (Diff) و نهایتاً ۱۵ خط کد بهینه‌شده را ارسال کن. توضیحات باید مستقیم و بدون حاشیه باشند.`;
+
+export async function generateAIResponse(messages: { role: string, content: string, audio?: Buffer, image?: Buffer }[], stream = false, tryPro = true, persona: 'dev' | 'quant' = 'quant'): Promise<any> {
   const contents: any[] = messages
     .filter(m => (m.content && m.content.trim()) || m.audio || m.image)
     .map(msg => {
@@ -72,7 +78,9 @@ export async function generateAIResponse(messages: { role: string, content: stri
   for (let i = 0; i < MAX_ITERATIONS; i++) {
     const currentTime = new Date().toISOString();
     const telegramSafeFormatDirective = `\n\n[TELEGRAM SAFE-FORMAT DIRECTIVE]\n- Optimize all responses for Telegram.\n- NEVER use markdown tables. Tables are strictly forbidden.\n- DO NOT use nested or excessive bolding (stars *) that breaks Telegram rendering.\n- Keep paragraphs short and use simple hyphenated lists (-) for readability.\n- Keep the tone clear and unambiguous.`;
-    const dynamicSystemPrompt = ULTRON_SYSTEM_PROMPT + `\n\n[TEMPORAL CONTEXT]\nCurrent Time: ${currentTime}` + telegramSafeFormatDirective + memoryContext;
+    
+    const basePrompt = persona === 'dev' ? DEV_MODE_PROMPT : ULTRON_SYSTEM_PROMPT;
+    const dynamicSystemPrompt = basePrompt + `\n\n[TEMPORAL CONTEXT]\nCurrent Time: ${currentTime}` + telegramSafeFormatDirective + memoryContext;
 
     const payload = JSON.stringify({
       system_instruction: { parts: [{ text: dynamicSystemPrompt }] },
@@ -186,4 +194,62 @@ export async function generateAIResponse(messages: { role: string, content: stri
   }
 
   return "Error: Reached maximum tool execution iterations without returning text.";
+}
+
+export async function generateStructuredTradeResponse(marketStateStr: string, tryPro = true): Promise<TradeDecision> {
+  const { fetchWithRotation } = await import("@/utils/ai-fetcher");
+  
+  const systemPrompt = `You are a Deterministic Trading Interpreter. Your ONLY job is to take the provided MarketState mathematical object and output a JSON object conforming strictly to the requested schema. Do not generate text outside the JSON.`;
+  
+  let currentPrompt = `Market State Data:\n${marketStateStr}\n\nOutput a valid JSON conforming to this schema:\n{
+  "action": "BUY" | "SELL" | "WAIT",
+  "entryPrice": number | null (Must be positive),
+  "stopLoss": number | null (BUY: SL < Entry, SELL: SL > Entry),
+  "takeProfit": number | null (Must enforce 1:2 Risk:Reward minimum),
+  "leverage": number (1 to 5 MAX - Kill Switch Engaged),
+  "confidenceScore": number (0-100),
+  "reasoning": "string"
+}`;
+
+  const MAX_RETRIES = 3;
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    const payload = JSON.stringify({
+      system_instruction: { parts: [{ text: systemPrompt }] },
+      contents: [{ role: "user", parts: [{ text: currentPrompt }] }],
+      generationConfig: { 
+        temperature: 0.1, 
+        responseMimeType: "application/json" 
+      },
+    });
+
+    try {
+      const responseJson = await fetchWithRotation(payload, false, tryPro);
+      const candidate = responseJson?.candidates?.[0];
+      if (!candidate) throw new Error("No candidates returned");
+
+      const textPart = candidate.content?.parts?.find((p: any) => p.text)?.text;
+      if (!textPart) throw new Error("No text part in candidate");
+
+      const parsedData = JSON.parse(textPart);
+      const validatedData = TradeSchema.parse(parsedData);
+      return validatedData;
+    } catch (err: any) {
+      console.warn(`[Structured Trade] Attempt ${attempt} failed:`, err.message);
+      if (attempt === MAX_RETRIES) {
+        console.error("[Structured Trade] Max retries reached.");
+        return {
+          action: "WAIT",
+          entryPrice: null,
+          stopLoss: null,
+          takeProfit: null,
+          leverage: 1,
+          confidenceScore: 0,
+          reasoning: `System failed to produce a deterministic trade decision after ${MAX_RETRIES} attempts. Error: ${err.message}`
+        };
+      }
+      currentPrompt += `\n\n[PREVIOUS ERROR]: ${err.message}. Please fix your JSON output and try again.`;
+    }
+  }
+
+  return { action: "WAIT", entryPrice: null, stopLoss: null, takeProfit: null, leverage: 1, confidenceScore: 0, reasoning: "Fallback." };
 }

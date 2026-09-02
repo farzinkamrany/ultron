@@ -123,17 +123,18 @@ When the bot sends a Telegram message, follow these execution rules:
 
 ---
 
-## 6. Future Roadmap
+## 6. Future Roadmap (Protocol V3.0 - The God-Tier Architecture & Omni-OS)
 
-The analytical brain, dashboard, autonomous self-healing CTO, and Telegram UI are completely finished.
+The analytical brain, dashboard, autonomous self-healing CTO, and Telegram UI are fully deployed in Frankfurt. We are now executing **Protocol V3.0**.
 
-**✅ Completed Milestones:**
+**✅ Completed V3.0 Milestones (The Logical Firewall):**
+- **Zod Firewall & Deterministic AI:** The AI model acts strictly as an Interpreter, returning structured JSON (`TradeDecision`). The `Zod` firewall guarantees Mathematical Certainty (max 5x leverage, strictly positive prices, and minimum 1:2 Risk-to-Reward ratio enforced at runtime). If a signal violates these rules, it is instantly blocked.
+- **Single Source of Truth (One-Way Pipeline):** The Quant Engine never touches frontend state. Validated signals are pushed to Supabase API (`paper_trades`), and Zustand purely listens.
+- **Architectural Proxy Eradication:** Vercel region migrated to Frankfurt (`fra1`) to bypass US-IP CloudFront blocks, resulting in <1s latency.
 - **Long-Term Memory RAG:** CTO uses Supabase `pgvector` to remember past bugs and user preferences indefinitely.
-- **Morning Voice Podcaster:** Fully autonomous daily brief (market analysis + motivational speech) sent via Telegram Voice using ElevenLabs.
-- **TWA / PWA Phase 1:** Web dashboard converted into a standalone Native App structure (Manifest, Asset Links, PWA Meta tags).
-- **Project Berlin (Euro Arbitrage):** Automated scanner mathematically comparing Direct Euro vs. Indirect Euro (via USDT) and alerting `[PROJECT GOLD USDT]`.
-- **Architectural Proxy Eradication & Bybit Migration:** 100% of proxy logic (`HttpsProxyAgent`) was completely ripped out from `ccxt.bybit` and Gemini's `ai-fetcher.ts`. The Vercel region was migrated to Frankfurt (`fra1`) to bypass US-IP CloudFront blocks. This solved severe Vercel 504 timeouts and QStash 30-minute hangs, ensuring Telegram queries respond in < 1 second.
 
-**🚀 Next Milestones:**
-1. **Live Trading Execution (Micro Mode):** Transition the `PaperTradesTable` and CCXT engine to execute real trades on Bybit with small capital (e.g., $5) and send Telegram receipts.
-2. **Android TWA Compilation:** Use Bubblewrap or Android Studio to compile the `apk`/`aab` file from the PWA manifest for Google Play/native installation.
+**🚀 Next V3.0 Milestones:**
+1. **XState Engine:** Implement finite state machines to control all trading logic and coding decisions, removing all implicit state mutations.
+2. **God-Tier Quant (Speculative Execution & WASM):** Pre-calculate 100 future market scenarios, cache them in Redis, and port heavy Gann/Orderbook geometric math to Rust/WebAssembly for C++ level speeds.
+3. **Omni-Channel Life-OS:** Integrate iOS Shortcuts, track physical asset depreciation (e.g., Castrol 10W-40 limits, Plant humidity), enforce "Focus Mode" during gaming (Sekiro/Wukong), and enforce German B2 linguistic context in casual queries.
+4. **AST Code Manipulation:** Transition the CTO agent from string-replacement to AST (TypeScript Compiler API) for absolute zero-truncation file updates.
