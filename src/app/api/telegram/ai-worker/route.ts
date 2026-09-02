@@ -128,6 +128,10 @@ export async function POST(req: NextRequest) {
         } else {
           replyText = `هیچ ارزی در ۲۰ کوین برتر پیدا نشد که در حال حاضر موقعیت امن برای تارگت ${targetPerc}٪ داشته باشد. (یا از حمایت دور هستند یا اردر بوک خالی است).`;
         }
+      } else if (contentStr && contentStr.startsWith('/status')) {
+        await sendTelegramMessage(chatId, "⏳ در حال بررسی سیستم‌ها (Diagnostics)...");
+        const { runSystemDiagnostics } = await import("@/lib/diagnostics");
+        replyText = await runSystemDiagnostics();
       } else if (contentStr && contentStr.startsWith('/cto')) {
         // [MULTI-AGENT CTO MODE] Isolated execution path
         const ctoTask = contentStr.replace('/cto', '').trim();
