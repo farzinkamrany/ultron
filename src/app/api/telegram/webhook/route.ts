@@ -94,9 +94,9 @@ export async function POST(req: NextRequest) {
 
     if (text.startsWith('/dashboard')) {
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://ultron-assistant-iota.vercel.app";
-      await sendTelegramMessage(chatId, "📊 Open Ultron Dashboard:", {
+      await sendTelegramMessage(chatId, "📊 Open Ultron Life OS:", {
         inline_keyboard: [
-          [{ text: "📊 Open Dashboard", web_app: { url: `${appUrl}/dashboard/trading` } }]
+          [{ text: "📊 Open Dashboard", web_app: { url: `${appUrl}/` } }]
         ]
       });
       return new NextResponse('OK', { status: 200 });
