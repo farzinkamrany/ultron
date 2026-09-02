@@ -108,7 +108,7 @@ When the bot sends a Telegram message, follow these execution rules:
 
 ### Tech Stack
 - **Framework:** Next.js (App Router) + TypeScript.
-- **Data Provider:** CCXT (Binance API).
+- **Data Provider:** CCXT (Bybit API).
 - **AI Engine:** Google Gemini (REST) & ElevenLabs (Voice/TTS).
 - **Notification:** Telegram Webhooks (with Raw Buffer Multipart for Voice processing).
 - **Memory Database:** Supabase (PostgreSQL with `pgvector`) & Upstash Redis.
@@ -129,6 +129,7 @@ The analytical brain, dashboard, autonomous self-healing CTO, and Telegram UI ar
 - **Morning Voice Podcaster:** Fully autonomous daily brief (market analysis + motivational speech) sent via Telegram Voice using ElevenLabs.
 - **TWA / PWA Phase 1:** Web dashboard converted into a standalone Native App structure (Manifest, Asset Links, PWA Meta tags).
 - **Project Berlin (Euro Arbitrage):** Automated scanner mathematically comparing Direct Euro vs. Indirect Euro (via USDT) and alerting `[PROJECT GOLD USDT]`.
+- **Architectural Proxy Eradication (Bybit Migration):** 100% of proxy logic (`HttpsProxyAgent`) and Binance connections were completely ripped out. The entire analytical engine now runs directly on `ccxt.bybit`. This solved severe Vercel 504 timeouts and QStash 30-minute hangs caused by dead Iranian proxies, ensuring Telegram queries respond in < 1 second.
 
 **🚀 Next Milestones:**
 1. **Live Trading Execution (Micro Mode):** Transition the `PaperTradesTable` and CCXT engine to execute real trades on Bybit with small capital (e.g., $5) and send Telegram receipts.
