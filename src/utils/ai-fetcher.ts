@@ -8,60 +8,43 @@ class ApiError extends Error {
   }
 }
 
-import https from 'https';
-
 async function makeHttpsRequest(model: string, apiKey: string, payload: string, stream: boolean): Promise<any> {
   const action = stream ? "streamGenerateContent" : "generateContent";
-  // The URL string needs to be parsed for https.request
   const urlString = `https://generativelanguage.googleapis.com/v1beta/models/${model}:${action}?key=${apiKey}${stream ? '&alt=sse' : ''}`;
   
-  return new Promise((resolve, reject) => {
-    try {
-      const url = new URL(urlString);
-      const req = https.request(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Content-Length": Buffer.byteLength(payload)
-        },
-        timeout: 45000
-      }, (res) => {
-        let data = '';
-        res.on('data', chunk => data += chunk);
-        res.on('end', () => {
-          if (res.statusCode && res.statusCode >= 400) {
-            reject(new ApiError(res.statusCode, data));
-          } else {
-            try {
-              if (stream) {
-                // If stream was actually needed, this would need to return the raw response stream.
-                // But since ai.ts passes false for stream, we can just return the JSON object.
-                resolve(JSON.parse(data));
-              } else {
-                resolve(JSON.parse(data));
-              }
-            } catch (e: any) {
-              reject(new ApiError(500, "Failed to parse JSON: " + e.message));
-            }
-          }
-        });
-      });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 45000);
 
-      req.on('timeout', () => {
-        req.destroy();
-        reject(new ApiError(408, "Request Timeout"));
-      });
+  try {
+    const res = await fetch(urlString, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: payload,
+      signal: controller.signal
+    });
 
-      req.on('error', (err) => {
-        reject(new ApiError(500, err.message));
-      });
+    clearTimeout(timeoutId);
 
-      req.write(payload);
-      req.end();
-    } catch (err: any) {
-      reject(new ApiError(500, err.message));
+    if (!res.ok) {
+      const errorText = await res.text();
+      throw new ApiError(res.status, errorText);
     }
-  });
+
+    if (stream) {
+      // Stream parsing if ever needed
+      return await res.json();
+    } else {
+      return await res.json();
+    }
+  } catch (err: any) {
+    clearTimeout(timeoutId);
+    if (err.name === 'AbortError') {
+      throw new ApiError(408, "Request Timeout");
+    }
+    throw new ApiError(500, err.message);
+  }
 }
 
 /**
