@@ -1,4 +1,5 @@
 import ccxt from 'ccxt';
+import { HttpsProxyAgent } from 'https-proxy-agent';
 import { calculateGannSquareOf9, calculateTimeCycles, calculateGannAngles, calculateDownwardGannAngles, calculateAnniversaryCycles, calculateCosmicAlignment, calculateSquareOf144 } from './gann';
 import { findFairValueGaps, findOrderBlocks, OHLCV as IctOHLCV } from './ict';
 import { calculateChaosLevel, MacroOHLCV } from './chaos';
@@ -28,7 +29,6 @@ export async function analyzeMarketData(asset: string, timeHorizonDays: number, 
       }
     };
     if (proxyUrl) {
-      const { HttpsProxyAgent } = require('https-proxy-agent');
       exchangeOpts.agent = new HttpsProxyAgent(proxyUrl);
     }
     const exchange = new ccxt.binance(exchangeOpts);

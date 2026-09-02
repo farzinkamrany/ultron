@@ -1,4 +1,5 @@
 import ccxt from 'ccxt';
+import { HttpsProxyAgent } from 'https-proxy-agent';
 
 export interface DerivativesAnalysis {
   fundingRate: number;
@@ -25,7 +26,6 @@ export async function analyzeDerivatives(asset: string): Promise<DerivativesAnal
     };
     
     if (proxyUrl) {
-      const { HttpsProxyAgent } = require('https-proxy-agent');
       exchangeOpts.agent = new HttpsProxyAgent(proxyUrl);
     }
     const exchange = new ccxt.binance(exchangeOpts);

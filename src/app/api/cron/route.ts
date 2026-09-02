@@ -58,9 +58,8 @@ export async function POST(request: NextRequest) {
 
     // 3. Fetch Top Liquid Coins (BTC & ETH) Data & Gann Levels
     const symbols = ["BTC/USDT", "ETH/USDT"];
-    let marketDataStr = "";
-
-    for (const symbol of symbols) {
+    
+    const promises = symbols.map(async (symbol) => {
       try {
         const ticker = await exchange.fetchTicker(symbol);
         const currentPrice = ticker.last || 0;
@@ -131,7 +130,7 @@ ALIGNMENT STATUS: ${cosmos.alignmentString}`;
         const closestSupport = Math.max(...gann.supports);
         const closestResistance = Math.min(...gann.resistances);
 
-        marketDataStr += `
+        return `
 Asset: ${symbol}
 Current Price: $${currentPrice.toFixed(2)}
 24h Change: ${change24h.toFixed(2)}%
@@ -145,8 +144,12 @@ ${timeAnalysisStr}
 ---`;
       } catch (err: any) {
         console.warn(`[Cron] CCXT fetch failed for ${symbol}:`, err.message);
+        return "";
       }
-    }
+    });
+
+    const results = await Promise.all(promises);
+    const marketDataStr = results.join("\n");
 
     // 4. Construct AI Prompt combining Strict Rules + Hard Data
     const prompt = `[SIMULATION OVERRIDE: ACTIVE]

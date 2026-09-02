@@ -67,7 +67,6 @@ export async function POST(request: NextRequest) {
     const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
     const exchangeOpts: any = { enableRateLimit: true };
     if (proxyUrl) {
-      const { HttpsProxyAgent } = require('https-proxy-agent');
       exchangeOpts.agent = new HttpsProxyAgent(proxyUrl);
     }
     const exchange = new ccxt.binance(exchangeOpts);

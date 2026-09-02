@@ -1,4 +1,5 @@
 import ccxt from 'ccxt';
+import { HttpsProxyAgent } from 'https-proxy-agent';
 import { calculateGannSquareOf9 } from './gann';
 
 const TOP_ALTCOINS = [
@@ -30,7 +31,6 @@ export async function huntForSetup(targetProfitPerc: number): Promise<HuntTrade 
   const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
   const exchangeOpts: any = { enableRateLimit: true };
   if (proxyUrl) {
-    const { HttpsProxyAgent } = require('https-proxy-agent');
     exchangeOpts.agent = new HttpsProxyAgent(proxyUrl);
   }
   const exchange = new ccxt.binance(exchangeOpts);
@@ -38,60 +38,55 @@ export async function huntForSetup(targetProfitPerc: number): Promise<HuntTrade 
   let bestTrade: HuntTrade | null = null;
   let bestScore = -1000;
 
-  for (const asset of TOP_ALTCOINS) {
+  const promises = TOP_ALTCOINS.map(async (asset) => {
     try {
       const ticker = await exchange.fetchTicker(asset);
       const currentPrice = ticker.last || 0;
-      if (currentPrice === 0) continue;
+      if (currentPrice === 0) return;
 
       const { supports, resistances } = calculateGannSquareOf9(currentPrice);
       
-      // Find the closest support below current price
       let closestSupport = 0;
       for (const s of supports) {
-        if (currentPrice >= s) {
-          closestSupport = s;
-          break; // Supports are ordered closest to farthest
-        }
+        if (currentPrice >= s) { closestSupport = s; break; }
       }
 
-      // Find the closest resistance above current price
       let closestResistance = Infinity;
       for (const r of resistances) {
-        if (r >= currentPrice) {
-          closestResistance = r;
-          break;
-        }
+        if (r >= currentPrice) { closestResistance = r; break; }
       }
 
-      if (closestSupport === 0 || closestResistance === Infinity) continue;
+      if (closestSupport === 0 || closestResistance === Infinity) return;
 
       const targetDistancePerc = ((closestResistance - currentPrice) / currentPrice) * 100;
       const distanceToSupportPerc = ((currentPrice - closestSupport) / currentPrice) * 100;
 
-      // Rule 1: Can it hit the target profit?
-      if (targetDistancePerc >= targetProfitPerc) {
-        // Rule 2: Is it close enough to a support to be a safe buy? (Within 4% of a Gann Support)
-        if (distanceToSupportPerc <= 4.0) {
-          // Score = high target potential - distance to support (we want highest target, lowest risk)
-          const score = targetDistancePerc - distanceToSupportPerc;
-          if (score > bestScore) {
-            bestScore = score;
-            bestTrade = {
-              symbol: asset,
-              entryPrice: currentPrice,
-              targetPrice: closestResistance,
-              stopLoss: closestSupport * 0.99 // SL is 1% below the immediate Gann Support
-            };
-          }
-        }
+      if (targetDistancePerc >= targetProfitPerc && distanceToSupportPerc <= 4.0) {
+        const score = targetDistancePerc - distanceToSupportPerc;
+        return {
+          symbol: asset,
+          entryPrice: currentPrice,
+          targetPrice: closestResistance,
+          stopLoss: closestSupport * 0.99,
+          score
+        };
       }
-
-      // Small delay to avoid API rate limits
-      await new Promise(resolve => setTimeout(resolve, 200));
-
     } catch (err) {
       console.warn(`Hunter: Failed to scan ${asset}`, err);
+    }
+  });
+
+  const results = await Promise.all(promises);
+  
+  for (const res of results) {
+    if (res && res.score > bestScore) {
+      bestScore = res.score;
+      bestTrade = {
+        symbol: res.symbol,
+        entryPrice: res.entryPrice,
+        targetPrice: res.targetPrice,
+        stopLoss: res.stopLoss
+      };
     }
   }
 
