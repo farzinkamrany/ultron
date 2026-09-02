@@ -122,7 +122,14 @@ When the bot sends a Telegram message, follow these execution rules:
 
 ## 6. Future Roadmap
 
-The analytical brain, dashboard, autonomous self-healing CTO, and Telegram UI are completely finished. Next milestones:
-1. **Live Trading Execution (Wealth Manager):** Transition the `PaperTradesTable` and CCXT engine to execute real trades on Bybit with small capital (e.g., $5) and send Telegram receipts.
-2. **Morning Voice Briefing (Podcaster):** A cron job that triggers every morning at 7:30 AM, summarizes the market, scans Divar, and sends an audio `Voice Message` to Telegram using ElevenLabs TTS.
-3. **Long-Term Memory RAG (Supabase):** Upgrading the CTO so it remembers all past debugging sessions and user preferences indefinitely by using `pgvector` embeddings in Supabase.
+The analytical brain, dashboard, autonomous self-healing CTO, and Telegram UI are completely finished.
+
+**✅ Completed Milestones:**
+- **Long-Term Memory RAG:** CTO uses Supabase `pgvector` to remember past bugs and user preferences indefinitely.
+- **Morning Voice Podcaster:** Fully autonomous daily brief (market analysis + motivational speech) sent via Telegram Voice using ElevenLabs.
+- **TWA / PWA Phase 1:** Web dashboard converted into a standalone Native App structure (Manifest, Asset Links, PWA Meta tags).
+- **Project Berlin (Euro Arbitrage):** Automated scanner mathematically comparing Direct Euro vs. Indirect Euro (via USDT) and alerting `[PROJECT GOLD USDT]`.
+
+**🚀 Next Milestones:**
+1. **Live Trading Execution (Micro Mode):** Transition the `PaperTradesTable` and CCXT engine to execute real trades on Bybit with small capital (e.g., $5) and send Telegram receipts.
+2. **Android TWA Compilation:** Use Bubblewrap or Android Studio to compile the `apk`/`aab` file from the PWA manifest for Google Play/native installation.

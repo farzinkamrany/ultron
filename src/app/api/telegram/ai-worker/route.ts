@@ -116,7 +116,8 @@ export async function POST(req: NextRequest) {
         if (bestAsset) {
           await sendTelegramMessage(chatId, `🎯 شکار یافت شد: ${bestAsset.symbol}. در حال اجرای X-Ray و نوارخوان...`);
           // Run the full 11-rule analysis on this specific asset
-          const marketData = await analyzeMarketData(bestAsset.symbol, 30);
+          const includeLiq = contentStr ? (contentStr.toLowerCase().includes("liquidation") || contentStr.includes("لیکوید")) : false;
+          const marketData = await analyzeMarketData(bestAsset.symbol, 30, includeLiq);
           
           const hunterMessages = [
             { role: 'user', content: ULTRON_SYSTEM_PROMPT },

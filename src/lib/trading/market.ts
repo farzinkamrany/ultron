@@ -7,14 +7,16 @@ import { analyzeOrderBook, OrderBookData } from './orderbook';
 import { analyzeOrderFlow, Trade } from './tape';
 import { analyzeDerivatives } from './derivatives';
 
-export async function analyzeMarketData(asset: string, timeHorizonDays: number): Promise<string> {
+export async function analyzeMarketData(asset: string, timeHorizonDays: number, includeLiquidation: boolean = false): Promise<string> {
   try {
     const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
-    const exchange = new ccxt.binance({ enableRateLimit: true });
     
+    const exchangeOpts: any = { enableRateLimit: true };
     if (proxyUrl) {
-      exchange.httpsProxy = proxyUrl;
+      const { HttpsProxyAgent } = require('https-proxy-agent');
+      exchangeOpts.agent = new HttpsProxyAgent(proxyUrl);
     }
+    const exchange = new ccxt.binance(exchangeOpts);
 
     // Determine timeframe based on time horizon
     let timeframe = '1d';
@@ -124,10 +126,13 @@ Taker Buy Vol: $${Math.floor(tape.aggressiveBuyVolumeUSD).toLocaleString()} | Ta
     }
 
     // --- DERIVATIVES (FUTURES) ---
-    const derivs = await analyzeDerivatives(asset);
-    const derivsStr = `Funding Rate: ${(derivs.fundingRate * 100).toFixed(4)}%
+    let derivsStr = "Liquidation/Derivatives module is disabled. Activate by mentioning 'Liquidation' or 'لیکوید'.";
+    if (includeLiquidation) {
+      const derivs = await analyzeDerivatives(asset);
+      derivsStr = `Funding Rate: ${(derivs.fundingRate * 100).toFixed(4)}%
 Open Interest (Contracts): ${derivs.openInterest.toLocaleString()}
 Retail Leverage Sentiment: ${derivs.sentiment}`;
+    }
 
     // --- GANN MACRO (RIGHT HEMISPHERE) & CHAOS ENGINE ---
     // Fetch Macro Pivot (Last 365 Days) to calculate Time Squaring, True Scale, and DEFCON level

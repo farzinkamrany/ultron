@@ -22,11 +22,12 @@ export async function POST(request: NextRequest) {
 
   try {
     const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
-    const exchange = new ccxt.binance({ enableRateLimit: true });
-    
+    const exchangeOpts: any = { enableRateLimit: true };
     if (proxyUrl) {
-      exchange.httpsProxy = proxyUrl;
+      const { HttpsProxyAgent } = require('https-proxy-agent');
+      exchangeOpts.agent = new HttpsProxyAgent(proxyUrl);
     }
+    const exchange = new ccxt.binance(exchangeOpts);
 
     // 1. Fetch Market Data
     let btcPrice = "نامشخص";

@@ -70,8 +70,12 @@ export async function generateAIResponse(messages: { role: string, content: stri
   // Tool Execution Loop (max 15 iterations to allow deep research)
   const MAX_ITERATIONS = 15;
   for (let i = 0; i < MAX_ITERATIONS; i++) {
+    const currentTime = new Date().toISOString();
+    const telegramSafeFormatDirective = `\n\n[TELEGRAM SAFE-FORMAT DIRECTIVE]\n- Optimize all responses for Telegram.\n- NEVER use markdown tables. Tables are strictly forbidden.\n- DO NOT use nested or excessive bolding (stars *) that breaks Telegram rendering.\n- Keep paragraphs short and use simple hyphenated lists (-) for readability.\n- Keep the tone clear and unambiguous.`;
+    const dynamicSystemPrompt = ULTRON_SYSTEM_PROMPT + `\n\n[TEMPORAL CONTEXT]\nCurrent Time: ${currentTime}` + telegramSafeFormatDirective + memoryContext;
+
     const payload = JSON.stringify({
-      system_instruction: { parts: [{ text: ULTRON_SYSTEM_PROMPT + memoryContext }] },
+      system_instruction: { parts: [{ text: dynamicSystemPrompt }] },
       contents,
       tools: ULTRON_TOOLS,
       generationConfig: { temperature: 0.8, maxOutputTokens: 8192 },
@@ -136,7 +140,9 @@ export async function generateAIResponse(messages: { role: string, content: stri
             functionOutput = JSON.stringify({ status: "success", content: searchResults });
           } else if (name === "analyze_market") {
             const { analyzeMarketData } = await import("@/lib/trading/market");
-            const data = await analyzeMarketData(args.asset, args.time_horizon_days);
+            const userTextLower = latestUserMsg?.toLowerCase() || "";
+            const includeLiq = userTextLower.includes("liquidation") || userTextLower.includes("لیکوید");
+            const data = await analyzeMarketData(args.asset, args.time_horizon_days, includeLiq);
             functionOutput = JSON.stringify({ status: "success", content: data });
           } else if (name === "write_and_propose_code") {
             const { executeWriteAndProposeCode } = await import("./ai-tools");
