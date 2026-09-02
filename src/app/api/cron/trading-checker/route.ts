@@ -3,7 +3,6 @@ import { supabase } from "@/lib/supabase";
 import ccxt from "ccxt";
 import { sendTelegramMessage } from "@/lib/telegram";
 import { logError } from "@/lib/logger";
-import { HttpsProxyAgent } from "https-proxy-agent";
 import { verifyQStashSignature } from "@/lib/qstash";
 import { closeMicroPosition } from "@/lib/trading/executor";
 
@@ -29,10 +28,8 @@ export async function POST(req: NextRequest) {
     }
 
     // 2. Init Exchange to fetch live prices
-    const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
-    const exchange = new ccxt.binance({ 
-      enableRateLimit: true,
-      agent: proxyUrl ? new HttpsProxyAgent(proxyUrl) : undefined
+    const exchange = new ccxt.bybit({ 
+      enableRateLimit: true
     });
 
     // Map unique symbols to fetch minimal tickers (convert BTCUSDT to BTC/USDT for CCXT)

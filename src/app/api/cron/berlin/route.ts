@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import ccxt from 'ccxt';
 import { sendTelegramMessage } from '@/lib/telegram';
 import { verifyQStashSignature } from '@/lib/qstash';
-import { HttpsProxyAgent } from 'https-proxy-agent';
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -64,12 +63,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
-    const exchangeOpts: any = { enableRateLimit: true };
-    if (proxyUrl) {
-      exchangeOpts.agent = new HttpsProxyAgent(proxyUrl);
-    }
-    const exchange = new ccxt.binance(exchangeOpts);
+    const exchange = new ccxt.bybit({ enableRateLimit: true });
 
     // 1. Fetch Global Rate (Binance)
     const ticker = await exchange.fetchTicker('EUR/USDT');

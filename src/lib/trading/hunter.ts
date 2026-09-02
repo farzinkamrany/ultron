@@ -1,5 +1,4 @@
 import ccxt from 'ccxt';
-import { HttpsProxyAgent } from 'https-proxy-agent';
 import { calculateGannSquareOf9 } from './gann';
 
 const TOP_ALTCOINS = [
@@ -28,12 +27,7 @@ export interface HuntTrade {
  * Performs a "Fast Pass" checking Gann Supports/Resistances to avoid rate limits.
  */
 export async function huntForSetup(targetProfitPerc: number): Promise<HuntTrade | null> {
-  const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
-  const exchangeOpts: any = { enableRateLimit: true };
-  if (proxyUrl) {
-    exchangeOpts.agent = new HttpsProxyAgent(proxyUrl);
-  }
-  const exchange = new ccxt.binance(exchangeOpts);
+  const exchange = new ccxt.bybit({ enableRateLimit: true });
 
   let bestTrade: HuntTrade | null = null;
   let bestScore = -1000;

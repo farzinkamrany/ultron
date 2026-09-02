@@ -1,5 +1,4 @@
 import ccxt from 'ccxt';
-import { HttpsProxyAgent } from 'https-proxy-agent';
 import { calculateGannSquareOf9, calculateTimeCycles, calculateGannAngles, calculateDownwardGannAngles, calculateAnniversaryCycles, calculateCosmicAlignment, calculateSquareOf144 } from './gann';
 import { findFairValueGaps, findOrderBlocks, OHLCV as IctOHLCV } from './ict';
 import { calculateChaosLevel, MacroOHLCV } from './chaos';
@@ -8,30 +7,14 @@ import { analyzeOrderBook, OrderBookData } from './orderbook';
 import { analyzeOrderFlow, Trade } from './tape';
 import { analyzeDerivatives } from './derivatives';
 
-const PROXY_LIST = [
-  'http://185.166.219.14:8080',
-  'http://193.176.241.13:3128',
-  'http://46.224.23.10:8080'
-];
-
-function getProxy() {
-  return PROXY_LIST[Math.floor(Math.random() * PROXY_LIST.length)];
-}
-
 export async function analyzeMarketData(asset: string, timeHorizonDays: number, includeLiquidation: boolean = false): Promise<string> {
   try {
-    const proxyUrl = getProxy() || process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
-
-    const exchangeOpts: any = { 
+    const exchange = new ccxt.bybit({ 
       enableRateLimit: true,
       options: {
         defaultType: 'spot'
       }
-    };
-    if (proxyUrl) {
-      exchangeOpts.agent = new HttpsProxyAgent(proxyUrl);
-    }
-    const exchange = new ccxt.binance(exchangeOpts);
+    });
 
     let timeframe = '1d';
     let label = 'Daily';

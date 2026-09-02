@@ -5,7 +5,6 @@ import { logSystemEvent } from '@/lib/ultron-db';
 import { verifyQStashSignature } from '@/lib/qstash';
 import ccxt from 'ccxt';
 import { calculateGannSquareOf9, calculateTimeCycles, calculateGannAngles, calculateAnniversaryCycles, calculateCosmicAlignment } from '@/lib/trading/gann';
-import { HttpsProxyAgent } from 'https-proxy-agent';
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60; // Allow 60s for external API + LLM generation
@@ -21,26 +20,12 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
-    let dispatcher: any = undefined;
-    let agent: any = undefined;
-    if (proxyUrl) {
-      agent = new HttpsProxyAgent(proxyUrl);
-    }
-
     // 1. Fetch Macro Sentiment (Fear & Greed Index)
     let fearGreedValue: string | number = "Unknown";
     let fearGreedClass = "Unknown";
     try {
-      const fgRes = await new Promise<any>((resolve, reject) => {
-        const req = require('https').request(new URL("https://api.alternative.me/fng/?limit=1"), { agent }, (res: any) => {
-          let data = '';
-          res.on('data', (chunk: any) => data += chunk);
-          res.on('end', () => resolve(JSON.parse(data)));
-        });
-        req.on('error', reject);
-        req.end();
-      });
+      const response = await fetch("https://api.alternative.me/fng/?limit=1");
+      const fgRes = await response.json();
       if (fgRes && fgRes.data && fgRes.data.length > 0) {
         fearGreedValue = fgRes.data[0].value;
         fearGreedClass = fgRes.data[0].value_classification;
@@ -49,12 +34,8 @@ export async function POST(request: NextRequest) {
       console.warn("[Cron] Failed to fetch Fear & Greed:", e);
     }
 
-    // 2. Initialize CCXT with Proxy (if needed in local env)
-    const exchangeOpts: any = { enableRateLimit: true };
-    if (agent) {
-      exchangeOpts.agent = agent;
-    }
-    const exchange = new ccxt.binance(exchangeOpts);
+    // 2. Initialize CCXT
+    const exchange = new ccxt.bybit({ enableRateLimit: true });
 
     // 3. Fetch Top Liquid Coins (BTC & ETH) Data & Gann Levels
     const symbols = ["BTC/USDT", "ETH/USDT"];

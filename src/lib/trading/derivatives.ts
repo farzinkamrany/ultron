@@ -1,5 +1,4 @@
 import ccxt from 'ccxt';
-import { HttpsProxyAgent } from 'https-proxy-agent';
 
 export interface DerivativesAnalysis {
   fundingRate: number;
@@ -17,18 +16,10 @@ export async function analyzeDerivatives(asset: string): Promise<DerivativesAnal
   let sentiment = "Neutral";
 
   try {
-    const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
-    
-    // Connect to Binance Futures (USDT-M)
-    const exchangeOpts: any = { 
+    const exchange = new ccxt.bybit({ 
       enableRateLimit: true,
       options: { defaultType: 'future' }
-    };
-    
-    if (proxyUrl) {
-      exchangeOpts.agent = new HttpsProxyAgent(proxyUrl);
-    }
-    const exchange = new ccxt.binance(exchangeOpts);
+    });
 
     // Usually spot assets are 'BTC/USDT', for Binance Futures we can usually use the same symbol
     // if 'defaultType: future' is set, CCXT handles the mapping to 'BTC/USDT:USDT'.

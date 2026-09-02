@@ -3,7 +3,6 @@ import ccxt from "ccxt";
 import { analyzeGannSetup, Candle } from "@/lib/trading/gann";
 import { sendTelegramMessage } from "@/lib/telegram";
 import { logError } from "@/lib/logger";
-import { HttpsProxyAgent } from "https-proxy-agent";
 import { supabase } from "@/lib/supabase";
 import { executeTrade } from "@/lib/trading/executor";
 
@@ -20,15 +19,7 @@ export async function POST(req: NextRequest) {
 
   try {
     // Initialize CCXT Exchange
-    // Use binanceus if configured, otherwise default to binance
-    const useBinanceUS = process.env.USE_BINANCE_US === 'true';
-    const exchange = useBinanceUS ? new ccxt.binanceus({ enableRateLimit: true }) : new ccxt.binance({ enableRateLimit: true });
-    
-    // Config proxy if needed for CCXT
-    const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
-    if (proxyUrl) {
-      exchange.agent = new HttpsProxyAgent(proxyUrl);
-    }
+    const exchange = new ccxt.bybit({ enableRateLimit: true });
 
     const symbol = "BTC/USDT";
     const timeframe = "1d"; // Daily candles for macro Gann analysis

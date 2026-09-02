@@ -12,7 +12,6 @@
  */
 
 import ccxt, { Exchange } from "ccxt";
-import { HttpsProxyAgent } from "https-proxy-agent";
 import { supabase } from "@/lib/supabase";
 import { sendTelegramMessage } from "@/lib/telegram";
 import { logError } from "@/lib/logger";
@@ -35,12 +34,6 @@ function buildExchange() {
     }
   });
 
-  // Proxy Isolation: explicitly DO NOT use the global HTTPS_PROXY because it's Iranian.
-  // Only use a dedicated EU proxy for Bybit.
-  const proxyUrl = process.env.BYBIT_PROXY;
-  if (proxyUrl) {
-    (exchange as any).agent = new HttpsProxyAgent(proxyUrl);
-  }
   return exchange;
 }
 
