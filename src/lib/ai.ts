@@ -243,6 +243,7 @@ export async function generateStructuredTradeResponse(marketStateStr: string, tr
           entryPrice: null,
           stopLoss: null,
           projectedTarget: null,
+          riskPercentage: null,
           trailingStrategy: 'SMC_OB',
           leverage: 1,
           confidenceScore: 0,
@@ -253,5 +254,5 @@ export async function generateStructuredTradeResponse(marketStateStr: string, tr
     }
   }
 
-  return { action: "WAIT", entryPrice: null, stopLoss: null, projectedTarget: null, trailingStrategy: 'SMC_OB', leverage: 1, confidenceScore: 0, reasoning: "Fallback." };
+  return { action: "WAIT", entryPrice: null, stopLoss: null, projectedTarget: null, riskPercentage: null, trailingStrategy: 'SMC_OB', leverage: 1, confidenceScore: 0, reasoning: "Fallback." };
 }

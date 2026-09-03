@@ -6,7 +6,7 @@ export const TradeSchema = z.object({
   entryPrice: z.number().positive("Entry price must be positive.").nullable().describe("The exact entry price. Null if action is WAIT."),
   stopLoss: z.number().positive("Stop loss must be positive.").nullable().describe("The exact stop loss price. Null if action is WAIT."),
   projectedTarget: z.number().positive("Projected Target must be positive.").nullable().describe("The theoretical target for R:R calculation. Null if action is WAIT."),
-  riskPercentage: z.number().max(1.6, "Risk strictly capped at 1.6% of Live Balance. Protocol V3 Kill-Switch Engaged.").describe("The exact percentage of the live balance being risked (e.g. 1.6)."),
+  riskPercentage: z.number().max(1.6, "Risk strictly capped at 1.6% of Live Balance. Protocol V3 Kill-Switch Engaged.").nullable().describe("The exact percentage of the live balance being risked (e.g. 1.6)."),
   trailingStrategy: z.literal('SMC_OB').default('SMC_OB').describe("SMC Trailing Stop Loss strategy."),
   leverage: z.number().int().min(1).max(5, "Leverage CANNOT exceed 5x. Protocol V3 Kill-Switch Engaged.").default(1).describe("Leverage multiplier (1 to 5)."),
   confidenceScore: z.number().min(0).max(100).describe("Confidence score from 0 to 100."),
