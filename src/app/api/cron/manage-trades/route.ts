@@ -3,6 +3,8 @@ import { supabase } from '@/lib/supabase';
 import ccxt from 'ccxt';
 import { verifyQStashSignature } from '@/lib/qstash';
 
+export const maxDuration = 60; // Allow 60s for Vercel execution to avoid 504 Timeout
+
 export async function GET(req: NextRequest) {
   try {
     // 0. Verify QStash signature for security (prevent DDoS/Rate Limit attacks)
