@@ -25,7 +25,16 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    // Hunt for a setup with at least 3% profit potential
+    // 1. GLOBAL CIRCUIT BREAKER (Hard Stop at -$400 PnL to protect $600 balance)
+    const { data: allTrades } = await supabase.from('paper_trades').select('pnl').not('pnl', 'is', null);
+    const totalPnl = allTrades ? allTrades.reduce((sum, t) => sum + (t.pnl || 0), 0) : 0;
+    
+    if (totalPnl <= -400) {
+      console.error("[CIRCUIT BREAKER] Account dropped by $400. Halting all new trades to protect remaining $600.");
+      return NextResponse.json({ message: 'CIRCUIT BREAKER ACTIVE - TRADING HALTED' });
+    }
+
+    // 2. Hunt for a setup with at least 3% profit potential
     const tradeSetup = await huntForSetup(3.0);
     const chatId = process.env.TELEGRAM_CHAT_ID;
     

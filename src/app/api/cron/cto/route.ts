@@ -44,11 +44,21 @@ export async function GET(req: NextRequest) {
     
     const winRate = totalTrades > 0 ? (won / totalTrades) * 100 : 0;
     
+    // Pass the actual trades to the AI so it can read entry_logic and miss_reason
+    const recentTrades = trades ? trades.map(t => ({
+      symbol: t.symbol,
+      status: t.status,
+      pnl: t.pnl,
+      entry_logic: t.rationale,
+      miss_reason: t.status === 'LOST' ? 'Hit Stop Loss' : null
+    })) : [];
+
     const dailyStats = {
       total_trades: totalTrades,
       win_rate: winRate,
       max_drawdown: maxDrawdown,
-      net_pnl: netPnl
+      net_pnl: netPnl,
+      recent_trades: recentTrades
     };
 
     // 2. Gather Market Regime (Volatility/ATR)
@@ -93,11 +103,13 @@ export async function GET(req: NextRequest) {
     await redis.set('ul_cto_config', JSON.stringify(ctoResponse.config));
     
     console.log(`[CTO] Daily Config Generated:`, ctoResponse.config);
+    console.log(`[CTO Detected Regime]`, ctoResponse.detected_regime);
     console.log(`[CTO Reasoning]`, ctoResponse.reasoning);
     
     return NextResponse.json({
       success: true,
       config: ctoResponse.config,
+      detected_regime: ctoResponse.detected_regime,
       reasoning: ctoResponse.reasoning
     });
     

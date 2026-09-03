@@ -48,7 +48,7 @@ export async function huntForSetup(fallbackTargetProfitPerc: number): Promise<Hu
     console.error("Redis fetch failed, using fallback config.");
   }
 
-  const targetProfitPerc = ctoConfig?.target_profit_pct || fallbackTargetProfitPerc;
+  const targetProfitPerc = ctoConfig?.take_profit_target_pct || fallbackTargetProfitPerc;
   const maxDistanceToSupport = ctoConfig?.gann_tolerance_pct ? ctoConfig.gann_tolerance_pct * 100 : 0.3; // Default 0.3%
 
   let bestTrade: HuntTrade | null = null;

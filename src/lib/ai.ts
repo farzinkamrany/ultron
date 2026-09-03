@@ -289,57 +289,51 @@ OUTPUT SCHEMA (strict — every field required):
 }
 
 export interface CTOConfig {
-  risk_per_trade: number;
+  risk_per_trade_pct: number;
   gann_tolerance_pct: number;
   smc_lookback_candles: number;
   defcon_level: number;
-  target_profit_pct: number;
+  take_profit_target_pct: number;
 }
 
 export async function generateCTOConfig(
   dailyStats: any,
   marketRegime: any,
   macroSentiment: any
-): Promise<{ config: CTOConfig, reasoning: any }> {
+): Promise<{ config: CTOConfig, reasoning: string, detected_regime: string }> {
   const prompt = `
-# SYSTEM INSTRUCTION: AUTONOMOUS CTO & QUANT STRATEGIST (ULTRON MASTER BRAIN)
+# SYSTEM ROLE: SUPREME QUANT CTO (ULTRON BRAIN)
+You are the autonomous Chief Trading Officer of a high-frequency algorithmic system.
+Your sole purpose is to analyze the past 24 hours of market data and paper trading results, learn from stop-loss hits, identify the current market regime, and output the exact hyperparameters for the TypeScript Execution Engine (Spinal Cord) for the next 24 hours.
 
-You are the Autonomous CTO of a deterministic algorithmic trading system. Your role is NOT to execute real-time trades, but to act as the daily calibrator (The Brain) for the TypeScript execution engine (The Spinal Cord). 
-
-Your objective is absolute capital preservation and consistent compound growth based on the Samurai Compound Strategy (Max risk 1.6%, Target 3.2%).
-
-## 1. INPUT DATA FORMAT
-- market_regime: ${JSON.stringify(marketRegime)}
+# 1. INPUT DATA STRUCTURE
+You will receive a User Prompt containing a JSON object with two main nodes:
+- macro_data: ${JSON.stringify({ ...marketRegime, ...macroSentiment })}
 - yesterday_trades: ${JSON.stringify(dailyStats)}
-- macro_sentiment: ${JSON.stringify(macroSentiment)}
 
-## 2. THE CHAIN OF THOUGHT (MANDATORY)
-Before issuing new parameters, you MUST process the data through this logical sequence:
-- **Phase A (Regime Detection):** Is the market expanding (trending) or contracting (ranging/choppy)? If Funding Rates are extremely high/low, anticipate a liquidity sweep.
-- **Phase B (Self-Reflection):** Look at yesterday_trades. If trades hit Stop-Loss frequently, WHY? Was the Gann tolerance too tight for the current ATR? Were SMC lookbacks too short, resulting in fake sweeps?
-- **Phase C (Calibration):** Based on A and B, determine the hyperparameter adjustments needed for the next 24 hours to survive and profit.
+# 2. COGNITIVE PROCESSING STEPS
+Before setting parameters, you MUST evaluate the following:
+- Market Regime: Is the market trending (High ATR) or ranging/choppy (Low ATR)?
+- Self-Reflection (Loss Analysis): If trades hit Stop Loss yesterday, WHY? 
+  - If stopped out by long wicks -> INCREASE gann_tolerance_pct (e.g., from 0.001 to 0.003).
+  - If stopped out by fake liquidity sweeps -> INCREASE smc_lookback_candles (e.g., from 3 to 6).
+- Risk Management: Base risk is 1.6%. If win rate over the last 24h is below 40%, you MUST forcefully reduce risk to 1.0% or 0.8% defensively.
+- DEFCON Level: Set to 1 ONLY if extreme macro anomalies (flash crashes, extreme fear/greed) are detected, otherwise 0.
 
-## 3. CALIBRATION BOUNDARIES (HARD LIMITS)
-- risk_per_trade: NEVER exceed 1.6%. If yesterday's Win Rate < 40%, reduce to 1.0% or 0.8%.
-- gann_tolerance_pct: Base on ATR. High ATR = wider tolerance (e.g., 0.003). Low ATR = tighter (e.g., 0.001).
-- smc_lookback_candles: Base on chop. Ranging market = higher lookback (5-7) to filter noise. Trending = lower (3).
-- defcon_level: Default is 0. Set to 1 ONLY if extreme macro anomalies (flash crashes, extreme fear/greed) are detected.
+# 3. OUTPUT CONSTRAINTS (FATAL)
+- NO conversational text. NO markdown formatting blocks like \`\`\`json.
+- Output ONLY a raw, stringified JSON object matching the EXACT schema below.
 
-## 4. OUTPUT SCHEMA
-You must output ONLY a raw, perfectly valid JSON object. No markdown formatting, no conversational text, no greetings. It must strictly match this schema:
-
+# 4. JSON SCHEMA
 {
-  "reasoning": {
-    "regime_analysis": "Brief analysis of the current market state.",
-    "reflection": "What went wrong/right yesterday and what needs fixing.",
-    "action_plan": "Why specific parameters are being changed for today."
-  },
+  "reasoning": "Step-by-step logical deduction: 1) Regime identification, 2) Analysis of losses, 3) Justification for new parameters.",
+  "detected_regime": "TRENDING_BULL | TRENDING_BEAR | RANGING_CHOPPY | EXTREME_VOLATILITY",
   "config": {
-    "risk_per_trade": number,
+    "risk_per_trade_pct": number, 
     "gann_tolerance_pct": number,
     "smc_lookback_candles": number,
     "defcon_level": number,
-    "target_profit_pct": number
+    "take_profit_target_pct": number
   }
 }
 `;
@@ -357,17 +351,14 @@ You must output ONLY a raw, perfectly valid JSON object. No markdown formatting,
     console.error("CTO Generation failed, falling back:", err);
     return {
       config: {
-        risk_per_trade: 0.8, // Defensive default
+        risk_per_trade_pct: 0.8, // Defensive default
         gann_tolerance_pct: 0.003,
         smc_lookback_candles: 5,
         defcon_level: 1, // Defensive shield ON
-        target_profit_pct: 3.2
+        take_profit_target_pct: 3.2
       },
-      reasoning: {
-        regime_analysis: "FALLBACK TRIGGERED: API Failure.",
-        reflection: "System failed to generate config. Using hardcoded defensive mode.",
-        action_plan: "Set DEFCON 1 and reduce risk to protect capital."
-      }
+      reasoning: "FALLBACK TRIGGERED: API Failure. System failed to generate config. Using hardcoded defensive mode.",
+      detected_regime: "EXTREME_VOLATILITY"
     };
   }
 }
