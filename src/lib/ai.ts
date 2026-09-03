@@ -199,9 +199,43 @@ export async function generateAIResponse(messages: { role: string, content: stri
 export async function generateStructuredTradeResponse(marketStateStr: string, tryPro = true): Promise<TradeDecision> {
   const { fetchWithRotation } = await import("@/utils/ai-fetcher");
   
-  const systemPrompt = `You are a Deterministic Trading Interpreter. Your ONLY job is to take the provided MarketState mathematical object and output a JSON object conforming strictly to the requested schema. Do not generate text outside the JSON.`;
-  
-  let currentPrompt = `Market State Data:\n${marketStateStr}\n\nOutput a valid JSON conforming to this schema EXACTLY:\n{\n  "action": "BUY" | "SELL" | "WAIT",\n  "entryPrice": number | null (positive. Null if WAIT),\n  "stopLoss": number | null (BUY: SL < Entry. SELL: SL > Entry. Null if WAIT),\n  "projectedTarget": number | null (STRICT 1:2 R:R minimum — target must be at least 2x the risk distance from entry. Null if WAIT),\n  "riskPercentage": 1.6 | null (ALWAYS exactly 1.6 for BUY/SELL. Null if WAIT),\n  "netProfitPercentage": number | null (effective net profit as % of total balance, factoring leverage. Formula: (reward_distance / entry_price) * leverage * 100. Must be >= 3.2 for BUY/SELL. Null if WAIT),\n  "tradeType": "SWING",\n  "trailingStrategy": "SMC_OB",\n  "leverage": number (DYNAMIC LEVERAGE RULE — MANDATORY:\n    - confidenceScore >= 85: use leverage 3\n    - confidenceScore >= 70: use leverage 2\n    - confidenceScore < 70: use leverage 1\n    MAX allowed: 5. Kill-Switch engaged above 5),\n  "confidenceScore": number (0-100),\n  "reasoning": "string"\n}`;
+  const systemPrompt = `SYSTEM: DETERMINISTIC EXECUTION ENGINE — DATA PARSER ONLY.
+
+You are NOT an advisor. You are NOT an analyst. You are a mechanical JSON parser.
+You have NO permission to think, interpret, suggest, or reason freely.
+
+You will receive a MarketState JSON object. Apply EXACTLY these 3 trigger rules IN ORDER and output only a valid JSON object. No text. No markdown. No backticks. No explanation.
+
+TRIGGER RULES (apply in strict priority order):
+1. IF defcon.level is not null AND defcon.level != "NONE" AND defcon.level != 0
+   → Output: DEFCON_EMERGENCY mapping (action: WAIT, confidenceScore: 0, reasoning: "DEFCON EMERGENCY - ALL POSITIONS LIQUIDATED")
+
+2. IF ALL of these are true simultaneously:
+   - gann.supports array has a value within 2% below current price (price is near Gann support)
+   - liquidity.nearestBullOB contains "Swept" (SMC sweep confirmed)
+   - liquidity.vwap trend is "BULLISH" (price above VWAP)
+   - derivatives.sentiment is NOT "EXTREME_GREED" (no long squeeze risk)
+   - tape.aggression is NOT "EXTREME AGGRESSIVE SELLING"
+   → Output: EXECUTE_LONG with full schema fields calculated from the data
+
+3. ALL OTHER CASES → Output: WAIT with all price fields null
+
+OUTPUT SCHEMA (strict — every field required):
+{
+  "action": "BUY" | "SELL" | "WAIT",
+  "entryPrice": number | null,
+  "stopLoss": number | null (BUY: nearest Gann support * 0.99),
+  "projectedTarget": number | null (BUY: nearest Gann resistance above entry, must be >= 2x risk distance),
+  "riskPercentage": 1.6 | null,
+  "netProfitPercentage": number | null (formula: ((projectedTarget - entryPrice) / entryPrice) * leverage * 100),
+  "tradeType": "SWING",
+  "trailingStrategy": "SMC_OB",
+  "leverage": number (Rule 85/70: if confidenceScore>=85 use 3, if >=70 use 2, else 1),
+  "confidenceScore": number (count how many of the 7 pillars are aligned: Gann+SMC+VWAP+CVD+OB+Derivatives+DEFCON, multiply by ~14.3),
+  "reasoning": string (max 2 sentences, pure data, no fluff)
+}`;
+
+  let currentPrompt = `PARSE THIS MARKET STATE AND APPLY THE 3 TRIGGER RULES:\n\n${marketStateStr}`;
 
   const MAX_RETRIES = 3;
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
