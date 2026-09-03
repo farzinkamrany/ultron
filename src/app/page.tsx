@@ -42,6 +42,51 @@ function MiniEquityCurve() {
   return <EquityCurve trades={trades} />;
 }
 
+function ActivePositions() {
+  const { trades } = useTradingStore();
+  const openTrades = trades.filter((t: any) => t.status === 'OPEN');
+
+  if (openTrades.length === 0) {
+    return (
+      <div className="bg-black/20 p-6 rounded-xl border border-white/5 text-center flex flex-col items-center">
+        <ShieldAlert className="w-8 h-8 text-slate-500 mb-2 opacity-50" />
+        <p className="text-sm text-slate-400 font-mono">No Active Positions in Citadel</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {openTrades.map((trade: any) => (
+        <div key={trade.id} className="bg-black/20 p-4 rounded-xl border border-white/5 relative overflow-hidden group">
+          <div className="absolute top-0 left-0 w-1 h-full bg-phase1" />
+          <div className="flex justify-between items-center">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-slate-200">{trade.symbol}</span>
+                <span className={`text-[10px] px-2 py-0.5 rounded font-mono border ${trade.position_type === 'LONG' ? 'bg-green-500/10 text-green-400 border-green-500/20' : 'bg-red-500/10 text-red-400 border-red-500/20'}`}>
+                  {trade.position_type}
+                </span>
+              </div>
+              <div className="text-xs text-slate-400 mt-1 flex gap-3 font-mono">
+                <span>Entry: {trade.entry_price}</span>
+                <span className="text-phase1">TP: {trade.take_profit}</span>
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="text-[10px] text-slate-500 mb-1">PROTECTION</div>
+              <div className={`text-xs font-mono font-semibold px-2 py-0.5 rounded bg-black/40 ${trade.stop_loss === trade.entry_price ? 'text-phase3 border border-phase3/30' : 'text-slate-400'}`}>
+                SL: {trade.stop_loss}
+                {trade.stop_loss === trade.entry_price && ' (B.E)'}
+              </div>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // --- Sub-Components ---
 function ChatInterface({ messages, isLoading, sendMessage, input, setInput, isVoiceActive, setIsVoiceActive }: any) {
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -454,6 +499,31 @@ export default function UltronDashboard() {
               </div>
               
               <div className="lg:col-span-4 flex flex-col gap-6">
+                <DashboardModule title="CITADEL ACTIVE POSITIONS" icon={ShieldAlert} variant="phase3">
+                  <ActivePositions />
+                </DashboardModule>
+
+                <DashboardModule title="SWARM CONTROL" icon={Zap} variant="phase7">
+                  <div className="bg-black/20 p-4 rounded-xl border border-white/5 text-center">
+                    <p className="text-xs text-slate-400 mb-4">Manual trigger for Trailing Stop & PnL Cron Engine</p>
+                    <button 
+                      onClick={async () => {
+                        toast.loading('Managing positions...', { id: 'cron' });
+                        try {
+                          const res = await fetch('/api/cron/manage-trades');
+                          const data = await res.json();
+                          toast.success(data.message || 'Positions updated', { id: 'cron' });
+                        } catch {
+                          toast.error('Failed to run engine', { id: 'cron' });
+                        }
+                      }}
+                      className="w-full py-2 bg-phase7/10 hover:bg-phase7/20 text-phase7 border border-phase7/30 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2"
+                    >
+                      <Zap className="w-4 h-4" /> Run Position Manager
+                    </button>
+                  </div>
+                </DashboardModule>
+
                 <DashboardModule title="GANN QUANT TRADING" icon={TrendingUp} variant="phase5">
                   <div className="bg-black/20 p-4 rounded-xl border border-white/5">
                     <div className="flex justify-between items-center mb-3">

@@ -6,6 +6,7 @@ export const TradeSchema = z.object({
   entryPrice: z.number().positive("Entry price must be positive.").nullable().describe("The exact entry price. Null if action is WAIT."),
   stopLoss: z.number().positive("Stop loss must be positive.").nullable().describe("The exact stop loss price. Null if action is WAIT."),
   projectedTarget: z.number().positive("Projected Target must be positive.").nullable().describe("The theoretical target for R:R calculation. Null if action is WAIT."),
+  riskPercentage: z.number().max(1.6, "Risk strictly capped at 1.6% of Live Balance. Protocol V3 Kill-Switch Engaged.").describe("The exact percentage of the live balance being risked (e.g. 1.6)."),
   trailingStrategy: z.literal('SMC_OB').default('SMC_OB').describe("SMC Trailing Stop Loss strategy."),
   leverage: z.number().int().min(1).max(5, "Leverage CANNOT exceed 5x. Protocol V3 Kill-Switch Engaged.").default(1).describe("Leverage multiplier (1 to 5)."),
   confidenceScore: z.number().min(0).max(100).describe("Confidence score from 0 to 100."),
@@ -19,7 +20,7 @@ export const TradeSchema = z.object({
       if (data.stopLoss >= data.entryPrice || data.projectedTarget <= data.entryPrice) return false;
       const risk = data.entryPrice - data.stopLoss;
       const reward = data.projectedTarget - data.entryPrice;
-      if (reward < 4 * risk) return false; // Reward MUST be at least 4x Risk
+      if (reward < 2 * risk) return false; // Reward MUST be at least 2x Risk
     }
     
     // R:R Enforcer - SELL Position
@@ -27,12 +28,12 @@ export const TradeSchema = z.object({
       if (data.stopLoss <= data.entryPrice || data.projectedTarget >= data.entryPrice) return false;
       const risk = data.stopLoss - data.entryPrice;
       const reward = data.entryPrice - data.projectedTarget;
-      if (reward < 4 * risk) return false; // Reward MUST be at least 4x Risk
+      if (reward < 2 * risk) return false; // Reward MUST be at least 2x Risk
     }
   }
   return true;
 }, {
-  message: "Invalid logic or R:R constraint. Must follow strict 1:4 R:R minimum (BUY: TP>Entry>SL, SELL: SL>Entry>TP).",
+  message: "Invalid logic or R:R constraint. Must follow strict 1:2 R:R minimum (BUY: TP>Entry>SL, SELL: SL>Entry>TP).",
 });
 
 export type TradeDecision = z.infer<typeof TradeSchema>;

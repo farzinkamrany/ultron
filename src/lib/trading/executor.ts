@@ -16,6 +16,7 @@ import { supabase } from "@/lib/supabase";
 import { sendTelegramMessage } from "@/lib/telegram";
 import { logError } from "@/lib/logger";
 import type { TradeSignal } from "./gann";
+import { calculateDynamicKelly } from "./risk";
 
 // ─── Kill Switch Constants (immutable) ──────────────────────────────────────
 const MAX_TOTAL_MARGIN_USD = 50;
@@ -104,6 +105,26 @@ export async function executeTrade(signal: TradeSignal): Promise<void> {
 
   // ── PAPER MODE (default) ──────────────────────────────────────────────────
   if (mode === "PAPER") {
+    // Beta-Neutralizer Firewall
+    const { data: openTrades } = await supabase.from("paper_trades").select("*").eq("status", "OPEN");
+    
+    if (openTrades && openTrades.length > 0) {
+      const isLongOpen = openTrades.some(t => t.position_type === "LONG");
+      const isShortOpen = openTrades.some(t => t.position_type === "SHORT");
+      
+      const newType = signal.action === "BUY" ? "LONG" : "SHORT";
+      if (newType === "LONG" && isLongOpen) {
+        console.warn("[Beta-Neutralizer] Blocked LONG. A LONG position is already active.");
+        return;
+      }
+      if (newType === "SHORT" && isShortOpen) {
+        console.warn("[Beta-Neutralizer] Blocked SHORT. A SHORT position is already active.");
+        return;
+      }
+    }
+
+    const kellyRisk = await calculateDynamicKelly(signal.symbol);
+
     const { error } = await supabase.from("paper_trades").insert({
       symbol: signal.symbol,
       position_type: signal.action === "BUY" ? "LONG" : "SHORT",
@@ -112,10 +133,11 @@ export async function executeTrade(signal: TradeSignal): Promise<void> {
       take_profit: signal.takeProfit,
       status: "OPEN",
       pnl: 0,
+      // We could store Kelly risk here if DB schema supported it, but we mock it.
     });
 
     if (error) throw new Error(`[Executor PAPER] Supabase insert failed: ${error.message}`);
-    console.log(`[Executor PAPER] Logged trade: ${signal.action} ${signal.symbol} @ ${signal.entryPrice}`);
+    console.log(`[Executor PAPER] Logged trade: ${signal.action} ${signal.symbol} @ ${signal.entryPrice} with Risk: ${kellyRisk * 100}%`);
     return;
   }
 
