@@ -44,7 +44,7 @@ export async function analyzeMarketData(asset: string, timeHorizonDays: number, 
     } catch (err) {
       console.warn("Failed to fetch live balance, using default 1000:", err);
     }
-    const riskAmount = liveBalance * 0.02; // Dynamic 2% Kelly
+    const riskAmount = liveBalance * 0.016; // Samurai Protocol V3: strict 1.6% Kelly risk
 
     let timeframe = '1d';
     let label = 'Daily';

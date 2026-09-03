@@ -126,7 +126,7 @@ export async function POST(req: NextRequest) {
           const decision = await generateStructuredTradeResponse(JSON.stringify(marketData, null, 2), tryPro);
           replyText = `🎯 Trade Setup: ${bestAsset.symbol}\n\n` +
                       `Live Balance: $${marketData.liveBalance.toFixed(2)}\n` +
-                      `Risk Amount (2%): $${marketData.riskAmount.toFixed(2)}\n\n` +
+                      `Risk Amount (1.6%): $${marketData.riskAmount.toFixed(2)}\n\n` +
                       `Action: ${decision.action}\n` +
                       `Entry: ${decision.entryPrice ? '$' + decision.entryPrice : 'N/A'}\n` +
                       `Stop Loss: ${decision.stopLoss ? '$' + decision.stopLoss : 'N/A'}\n` +
