@@ -5,6 +5,7 @@ import ccxt from 'ccxt';
 import { generateCTOConfig } from '@/lib/ai';
 
 export const maxDuration = 60; // Allow 60s for Vercel execution
+export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
   try {

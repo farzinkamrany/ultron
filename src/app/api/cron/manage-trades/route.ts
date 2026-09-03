@@ -6,6 +6,7 @@ import { redis } from '@/lib/redis';
 import { CTOConfig } from '@/lib/ai';
 
 export const maxDuration = 60; // Allow 60s for Vercel execution to avoid 504 Timeout
+export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
   try {
