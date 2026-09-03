@@ -201,16 +201,7 @@ export async function generateStructuredTradeResponse(marketStateStr: string, tr
   
   const systemPrompt = `You are a Deterministic Trading Interpreter. Your ONLY job is to take the provided MarketState mathematical object and output a JSON object conforming strictly to the requested schema. Do not generate text outside the JSON.`;
   
-  let currentPrompt = `Market State Data:\n${marketStateStr}\n\nOutput a valid JSON conforming to this schema:\n{
-  "action": "BUY" | "SELL" | "WAIT",
-  "entryPrice": number | null (Must be positive),
-  "stopLoss": number | null (BUY: SL < Entry, SELL: SL > Entry),
-  "projectedTarget": number | null (Must enforce 1:4 Risk:Reward minimum),
-  "trailingStrategy": "SMC_OB",
-  "leverage": number (1 to 5 MAX - Kill Switch Engaged),
-  "confidenceScore": number (0-100),
-  "reasoning": "string"
-}`;
+  let currentPrompt = `Market State Data:\n${marketStateStr}\n\nOutput a valid JSON conforming to this schema EXACTLY:\n{\n  "action": "BUY" | "SELL" | "WAIT",\n  "entryPrice": number | null (positive. Null if WAIT),\n  "stopLoss": number | null (BUY: SL < Entry. SELL: SL > Entry. Null if WAIT),\n  "projectedTarget": number | null (STRICT 1:2 R:R minimum — target must be at least 2x the risk distance from entry. Null if WAIT),\n  "riskPercentage": 1.6 | null (ALWAYS exactly 1.6 for BUY/SELL. Null if WAIT),\n  "netProfitPercentage": number | null (expected net profit as % of total balance after fees. Must be >= 3.2 for BUY/SELL. Null if WAIT),\n  "tradeType": "SWING",\n  "trailingStrategy": "SMC_OB",\n  "leverage": number (1 to 5 MAX),\n  "confidenceScore": number (0-100),\n  "reasoning": "string"\n}`;
 
   const MAX_RETRIES = 3;
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {

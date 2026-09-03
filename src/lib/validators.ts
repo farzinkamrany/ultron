@@ -6,7 +6,7 @@ export const TradeSchema = z.object({
   entryPrice: z.number().positive("Entry price must be positive.").nullable().describe("The exact entry price. Null if action is WAIT."),
   stopLoss: z.number().positive("Stop loss must be positive.").nullable().describe("The exact stop loss price. Null if action is WAIT."),
   projectedTarget: z.number().positive("Projected Target must be positive.").nullable().describe("The theoretical target for R:R calculation. Null if action is WAIT."),
-  riskPercentage: z.number().min(1.6).max(1.6, "Risk MUST be exactly 1.6% of Live Balance. Scalping Kill-Switch Engaged.").nullable().describe("The exact percentage of the live balance being risked (MUST be 1.6)."),
+  riskPercentage: z.number().max(1.6, "Risk capped at 1.6% of Live Balance. Samurai Kill-Switch Engaged.").nullable().describe("The exact % of live balance being risked. Must be 1.6 for BUY/SELL. Null if action is WAIT."),
   netProfitPercentage: z.number().min(3.2, "Net Profit MUST be at least 3.2% of total balance. Micro-scalping is strictly forbidden.").nullable().describe("The expected net profit percentage of the live balance (MUST BE >= 3.2). Null if action is WAIT."),
   tradeType: z.literal('SWING').default('SWING').describe("MUST be a macro SWING trade. Scalping is strictly forbidden."),
   trailingStrategy: z.literal('SMC_OB').default('SMC_OB').describe("SMC Trailing Stop Loss strategy."),
