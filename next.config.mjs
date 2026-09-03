@@ -15,7 +15,9 @@ if (process.env.HTTPS_PROXY || process.env.HTTP_PROXY) {
 }
 
 const nextConfig = {
-  // Remove ccxt from external packages to allow Webpack to bundle it
+  // ts-morph uses dynamic requires internally — tell Next.js to keep it as a
+  // native Node.js module and never let webpack try to bundle it.
+  serverExternalPackages: ["ts-morph", "typescript"],
 };
 
 export default withSentryConfig(
