@@ -39,11 +39,14 @@ export async function huntForSetup(targetProfitPerc: number): Promise<HuntTrade 
   let bestTrade: HuntTrade | null = null;
   let bestScore = -1000;
 
-  const promises = TOP_ALTCOINS.map(async (asset) => {
-    try {
-      const ticker = await exchange.fetchTicker(asset);
+  try {
+    const tickers = await exchange.fetchTickers(TOP_ALTCOINS);
+    
+    for (const asset of TOP_ALTCOINS) {
+      const ticker = tickers[asset];
+      if (!ticker) continue;
       const currentPrice = ticker.last || 0;
-      if (currentPrice === 0) return;
+      if (currentPrice === 0) continue;
 
       const { supports, resistances } = calculateGannSquareOf9(currentPrice);
       
@@ -57,38 +60,26 @@ export async function huntForSetup(targetProfitPerc: number): Promise<HuntTrade 
         if (r >= currentPrice) { closestResistance = r; break; }
       }
 
-      if (closestSupport === 0 || closestResistance === Infinity) return;
+      if (closestSupport === 0 || closestResistance === Infinity) continue;
 
       const targetDistancePerc = ((closestResistance - currentPrice) / currentPrice) * 100;
       const distanceToSupportPerc = ((currentPrice - closestSupport) / currentPrice) * 100;
 
       if (targetDistancePerc >= targetProfitPerc && distanceToSupportPerc <= 4.0) {
         const score = targetDistancePerc - distanceToSupportPerc;
-        return {
-          symbol: asset,
-          entryPrice: currentPrice,
-          targetPrice: closestResistance,
-          stopLoss: closestSupport * 0.99,
-          score
-        };
+        if (score > bestScore) {
+          bestScore = score;
+          bestTrade = {
+            symbol: asset,
+            entryPrice: currentPrice,
+            targetPrice: closestResistance,
+            stopLoss: closestSupport * 0.99
+          };
+        }
       }
-    } catch (err) {
-      console.warn(`Hunter: Failed to scan ${asset}`, err);
     }
-  });
-
-  const results = await Promise.all(promises);
-  
-  for (const res of results) {
-    if (res && res.score > bestScore) {
-      bestScore = res.score;
-      bestTrade = {
-        symbol: res.symbol,
-        entryPrice: res.entryPrice,
-        targetPrice: res.targetPrice,
-        stopLoss: res.stopLoss
-      };
-    }
+  } catch (err) {
+    console.error("Hunter: Batch fetch failed", err);
   }
 
   return bestTrade;
