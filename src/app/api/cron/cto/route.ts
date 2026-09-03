@@ -93,12 +93,12 @@ export async function GET(req: NextRequest) {
     await redis.set('ul_cto_config', JSON.stringify(ctoResponse.config));
     
     console.log(`[CTO] Daily Config Generated:`, ctoResponse.config);
-    console.log(`[CTO Log] ${ctoResponse.cto_log}`);
+    console.log(`[CTO Reasoning]`, ctoResponse.reasoning);
     
     return NextResponse.json({
       success: true,
       config: ctoResponse.config,
-      log: ctoResponse.cto_log
+      reasoning: ctoResponse.reasoning
     });
     
   } catch (err: any) {

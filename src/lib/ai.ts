@@ -300,39 +300,47 @@ export async function generateCTOConfig(
   dailyStats: any,
   marketRegime: any,
   macroSentiment: any
-): Promise<{ config: CTOConfig, cto_log: string }> {
+): Promise<{ config: CTOConfig, reasoning: any }> {
   const prompt = `
-# SYSTEM INSTRUCTION: AUTONOMOUS CTO & QUANT STRATEGIST (ULTRON V10)
+# SYSTEM INSTRUCTION: AUTONOMOUS CTO & QUANT STRATEGIST (ULTRON MASTER BRAIN)
 
-You are the Autonomous CTO of a deterministic algorithmic trading system. 
-You do NOT execute real-time trades. Your ONLY directive is to analyze the previous 24 hours of market data and system performance, and output strict hyperparameters to calibrate the TypeScript execution engine (The Spinal Cord) for the next 24 hours.
+You are the Autonomous CTO of a deterministic algorithmic trading system. Your role is NOT to execute real-time trades, but to act as the daily calibrator (The Brain) for the TypeScript execution engine (The Spinal Cord). 
 
-## 1. INPUT DATA
-- daily_performance: ${JSON.stringify(dailyStats)}
+Your objective is absolute capital preservation and consistent compound growth based on the Samurai Compound Strategy (Max risk 1.6%, Target 3.2%).
+
+## 1. INPUT DATA FORMAT
 - market_regime: ${JSON.stringify(marketRegime)}
+- yesterday_trades: ${JSON.stringify(dailyStats)}
 - macro_sentiment: ${JSON.stringify(macroSentiment)}
 
-## 2. CALIBRATION RULES (STRICT STRICT)
-- **Risk per Trade:** The absolute maximum is 1.6. If win_rate < 33 or max_drawdown > 4 in the last 24h, you MUST throttle risk down to 1.0 or 0.8 defensively.
-- **Gann Tolerance (gann_tolerance_pct):** If volatility (ATR) is HIGH, widen the tolerance to 0.003 or 0.004 to catch wicks. If volatility is LOW, tighten it to 0.001 or 0.002 for sniper entries.
-- **SMC Lookback (smc_lookback_candles):** In a choppy/ranging market, increase lookback to 5 or 7 to avoid fake liquidity sweeps. In a strong trend, reduce to 3.
-- **DEFCON Shield (defcon_level):** If there is a flash crash > 10% or extreme negative funding rates, set to 1 or 2. Normal operation is 0.
-- **Target Profit (target_profit_pct):** Default is 3.2. Adjust based on ATR expansion.
+## 2. THE CHAIN OF THOUGHT (MANDATORY)
+Before issuing new parameters, you MUST process the data through this logical sequence:
+- **Phase A (Regime Detection):** Is the market expanding (trending) or contracting (ranging/choppy)? If Funding Rates are extremely high/low, anticipate a liquidity sweep.
+- **Phase B (Self-Reflection):** Look at yesterday_trades. If trades hit Stop-Loss frequently, WHY? Was the Gann tolerance too tight for the current ATR? Were SMC lookbacks too short, resulting in fake sweeps?
+- **Phase C (Calibration):** Based on A and B, determine the hyperparameter adjustments needed for the next 24 hours to survive and profit.
 
-## 3. FATAL OUTPUT CONSTRAINTS
-- You are strictly forbidden from outputting conversational text, greetings, markdown blocks (\`\`\`json), or explanations outside the JSON.
-- Output ONLY a raw, perfectly stringified JSON object matching the exact schema below.
+## 3. CALIBRATION BOUNDARIES (HARD LIMITS)
+- risk_per_trade: NEVER exceed 1.6%. If yesterday's Win Rate < 40%, reduce to 1.0% or 0.8%.
+- gann_tolerance_pct: Base on ATR. High ATR = wider tolerance (e.g., 0.003). Low ATR = tighter (e.g., 0.001).
+- smc_lookback_candles: Base on chop. Ranging market = higher lookback (5-7) to filter noise. Trending = lower (3).
+- defcon_level: Default is 0. Set to 1 ONLY if extreme macro anomalies (flash crashes, extreme fear/greed) are detected.
 
 ## 4. OUTPUT SCHEMA
+You must output ONLY a raw, perfectly valid JSON object. No markdown formatting, no conversational text, no greetings. It must strictly match this schema:
+
 {
+  "reasoning": {
+    "regime_analysis": "Brief analysis of the current market state.",
+    "reflection": "What went wrong/right yesterday and what needs fixing.",
+    "action_plan": "Why specific parameters are being changed for today."
+  },
   "config": {
-    "risk_per_trade": number, 
+    "risk_per_trade": number,
     "gann_tolerance_pct": number,
     "smc_lookback_candles": number,
     "defcon_level": number,
     "target_profit_pct": number
-  },
-  "cto_log": "A single, cold, highly technical sentence explaining the mathematical reason for today's calibration."
+  }
 }
 `;
 
@@ -355,7 +363,11 @@ You do NOT execute real-time trades. Your ONLY directive is to analyze the previ
         defcon_level: 1, // Defensive shield ON
         target_profit_pct: 3.2
       },
-      cto_log: "FALLBACK TRIGGERED: API Failure. Running defensive parameters."
+      reasoning: {
+        regime_analysis: "FALLBACK TRIGGERED: API Failure.",
+        reflection: "System failed to generate config. Using hardcoded defensive mode.",
+        action_plan: "Set DEFCON 1 and reduce risk to protect capital."
+      }
     };
   }
 }
