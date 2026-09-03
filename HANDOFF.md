@@ -1,6 +1,6 @@
 # ULTRON: The Quantitative AI Engine & Autonomous CTO (Ultimate Handoff Document)
 
-**Version:** 2.0 (The Flawless Monster)
+**Version:** 3.0 (The God-Tier Autonomous Engine)
 **Core Philosophy:** 100% Mathematical Certainty, Multi-Disciplinary Analysis, Capital Preservation, High-Frequency Anti-Spoofing, and Autonomous Self-Development.
 
 This document serves as the encyclopedic technical and operational manual for Ultron. It contains every detail, mathematical formula, architectural decision, and operational instruction required to run, maintain, trade with, and develop this system.
@@ -60,7 +60,7 @@ Ultron Abandons traditional technical analysis in favor of a 7-pillar mathematic
 
 ## 2. The Autonomous CTO & Auto-Healing (Multi-Agent V2)
 
-*Location: `src/lib/cto/agents.ts`, `src/lib/cto/orchestrator.ts`, & `src/lib/error-healer.ts`*
+*Location: `src/lib/cto/ast-surgeon.ts`, `src/lib/cto/cto-machine.ts`, `src/lib/cto/orchestrator.ts`, `src/lib/cto/github-pr.ts` & `src/lib/error-healer.ts`*
 
 Ultron can write its own code, upgrade itself, and **heal its own bugs**. 
 - **The Stateful QStash Loop:** To bypass Vercel's 60-second limit, the CTO runs as an asynchronous state machine via Upstash QStash (Plan -> Research -> Dev -> Review -> Summary). It can run for hours if necessary.
@@ -131,6 +131,7 @@ Ultron is a rapidly evolving entity. Below is the historical and operational log
 - **Zod Firewall & Deterministic AI:** The AI model acts strictly as an Interpreter, returning structured JSON (`TradeDecision`).
 - **Strict 1.6% Kelly Risk:** The firewall enforces exactly 1.6% capital risk based on live balance to prevent mathematical ruin (43 consecutive losses needed to hit 50% drawdown).
 - **Minimum 1:2 R:R Ratio:** The system rejects any trade that does not guarantee at least twice the reward of the risk taken, giving the system a 33.3% break-even win rate.
+- **Quality over Quantity (Anti-Scalp Firewall):** `netProfitPercentage` field (min 3.2%) and `tradeType: 'SWING'` literal added to `TradeSchema`. Micro-scalping is mathematically impossible — any signal with expected net profit below 3.2% of total balance is instantly rejected by the Zod Kill-Switch.
 - **Architectural Proxy Eradication:** Vercel region migrated to Frankfurt (`fra1`) to bypass US-IP CloudFront blocks, resulting in <1s latency.
 
 **✅ Protocol V4.0: The StatArb Engine (Statistical Arbitrage)**
@@ -150,11 +151,23 @@ Ultron is a rapidly evolving entity. Below is the historical and operational log
 - **Resilient AI Fetcher:** 15s timeout limit per model + fallback rotation (using `gemini-1.5-pro` & `gemini-1.5-flash`) to gracefully bypass API rate-limits and Vercel's 60s death-timer.
 - **Long-Term Memory Fixes:** Re-routed Supabase `pgvector` queries to use stable `embedding-001` endpoint for seamless RAG context injection.
 
+**✅ Protocol V9.0: God-Tier CTO (AST + XState)**
+- **AST Surgery (`src/lib/cto/ast-surgeon.ts`):** The CTO no longer edits code as plain text. Using `ts-morph`, it parses TypeScript source files as an Abstract Syntax Tree (AST) and injects functions, interfaces, and imports at the node level — eliminating all risk of syntax errors or truncation from string replacement.
+- **XState Machine (`src/lib/cto/cto-machine.ts`):** The entire coding workflow is governed by a strict 5-state finite state machine: `ANALYZING_REQUIREMENTS` → `DRAFTING_AST` → `TYPE_CHECKING` → `SELF_HEALING` (up to 3 iterations) → `PR_CREATION`. No implicit state mutations are possible.
+- **PR-Only Policy (`src/lib/cto/github-pr.ts`):** The CTO is constitutionally forbidden from pushing directly to `master`. Every change creates a dedicated branch and a Pull Request. The CEO (Farzin) is the sole Merge authority.
+- **Telegram Orchestration (`/cto` command):** Send `/cto <task>` in Telegram to wake the CTO. It broadcasts real-time progress updates (`Analyzing...`, `Type Checking...`, `PR ready!`) as it works.
+
+**✅ Protocol V10.0: Self-Evolution (Nightly Audit Agent)**
+- **GitHub Actions Workflow (`.github/workflows/self-evolution.yml`):** Runs every night at 02:00 AM Tehran time (22:30 UTC).
+- **Audit Script (`scripts/self-audit.ts`):** Autonomously scans the codebase for TypeScript errors (`tsc --noEmit`), checks for outdated npm dependencies (`npm outdated`), and compiles a full audit report.
+- **Autonomous PR Creation:** If any issue is found, the agent creates a dedicated `self-evolution/YYYY-MM-DD` branch, commits a Markdown audit report to `docs/audit-reports/`, and opens a Pull Request — without any human initiation.
+- **Telegram Morning Briefing:** After each nightly run, Ultron sends a summary to Telegram: either `All systems nominal` or a link to the PR with a list of detected issues.
+
 ---
 
-## 7. Future Roadmap (Omni-OS & AST Manipulation)
+## 7. Future Roadmap
 
 **🚀 Next Evolutionary Milestones:**
-1. **XState Engine:** Implement finite state machines to control all trading logic and coding decisions, removing all implicit state mutations.
-2. **Omni-Channel Life-OS:** Integrate iOS Shortcuts, track physical asset depreciation (e.g., Castrol 10W-40 limits, Plant humidity), enforce "Focus Mode" during gaming (Sekiro/Wukong), and enforce German B2 linguistic context in casual queries.
-3. **AST Code Manipulation:** Transition the CTO agent from string-replacement to AST (TypeScript Compiler API) for absolute zero-truncation file updates.
+1. **Omni-Channel Life-OS:** Integrate iOS Shortcuts, track physical asset depreciation (Castrol 10W-40 oil change intervals, plant humidity), enforce "Focus Mode" during gaming (Sekiro/Wukong), and enforce German B2 linguistic context in casual queries.
+2. **AST Self-Healing for Production Errors:** When a production runtime error is detected (via Sentry), automatically open a Supabase ticket, wake the CTO Machine, and generate a fix PR — zero human triage required.
+3. **Lighthouse Performance Guardian:** Weekly GitHub Action that runs Lighthouse on key routes. If LCP or TTI degrades beyond threshold, CTO generates a code-splitting/lazy-loading PR automatically.

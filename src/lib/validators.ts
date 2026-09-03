@@ -32,10 +32,15 @@ export const TradeSchema = z.object({
       const reward = data.entryPrice - data.projectedTarget;
       if (reward < 2 * risk) return false; // Reward MUST be at least 2x Risk
     }
+
+    // Dynamic Leverage Enforcer (Samurai 20x Protocol)
+    // High-conviction trades MUST use leverage to compound faster
+    if (data.confidenceScore >= 85 && data.leverage < 3) return false; // >= 85% confidence → min 3x
+    if (data.confidenceScore >= 70 && data.leverage < 2) return false; // >= 70% confidence → min 2x
   }
   return true;
 }, {
-  message: "Invalid logic or R:R constraint. Must follow strict 1:2 R:R minimum (BUY: TP>Entry>SL, SELL: SL>Entry>TP).",
+  message: "Invalid logic, R:R constraint, or Dynamic Leverage Rule violated. (>=85% confidence requires 3x, >=70% requires 2x leverage).",
 });
 
 export type TradeDecision = z.infer<typeof TradeSchema>;
