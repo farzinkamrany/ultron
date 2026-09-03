@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import ccxt from 'ccxt';
 import { verifyQStashSignature } from '@/lib/qstash';
+import { redis } from '@/lib/redis';
+import { CTOConfig } from '@/lib/ai';
 
 export const maxDuration = 60; // Allow 60s for Vercel execution to avoid 504 Timeout
 
@@ -19,7 +21,17 @@ export async function GET(req: NextRequest) {
       console.error("[Manage Trades] Direct access blocked. Must use QStash.");
       return new NextResponse("Unauthorized", { status: 401 });
     }
-    // 1. Fetch all OPEN paper trades
+    // 1. Fetch CTO Config
+    let ctoConfig: CTOConfig | null = null;
+    try {
+      const configStr = await redis.get('ul_cto_config') as string | null;
+      if (configStr) ctoConfig = typeof configStr === 'string' ? JSON.parse(configStr) : configStr;
+    } catch (err) {
+      console.error("Redis fetch failed, using fallback config.");
+    }
+    const defconLevel = ctoConfig?.defcon_level || 0;
+
+    // 2. Fetch all OPEN paper trades
     const { data: openTrades, error: fetchError } = await supabase
       .from('paper_trades')
       .select('*')
@@ -69,16 +81,20 @@ export async function GET(req: NextRequest) {
           
           console.log(`[Manage Trades] LONG Runner extended! New SL: ${newStopLoss}, New TP: ${newTakeProfit}`);
           
-          // Pyramid Scale-In: Open a new position using the locked-in profit
-          newTradesToInsert.push({
-            symbol: trade.symbol,
-            position_type: 'LONG',
-            entry_price: currentPrice,
-            take_profit: newTakeProfit,
-            stop_loss: newStopLoss,
-            status: 'OPEN',
-            rationale: 'Pyramid Scale-In (Risk-Free)'
-          });
+          // Pyramid Scale-In (Blocked if DEFCON > 0)
+          if (defconLevel === 0) {
+            newTradesToInsert.push({
+              symbol: trade.symbol,
+              position_type: 'LONG',
+              entry_price: currentPrice,
+              take_profit: newTakeProfit,
+              stop_loss: newStopLoss,
+              status: 'OPEN',
+              rationale: 'Pyramid Scale-In (Risk-Free)'
+            });
+          } else {
+            console.log(`[Manage Trades] Pyramiding blocked due to DEFCON ${defconLevel}`);
+          }
 
         } else {
           // 3. Trailing Stop Logic (True Break-Even)
@@ -106,16 +122,20 @@ export async function GET(req: NextRequest) {
           
           console.log(`[Manage Trades] SHORT Runner extended! New SL: ${newStopLoss}, New TP: ${newTakeProfit}`);
 
-          // Pyramid Scale-In
-          newTradesToInsert.push({
-            symbol: trade.symbol,
-            position_type: 'SHORT',
-            entry_price: currentPrice,
-            take_profit: newTakeProfit,
-            stop_loss: newStopLoss,
-            status: 'OPEN',
-            rationale: 'Pyramid Scale-In (Risk-Free)'
-          });
+          // Pyramid Scale-In (Blocked if DEFCON > 0)
+          if (defconLevel === 0) {
+            newTradesToInsert.push({
+              symbol: trade.symbol,
+              position_type: 'SHORT',
+              entry_price: currentPrice,
+              take_profit: newTakeProfit,
+              stop_loss: newStopLoss,
+              status: 'OPEN',
+              rationale: 'Pyramid Scale-In (Risk-Free)'
+            });
+          } else {
+            console.log(`[Manage Trades] Pyramiding blocked due to DEFCON ${defconLevel}`);
+          }
 
         } else {
           // Trailing Stop Logic (True Break-Even)

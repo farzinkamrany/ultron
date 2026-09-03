@@ -1,5 +1,7 @@
 import ccxt from 'ccxt';
 import { calculateGannSquareOf9 } from './gann';
+import { redis } from '../redis';
+import { CTOConfig } from '../ai';
 
 const TOP_ALTCOINS = [
   // Top 50 Liquid Altcoins on Binance/Bybit
@@ -34,8 +36,20 @@ export interface HuntTrade {
  * Scans the top altcoins to find one that can hit the target profit percentage.
  * Performs a "Fast Pass" checking Gann Supports/Resistances to avoid rate limits.
  */
-export async function huntForSetup(targetProfitPerc: number): Promise<HuntTrade | null> {
+export async function huntForSetup(fallbackTargetProfitPerc: number): Promise<HuntTrade | null> {
   const exchange = new ccxt.bybit({ enableRateLimit: true });
+
+  // 1. Fetch CTO Config
+  let ctoConfig: CTOConfig | null = null;
+  try {
+    const configStr = await redis.get('ul_cto_config') as string | null;
+    if (configStr) ctoConfig = typeof configStr === 'string' ? JSON.parse(configStr) : configStr;
+  } catch (err) {
+    console.error("Redis fetch failed, using fallback config.");
+  }
+
+  const targetProfitPerc = ctoConfig?.target_profit_pct || fallbackTargetProfitPerc;
+  const maxDistanceToSupport = ctoConfig?.gann_tolerance_pct ? ctoConfig.gann_tolerance_pct * 100 : 0.3; // Default 0.3%
 
   let bestTrade: HuntTrade | null = null;
   let bestScore = -1000;
@@ -67,7 +81,7 @@ export async function huntForSetup(targetProfitPerc: number): Promise<HuntTrade 
       const distanceDownPerc = ((currentPrice - closestSupport) / currentPrice) * 100;
 
       // Evaluate LONG setup
-      if (distanceUpPerc >= targetProfitPerc && distanceDownPerc <= 4.0) {
+      if (distanceUpPerc >= targetProfitPerc && distanceDownPerc <= maxDistanceToSupport) {
         const score = distanceUpPerc - distanceDownPerc;
         if (score > bestScore) {
           bestScore = score;
@@ -82,7 +96,7 @@ export async function huntForSetup(targetProfitPerc: number): Promise<HuntTrade 
       }
 
       // Evaluate SHORT setup
-      if (distanceDownPerc >= targetProfitPerc && distanceUpPerc <= 4.0) {
+      if (distanceDownPerc >= targetProfitPerc && distanceUpPerc <= maxDistanceToSupport) {
         const score = distanceDownPerc - distanceUpPerc;
         if (score > bestScore) {
           bestScore = score;

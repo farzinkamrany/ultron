@@ -288,4 +288,74 @@ OUTPUT SCHEMA (strict — every field required):
   return { action: "WAIT", entryPrice: null, stopLoss: null, projectedTarget: null, riskPercentage: null, netProfitPercentage: null, tradeType: 'SWING', trailingStrategy: 'SMC_OB', leverage: 1, confidenceScore: 0, reasoning: "Fallback." };
 }
 
+export interface CTOConfig {
+  risk_per_trade: number;
+  gann_tolerance_pct: number;
+  smc_lookback_candles: number;
+  defcon_level: number;
+  target_profit_pct: number;
+}
 
+export async function generateCTOConfig(
+  dailyStats: any,
+  marketRegime: any,
+  macroSentiment: any
+): Promise<{ config: CTOConfig, cto_log: string }> {
+  const prompt = `
+# SYSTEM INSTRUCTION: AUTONOMOUS CTO & QUANT STRATEGIST (ULTRON V10)
+
+You are the Autonomous CTO of a deterministic algorithmic trading system. 
+You do NOT execute real-time trades. Your ONLY directive is to analyze the previous 24 hours of market data and system performance, and output strict hyperparameters to calibrate the TypeScript execution engine (The Spinal Cord) for the next 24 hours.
+
+## 1. INPUT DATA
+- daily_performance: ${JSON.stringify(dailyStats)}
+- market_regime: ${JSON.stringify(marketRegime)}
+- macro_sentiment: ${JSON.stringify(macroSentiment)}
+
+## 2. CALIBRATION RULES (STRICT STRICT)
+- **Risk per Trade:** The absolute maximum is 1.6. If win_rate < 33 or max_drawdown > 4 in the last 24h, you MUST throttle risk down to 1.0 or 0.8 defensively.
+- **Gann Tolerance (gann_tolerance_pct):** If volatility (ATR) is HIGH, widen the tolerance to 0.003 or 0.004 to catch wicks. If volatility is LOW, tighten it to 0.001 or 0.002 for sniper entries.
+- **SMC Lookback (smc_lookback_candles):** In a choppy/ranging market, increase lookback to 5 or 7 to avoid fake liquidity sweeps. In a strong trend, reduce to 3.
+- **DEFCON Shield (defcon_level):** If there is a flash crash > 10% or extreme negative funding rates, set to 1 or 2. Normal operation is 0.
+- **Target Profit (target_profit_pct):** Default is 3.2. Adjust based on ATR expansion.
+
+## 3. FATAL OUTPUT CONSTRAINTS
+- You are strictly forbidden from outputting conversational text, greetings, markdown blocks (\`\`\`json), or explanations outside the JSON.
+- Output ONLY a raw, perfectly stringified JSON object matching the exact schema below.
+
+## 4. OUTPUT SCHEMA
+{
+  "config": {
+    "risk_per_trade": number, 
+    "gann_tolerance_pct": number,
+    "smc_lookback_candles": number,
+    "defcon_level": number,
+    "target_profit_pct": number
+  },
+  "cto_log": "A single, cold, highly technical sentence explaining the mathematical reason for today's calibration."
+}
+`;
+
+  const { GoogleGenerativeAI } = await import("@google/generative-ai");
+  const ai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+  const model = ai.getGenerativeModel({ model: "gemini-1.5-pro" });
+
+  try {
+    const res = await model.generateContent(prompt);
+    let text = res.response.text();
+    text = text.replace(/\`\`\`json/g, "").replace(/\`\`\`/g, "").trim();
+    return JSON.parse(text);
+  } catch (err) {
+    console.error("CTO Generation failed, falling back:", err);
+    return {
+      config: {
+        risk_per_trade: 0.8, // Defensive default
+        gann_tolerance_pct: 0.003,
+        smc_lookback_candles: 5,
+        defcon_level: 1, // Defensive shield ON
+        target_profit_pct: 3.2
+      },
+      cto_log: "FALLBACK TRIGGERED: API Failure. Running defensive parameters."
+    };
+  }
+}
