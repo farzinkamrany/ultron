@@ -105,6 +105,9 @@ export async function POST(req: NextRequest) {
     const huntRegex = /(\d+)\s*(درصد|%)/i;
     const isHuntRequest = contentStr && (contentStr.includes('شکار') || contentStr.includes('پیدا کن') || contentStr.includes('ارز بگو')) && huntRegex.test(contentStr);
 
+    const arbRegex = /آربیتراژ\s+([a-zA-Z0-9]+)[\s,و]+([a-zA-Z0-9]+)/i;
+    const isArbRequest = contentStr && arbRegex.test(contentStr);
+
     try {
       if (isHuntRequest) {
         await sendTelegramMessage(chatId, "🐺 در حال اسکن بازار جهانی (Top 20)... این کار ممکن است ۲۰ ثانیه طول بکشد.");
@@ -121,15 +124,45 @@ export async function POST(req: NextRequest) {
           
           const decision = await generateStructuredTradeResponse(JSON.stringify(marketData, null, 2), tryPro);
           replyText = `🎯 Trade Setup: ${bestAsset.symbol}\n\n` +
+                      `Live Balance: $${marketData.liveBalance.toFixed(2)}\n` +
+                      `Risk Amount (2%): $${marketData.riskAmount.toFixed(2)}\n\n` +
                       `Action: ${decision.action}\n` +
                       `Entry: ${decision.entryPrice ? '$' + decision.entryPrice : 'N/A'}\n` +
                       `Stop Loss: ${decision.stopLoss ? '$' + decision.stopLoss : 'N/A'}\n` +
-                      `Take Profit: ${decision.takeProfit ? '$' + decision.takeProfit : 'N/A'}\n` +
+                      `Projected Target: ${(decision as any).projectedTarget ? '$' + (decision as any).projectedTarget : 'N/A'}\n` +
+                      `Trailing SL Strategy: SMC_OB Active\n` +
                       `Leverage: ${decision.leverage}x\n` +
                       `Confidence: ${decision.confidenceScore}%\n\n` +
                       `Reasoning:\n${decision.reasoning}`;
         } else {
           replyText = `هیچ ارزی در ۲۰ کوین برتر پیدا نشد که در حال حاضر موقعیت امن برای تارگت ${targetPerc}٪ داشته باشد. (یا از حمایت دور هستند یا اردر بوک خالی است).`;
+        }
+      } else if (isArbRequest) {
+        const match = contentStr.match(arbRegex);
+        const asset1 = match![1].toUpperCase() + 'USDT';
+        const asset2 = match![2].toUpperCase() + 'USDT';
+        
+        await sendTelegramMessage(chatId, `⚖️ در حال محاسبه فرمول Z-Score و ضریب همبستگی بین ${asset1} و ${asset2}...`);
+        
+        const { runStatArbAnalysis } = await import("@/lib/trading/statArb");
+        const arbSignal = await runStatArbAnalysis(asset1, asset2);
+        
+        if (arbSignal.correlation < 0.8) {
+          replyText = `⚠️ هشدار آربیتراژ: ضریب همبستگی بین ${asset1} و ${asset2} بسیار پایین است (${arbSignal.correlation.toFixed(2)}). این دو ارز رفتار مشابهی ندارند و آربیتراژ روی آن‌ها از نظر ریاضی به شدت خطرناک است. عملیات متوقف شد.`;
+        } else {
+          replyText = `⚖️ موتور دلتا-خنثی (Protocol V4.0)\n\n` +
+                      `جفت‌ارزها: ${asset1} / ${asset2}\n` +
+                      `ضریب همبستگی: ${arbSignal.correlation.toFixed(2)} (معتبر)\n` +
+                      `نسبت Z-Score فعلی: ${arbSignal.zScore.toFixed(2)}\n\n` +
+                      `دستور سیستم: ${arbSignal.action}\n`;
+                      
+          if (arbSignal.action !== 'WAIT') {
+            replyText += `پایه ۱: ${arbSignal.leg1.action} روی ${arbSignal.leg1.asset}\n` +
+                         `پایه ۲: ${arbSignal.leg2.action} روی ${arbSignal.leg2.asset}\n\n` +
+                         `هشدار: برای حفظ استراتژی دلتا-خنثی، سایز دلاریِ هر دو پوزیشن باید **دقیقاً مساوی** باشد و حداکثر ۲٪ سرمایه درگیر شود.`;
+          } else {
+            replyText += `شرایط فعلی برای آربیتراژ مناسب نیست (Z-Score هنوز به بازه‌ی افراطی +/- 2.5 نرسیده است).`;
+          }
         }
       } else if (contentStr && contentStr.startsWith('/status')) {
         await sendTelegramMessage(chatId, "⏳ در حال بررسی سیستم‌ها (Diagnostics)...");

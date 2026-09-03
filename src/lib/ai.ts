@@ -205,7 +205,8 @@ export async function generateStructuredTradeResponse(marketStateStr: string, tr
   "action": "BUY" | "SELL" | "WAIT",
   "entryPrice": number | null (Must be positive),
   "stopLoss": number | null (BUY: SL < Entry, SELL: SL > Entry),
-  "takeProfit": number | null (Must enforce 1:2 Risk:Reward minimum),
+  "projectedTarget": number | null (Must enforce 1:4 Risk:Reward minimum),
+  "trailingStrategy": "SMC_OB",
   "leverage": number (1 to 5 MAX - Kill Switch Engaged),
   "confidenceScore": number (0-100),
   "reasoning": "string"
@@ -241,7 +242,8 @@ export async function generateStructuredTradeResponse(marketStateStr: string, tr
           action: "WAIT",
           entryPrice: null,
           stopLoss: null,
-          takeProfit: null,
+          projectedTarget: null,
+          trailingStrategy: 'SMC_OB',
           leverage: 1,
           confidenceScore: 0,
           reasoning: `System failed to produce a deterministic trade decision after ${MAX_RETRIES} attempts. Error: ${err.message}`
@@ -251,5 +253,5 @@ export async function generateStructuredTradeResponse(marketStateStr: string, tr
     }
   }
 
-  return { action: "WAIT", entryPrice: null, stopLoss: null, takeProfit: null, leverage: 1, confidenceScore: 0, reasoning: "Fallback." };
+  return { action: "WAIT", entryPrice: null, stopLoss: null, projectedTarget: null, trailingStrategy: 'SMC_OB', leverage: 1, confidenceScore: 0, reasoning: "Fallback." };
 }

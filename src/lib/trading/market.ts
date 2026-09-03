@@ -11,6 +11,8 @@ export interface MarketState {
   asset: string;
   price: number;
   timeframeLabel: string;
+  liveBalance: number;
+  riskAmount: number;
   defcon: { level: string | number; description: string; } | null;
   orderBook: { imbalanceRatio: number; whaleBuyWallPrice: number; whaleSellWallPrice: number; } | null;
   tape: { cvd: number; aggression: string; } | null;
@@ -23,11 +25,26 @@ export interface MarketState {
 export async function analyzeMarketData(asset: string, timeHorizonDays: number, includeLiquidation: boolean = false): Promise<MarketState> {
   try {
     const exchange = new ccxt.bybit({
+      apiKey: process.env.BYBIT_API_KEY,
+      secret: process.env.BYBIT_API_SECRET,
       enableRateLimit: true,
       options: {
         defaultType: 'spot'
       }
     });
+
+    let liveBalance = 1000; // Fallback
+    try {
+      if (exchange.apiKey) {
+        const balance = await exchange.fetchBalance();
+        if (balance['USDT'] && balance['USDT'].free) {
+          liveBalance = balance['USDT'].free;
+        }
+      }
+    } catch (err) {
+      console.warn("Failed to fetch live balance, using default 1000:", err);
+    }
+    const riskAmount = liveBalance * 0.02; // Dynamic 2% Kelly
 
     let timeframe = '1d';
     let label = 'Daily';
@@ -221,6 +238,8 @@ export async function analyzeMarketData(asset: string, timeHorizonDays: number, 
       asset,
       price: currentPrice,
       timeframeLabel: label,
+      liveBalance,
+      riskAmount,
       defcon: defconData,
       orderBook: orderBookData,
       tape: tapeData,

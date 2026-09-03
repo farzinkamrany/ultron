@@ -1,0 +1,44 @@
+name: Ultron Genesis Engine Epoch
+
+on:
+  schedule:
+    # Run every Sunday at 00:00 UTC (Weekly Walk-Forward Optimization)
+    - cron: '0 0 * * 0'
+  workflow_dispatch: # Allows you to manually trigger the epoch from GitHub UI
+
+jobs:
+  run-genesis:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Crucial: Allows the bot to commit the new config.ts back to the repo
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Run Genesis Engine (Genetic Algorithm)
+        # Using npx tsx to execute the typescript file directly
+        run: npx tsx scripts/run-genesis.ts
+        env:
+          # If Genesis engine uses Bybit APIs for fetching 30d history, it needs the keys
+          BYBIT_API_KEY: ${{ secrets.BYBIT_API_KEY }}
+          BYBIT_API_SECRET: ${{ secrets.BYBIT_API_SECRET }}
+
+      - name: Commit and Push Evolved DNA
+        run: |
+          git config --global user.name "Ultron Genesis CTO [Bot]"
+          git config --global user.email "ultron-bot@users.noreply.github.com"
+          git add src/lib/trading/config.ts
+          
+          # Only commit if config.ts has actually changed
+          git diff --staged --quiet || git commit -m "chore(genesis): 🧬 Evolved trading DNA via Genetic Algorithm"
+          git push
