@@ -33,57 +33,68 @@ export async function GET() {
       let pnl = 0;
       let closedAt = null;
 
+      let newTakeProfit = trade.take_profit;
+
       // 2. Check PnL and hit triggers
       if (trade.position_type === 'LONG') {
         if (currentPrice <= trade.stop_loss) {
-          newStatus = 'LOST';
-          pnl = -Math.abs(trade.entry_price - trade.stop_loss); // Mock PnL unit
+          // If we hit stop loss, check if it's the original SL or a trailing SL in profit
+          newStatus = trade.stop_loss > trade.entry_price ? 'WON' : 'LOST';
+          pnl = trade.stop_loss > trade.entry_price 
+                ? currentPrice - trade.entry_price 
+                : -Math.abs(trade.entry_price - trade.stop_loss);
           closedAt = new Date().toISOString();
         } else if (currentPrice >= trade.take_profit) {
-          newStatus = 'WON';
-          pnl = Math.abs(trade.take_profit - trade.entry_price);
-          closedAt = new Date().toISOString();
+          // Asymmetric Runner: Extend TP, lock in SL
+          const distance = trade.take_profit - trade.entry_price;
+          newStopLoss = trade.take_profit - (distance * 0.2); // Lock in 80% of the target's profit
+          newTakeProfit = trade.take_profit + distance; // Extend target
+          console.log(`[Manage Trades] LONG Runner extended! New SL: ${newStopLoss}, New TP: ${newTakeProfit}`);
         } else {
           // 3. Trailing Stop Logic (SMC Break-Even)
-          // If price moved 50% towards Take Profit, move Stop Loss to Entry
           const distanceToTp = trade.take_profit - trade.entry_price;
           const currentProfit = currentPrice - trade.entry_price;
           
           if (currentProfit >= distanceToTp * 0.5 && trade.stop_loss < trade.entry_price) {
             newStopLoss = trade.entry_price; // Move to Break-Even
-            console.log(`[Manage Trades] Trailing Stop activated for ${trade.symbol}`);
+            console.log(`[Manage Trades] Trailing Stop (Break-Even) activated for ${trade.symbol}`);
           }
         }
       } else {
         // SHORT Logic
         if (currentPrice >= trade.stop_loss) {
-          newStatus = 'LOST';
-          pnl = -Math.abs(trade.stop_loss - trade.entry_price);
+          newStatus = trade.stop_loss < trade.entry_price ? 'WON' : 'LOST';
+          pnl = trade.stop_loss < trade.entry_price
+                ? trade.entry_price - currentPrice
+                : -Math.abs(trade.stop_loss - trade.entry_price);
           closedAt = new Date().toISOString();
         } else if (currentPrice <= trade.take_profit) {
-          newStatus = 'WON';
-          pnl = Math.abs(trade.entry_price - trade.take_profit);
-          closedAt = new Date().toISOString();
+          // Asymmetric Runner: Extend TP, lock in SL
+          const distance = trade.entry_price - trade.take_profit;
+          newStopLoss = trade.take_profit + (distance * 0.2); // Lock in 80% of the target's profit
+          newTakeProfit = trade.take_profit - distance; // Extend target downward
+          console.log(`[Manage Trades] SHORT Runner extended! New SL: ${newStopLoss}, New TP: ${newTakeProfit}`);
         } else {
-          // Trailing Stop Logic
+          // Trailing Stop Logic (SMC Break-Even)
           const distanceToTp = trade.entry_price - trade.take_profit;
           const currentProfit = trade.entry_price - currentPrice;
           
           if (currentProfit >= distanceToTp * 0.5 && trade.stop_loss > trade.entry_price) {
             newStopLoss = trade.entry_price; // Move to Break-Even
-            console.log(`[Manage Trades] Trailing Stop activated for ${trade.symbol}`);
+            console.log(`[Manage Trades] Trailing Stop (Break-Even) activated for ${trade.symbol}`);
           }
         }
       }
 
       // 4. Update the DB
-      if (newStatus !== trade.status || newStopLoss !== trade.stop_loss) {
+      if (newStatus !== trade.status || newStopLoss !== trade.stop_loss || newTakeProfit !== trade.take_profit) {
         updates.push(
           supabase
             .from('paper_trades')
             .update({
               status: newStatus,
               stop_loss: newStopLoss,
+              take_profit: newTakeProfit,
               pnl: pnl,
               closed_at: closedAt
             })
