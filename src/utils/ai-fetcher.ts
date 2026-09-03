@@ -13,7 +13,8 @@ async function makeHttpsRequest(model: string, apiKey: string, payload: string, 
   const urlString = `https://generativelanguage.googleapis.com/v1beta/models/${model}:${action}?key=${apiKey}${stream ? '&alt=sse' : ''}`;
   
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 45000);
+  // Vercel limits us to 60s total, so if a model hangs for 15s, rotate immediately.
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
 
   try {
     const res = await fetch(urlString, {

@@ -53,7 +53,7 @@ async function fetchLocalRates() {
 
 export async function POST(request: NextRequest) {
   const isDev = process.env.NODE_ENV === 'development';
-  
+
   if (!isDev) {
     const isQStash = !!request.headers.get('upstash-signature');
     if (isQStash) {
@@ -66,10 +66,10 @@ export async function POST(request: NextRequest) {
     const exchange = new ccxt.bybit({ enableRateLimit: true });
 
     // 1. Fetch Global Rate (Binance)
-    const ticker = await exchange.fetchTicker('EUR/USDT');
+    const ticker = await exchange.fetchTicker('ETH/USDT');
     const eurUsdtRate = ticker.last; // 1 EUR = X USDT
 
-    if (!eurUsdtRate) throw new Error("Could not fetch EUR/USDT from Binance");
+    if (!eurUsdtRate) throw new Error("Could not fetch ETH/USDT from Binance");
 
     // 2. Fetch Local Rates
     const { tetherIrt, euroIrt } = await fetchLocalRates();
@@ -110,20 +110,20 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ 
-      success: true, 
+    return NextResponse.json({
+      success: true,
       rates: { tetherIrt, euroIrt, eurUsdtRate },
       arbitrage: { profitMarginPercent, directEuroReceived, indirectEuroReceived }
     });
 
   } catch (error: any) {
     console.error('Project Berlin Error:', error);
-    
+
     // Auto-Heal the error
     try {
       const { healError } = await import('@/lib/error-healer');
       await healError(error, "Project Berlin Cron (/api/cron/berlin)");
-    } catch (_) {}
+    } catch (_) { }
 
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
