@@ -43,7 +43,7 @@ async function upsertFile(
     const existing: any = await githubFetch(`/contents/${normalizedPath}?ref=${branchName}`);
     sha = existing.sha;
   } catch (_) {
-    // File doesn't exist yet — that's fine
+    // File doesn't exist yet  that's fine
   }
 
   await githubFetch(`/contents/${normalizedPath}`, "PUT", {

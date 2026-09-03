@@ -117,16 +117,16 @@ export async function startCtoWorkflow(request: string, chatId: string): Promise
     const prUrl = await createCTOPullRequest({
       branchName,
       title: `[CTO] ${request.slice(0, 72)}`,
-      body: `## تغییرات جدید\n${request}\n\n## فایل‌های تغییریافته\n${files.map(f => `- \`${f.path}\``).join("\n")}\n\n> این PR توسط CTO Machine به صورت خودکار ایجاد شد. لطفا قبل از Merge بررسی بفرمایید.`,
+      body: `##  \n${request}\n\n##  \n${files.map(f => `- \`${f.path}\``).join("\n")}\n\n>  PR  CTO Machine     .    Merge  .`,
       files,
       commitMessage: `feat(cto): ${request.slice(0, 60)}`,
     });
 
     actor.send({ type: "PR_DONE", prUrl });
-    return `✅ Pull Request آماده‌ی بررسی شماست:\n${prUrl}`;
+    return ` Pull Request   :\n${prUrl}`;
   } catch (err: any) {
     actor.send({ type: "ERROR", message: err.message });
-    return `🆘 [CTO] خطا: ${err.message}`;
+    return ` [CTO] : ${err.message}`;
   } finally {
     actor.stop();
   }
