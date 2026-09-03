@@ -123,18 +123,38 @@ When the bot sends a Telegram message, follow these execution rules:
 
 ---
 
-## 6. Future Roadmap (Protocol V3.0 - The God-Tier Architecture & Omni-OS)
+## 6. System Evolution & Protocol Versions
 
-The analytical brain, dashboard, autonomous self-healing CTO, and Telegram UI are fully deployed in Frankfurt. We are now executing **Protocol V3.0**.
+Ultron is a rapidly evolving entity. Below is the historical and operational log of its Protocol updates.
 
-**✅ Completed V3.0 Milestones (The Logical Firewall):**
-- **Zod Firewall & Deterministic AI:** The AI model acts strictly as an Interpreter, returning structured JSON (`TradeDecision`). The `Zod` firewall guarantees Mathematical Certainty (max 5x leverage, strictly positive prices, and minimum 1:2 Risk-to-Reward ratio enforced at runtime). If a signal violates these rules, it is instantly blocked.
-- **Single Source of Truth (One-Way Pipeline):** The Quant Engine never touches frontend state. Validated signals are pushed to Supabase API (`paper_trades`), and Zustand purely listens.
+**✅ Protocol V3.0: The Samurai Compound**
+- **Zod Firewall & Deterministic AI:** The AI model acts strictly as an Interpreter, returning structured JSON (`TradeDecision`).
+- **Strict 1.6% Kelly Risk:** The firewall enforces exactly 1.6% capital risk based on live balance to prevent mathematical ruin (43 consecutive losses needed to hit 50% drawdown).
+- **Minimum 1:2 R:R Ratio:** The system rejects any trade that does not guarantee at least twice the reward of the risk taken, giving the system a 33.3% break-even win rate.
 - **Architectural Proxy Eradication:** Vercel region migrated to Frankfurt (`fra1`) to bypass US-IP CloudFront blocks, resulting in <1s latency.
-- **Long-Term Memory RAG:** CTO uses Supabase `pgvector` to remember past bugs and user preferences indefinitely.
 
-**🚀 Next V3.0 Milestones:**
+**✅ Protocol V4.0: The StatArb Engine (Statistical Arbitrage)**
+- **Delta-Neutrality:** A dedicated engine (`StatArbSchema`) to run pair trades (e.g., LONG BTC, SHORT ETH) based on Z-Scores and Correlation matrices, completely shielding the fund from macro market crashes.
+
+**✅ Protocol V5.0: The Genesis Engine (Self-Optimization)**
+- **Automated Genetic Algorithms:** Runs every Sunday via GitHub Actions to backtest variables (Z-Score thresholds, SMC buffers) using Walk-Forward optimization and rewrites its own `config.ts` without human intervention.
+
+**❌ Protocol V6.0 (HFT) & V7.0 (MEV Dark Forest): [ARCHIVED]**
+- Rejected due to the architectural constraints of Vercel Serverless (60s max duration) and the requirement for low-latency bare-metal VPS/Daemons. Capital preservation and system stability were prioritized.
+
+**✅ Protocol V8.0: The Paper-Trading Citadel**
+- **Virtual Fund Management:** All trading logic is completely disconnected from exchange API keys. It runs safely in a virtualized state, logging entry, stops, and PnL into Supabase (`paper_trades`).
+- **Beta-Neutralizer:** A correlation firewall in `executor.ts` that blocks concurrent trades in the same direction (e.g., stops the system from opening multiple LONGs) to prevent cascading portfolio collapse.
+- **Dynamic Market Regime:** AI scans the last 14 days of OHLCV to detect if the market is Trending or Ranging, adjusting Kelly sizing between defensive (0.5%) and aggressive (3%).
+- **Trailing Stop & PnL Manager:** A cron job (`api/cron/manage-trades`) that acts as a lifecycle supervisor, automatically moving Stop Losses to Break-Even (Risk-Free) when price reaches 50% of the target.
+- **Resilient AI Fetcher:** 15s timeout limit per model + fallback rotation (using `gemini-1.5-pro` & `gemini-1.5-flash`) to gracefully bypass API rate-limits and Vercel's 60s death-timer.
+- **Long-Term Memory Fixes:** Re-routed Supabase `pgvector` queries to use stable `embedding-001` endpoint for seamless RAG context injection.
+
+---
+
+## 7. Future Roadmap (Omni-OS & AST Manipulation)
+
+**🚀 Next Evolutionary Milestones:**
 1. **XState Engine:** Implement finite state machines to control all trading logic and coding decisions, removing all implicit state mutations.
-2. **God-Tier Quant (Speculative Execution & WASM):** Pre-calculate 100 future market scenarios, cache them in Redis, and port heavy Gann/Orderbook geometric math to Rust/WebAssembly for C++ level speeds.
-3. **Omni-Channel Life-OS:** Integrate iOS Shortcuts, track physical asset depreciation (e.g., Castrol 10W-40 limits, Plant humidity), enforce "Focus Mode" during gaming (Sekiro/Wukong), and enforce German B2 linguistic context in casual queries.
-4. **AST Code Manipulation:** Transition the CTO agent from string-replacement to AST (TypeScript Compiler API) for absolute zero-truncation file updates.
+2. **Omni-Channel Life-OS:** Integrate iOS Shortcuts, track physical asset depreciation (e.g., Castrol 10W-40 limits, Plant humidity), enforce "Focus Mode" during gaming (Sekiro/Wukong), and enforce German B2 linguistic context in casual queries.
+3. **AST Code Manipulation:** Transition the CTO agent from string-replacement to AST (TypeScript Compiler API) for absolute zero-truncation file updates.
