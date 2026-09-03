@@ -34,7 +34,9 @@ export async function GET(req: NextRequest) {
     const symbols = [...new Set(openTrades.map(t => t.symbol))];
     const tickers = await exchange.fetchTickers(symbols);
 
+    const FEE_RATE = 0.0012; // 0.12% offset to cover Bybit Taker Fee + Slippage
     const updates = [];
+    const newTradesToInsert: any[] = [];
 
     for (const trade of openTrades) {
       const ticker = tickers[trade.symbol];
@@ -58,19 +60,32 @@ export async function GET(req: NextRequest) {
                 : -Math.abs(trade.entry_price - trade.stop_loss);
           closedAt = new Date().toISOString();
         } else if (currentPrice >= trade.take_profit) {
-          // Asymmetric Runner: Extend TP, lock in SL
+          // Asymmetric Runner + Pyramiding: Extend TP, lock in SL, open new trade
           const distance = trade.take_profit - trade.entry_price;
           newStopLoss = trade.take_profit - (distance * 0.2); // Lock in 80% of the target's profit
           newTakeProfit = trade.take_profit + distance; // Extend target
+          
           console.log(`[Manage Trades] LONG Runner extended! New SL: ${newStopLoss}, New TP: ${newTakeProfit}`);
+          
+          // Pyramid Scale-In: Open a new position using the locked-in profit
+          newTradesToInsert.push({
+            symbol: trade.symbol,
+            position_type: 'LONG',
+            entry_price: currentPrice,
+            take_profit: newTakeProfit,
+            stop_loss: newStopLoss,
+            status: 'OPEN',
+            rationale: 'Pyramid Scale-In (Risk-Free)'
+          });
+
         } else {
-          // 3. Trailing Stop Logic (SMC Break-Even)
+          // 3. Trailing Stop Logic (True Break-Even)
           const distanceToTp = trade.take_profit - trade.entry_price;
           const currentProfit = currentPrice - trade.entry_price;
           
           if (currentProfit >= distanceToTp * 0.5 && trade.stop_loss < trade.entry_price) {
-            newStopLoss = trade.entry_price; // Move to Break-Even
-            console.log(`[Manage Trades] Trailing Stop (Break-Even) activated for ${trade.symbol}`);
+            newStopLoss = trade.entry_price * (1 + FEE_RATE); // Move to True Break-Even (Cover Fees)
+            console.log(`[Manage Trades] True Break-Even activated for ${trade.symbol}`);
           }
         }
       } else {
@@ -82,19 +97,32 @@ export async function GET(req: NextRequest) {
                 : -Math.abs(trade.stop_loss - trade.entry_price);
           closedAt = new Date().toISOString();
         } else if (currentPrice <= trade.take_profit) {
-          // Asymmetric Runner: Extend TP, lock in SL
+          // Asymmetric Runner + Pyramiding
           const distance = trade.entry_price - trade.take_profit;
           newStopLoss = trade.take_profit + (distance * 0.2); // Lock in 80% of the target's profit
           newTakeProfit = trade.take_profit - distance; // Extend target downward
+          
           console.log(`[Manage Trades] SHORT Runner extended! New SL: ${newStopLoss}, New TP: ${newTakeProfit}`);
+
+          // Pyramid Scale-In
+          newTradesToInsert.push({
+            symbol: trade.symbol,
+            position_type: 'SHORT',
+            entry_price: currentPrice,
+            take_profit: newTakeProfit,
+            stop_loss: newStopLoss,
+            status: 'OPEN',
+            rationale: 'Pyramid Scale-In (Risk-Free)'
+          });
+
         } else {
-          // Trailing Stop Logic (SMC Break-Even)
+          // Trailing Stop Logic (True Break-Even)
           const distanceToTp = trade.entry_price - trade.take_profit;
           const currentProfit = trade.entry_price - currentPrice;
           
           if (currentProfit >= distanceToTp * 0.5 && trade.stop_loss > trade.entry_price) {
-            newStopLoss = trade.entry_price; // Move to Break-Even
-            console.log(`[Manage Trades] Trailing Stop (Break-Even) activated for ${trade.symbol}`);
+            newStopLoss = trade.entry_price * (1 - FEE_RATE); // Move to True Break-Even (Cover Fees)
+            console.log(`[Manage Trades] True Break-Even activated for ${trade.symbol}`);
           }
         }
       }
@@ -117,8 +145,15 @@ export async function GET(req: NextRequest) {
     }
 
     await Promise.all(updates);
+    
+    if (newTradesToInsert.length > 0) {
+      const { error: insertError } = await supabase.from('paper_trades').insert(newTradesToInsert);
+      if (insertError) console.error("[Manage Trades] Failed to insert Pyramiding trades:", insertError);
+    }
 
-    return NextResponse.json({ message: `Managed ${openTrades.length} trades. Updated ${updates.length}.` });
+    return NextResponse.json({ 
+      message: `Managed ${openTrades.length} trades. Updated ${updates.length}. Pyramided ${newTradesToInsert.length}.` 
+    });
   } catch (error: any) {
     console.error('[Manage Trades Error]:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });

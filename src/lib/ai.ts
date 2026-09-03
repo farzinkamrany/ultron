@@ -204,38 +204,42 @@ export async function generateStructuredTradeResponse(marketStateStr: string, tr
 You are NOT an advisor. You are NOT an analyst. You are a mechanical JSON parser.
 You have NO permission to think, interpret, suggest, or reason freely.
 
-You will receive a MarketState JSON object. Apply EXACTLY these 3 trigger rules IN ORDER and output only a valid JSON object. No text. No markdown. No backticks. No explanation.
+You will receive a MarketState JSON object which includes the Hunter's intent (BUY or SELL). Apply EXACTLY these 3 trigger rules IN ORDER and output only a valid JSON object. No text. No markdown. No backticks. No explanation.
 
 TRIGGER RULES (apply in strict priority order):
 1. IF defcon.level is not null AND defcon.level != "NONE" AND defcon.level != 0
    → Output: DEFCON_EMERGENCY mapping (action: WAIT, confidenceScore: 0, reasoning: "DEFCON EMERGENCY - ALL POSITIONS LIQUIDATED")
 
-2. IF ALL of these are true simultaneously:
-   - gann.supports array has a value within 2% below current price (price is near Gann support)
-   - liquidity.nearestBullOB contains "Swept" (SMC sweep confirmed)
-   - liquidity.vwap trend is "BULLISH" (price above VWAP)
-   - derivatives.sentiment is NOT "EXTREME_GREED" (no long squeeze risk)
-   - tape.aggression is NOT "EXTREME AGGRESSIVE SELLING"
+2. IF Hunter Intent is "BUY" AND ALL of these are true simultaneously:
+   - gann.supports array has a value within 3% below current price
+   - liquidity.nearestBullOB contains "Swept" OR liquidity.vwap trend is "BULLISH"
+   - derivatives.sentiment is NOT "EXTREME_GREED"
    → Output: EXECUTE_LONG with full schema fields calculated from the data
 
-3. ALL OTHER CASES → Output: WAIT with all price fields null
+3. IF Hunter Intent is "SELL" AND ALL of these are true simultaneously:
+   - gann.resistances array has a value within 3% above current price
+   - liquidity.nearestBearOB contains "Swept" OR liquidity.vwap trend is "BEARISH"
+   - derivatives.sentiment is NOT "EXTREME_FEAR"
+   → Output: EXECUTE_SHORT with full schema fields calculated from the data
+
+4. ALL OTHER CASES → Output: WAIT with all price fields null
 
 OUTPUT SCHEMA (strict — every field required):
 {
   "action": "BUY" | "SELL" | "WAIT",
   "entryPrice": number | null,
-  "stopLoss": number | null (BUY: nearest Gann support * 0.99),
-  "projectedTarget": number | null (BUY: nearest Gann resistance above entry, must be >= 2x risk distance),
+  "stopLoss": number | null (BUY: nearest Gann support * 0.99, SELL: nearest Gann resistance * 1.01),
+  "projectedTarget": number | null (must be >= 2x risk distance),
   "riskPercentage": 1.6 | null,
-  "netProfitPercentage": number | null (formula: ((projectedTarget - entryPrice) / entryPrice) * leverage * 100),
+  "netProfitPercentage": number | null (formula: |(projectedTarget - entryPrice) / entryPrice| * leverage * 100),
   "tradeType": "SWING",
   "trailingStrategy": "SMC_OB",
   "leverage": number (Rule 85/70: if confidenceScore>=85 use 3, if >=70 use 2, else 1),
-  "confidenceScore": number (count how many of the 7 pillars are aligned: Gann+SMC+VWAP+CVD+OB+Derivatives+DEFCON, multiply by ~14.3),
-  "reasoning": string (max 2 sentences, pure data, no fluff)
+  "confidenceScore": number (0 to 100 based on alignment),
+  "reasoning": string (max 2 sentences, pure data)
 }`;
 
-  let currentPrompt = `PARSE THIS MARKET STATE AND APPLY THE 3 TRIGGER RULES:\n\n${marketStateStr}`;
+  let currentPrompt = `PARSE THIS MARKET STATE AND APPLY THE TRIGGER RULES:\n\n${marketStateStr}`;
 
   const MAX_RETRIES = 3;
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
@@ -283,3 +287,5 @@ OUTPUT SCHEMA (strict — every field required):
 
   return { action: "WAIT", entryPrice: null, stopLoss: null, projectedTarget: null, riskPercentage: null, netProfitPercentage: null, tradeType: 'SWING', trailingStrategy: 'SMC_OB', leverage: 1, confidenceScore: 0, reasoning: "Fallback." };
 }
+
+

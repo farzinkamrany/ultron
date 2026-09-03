@@ -122,8 +122,8 @@ export async function POST(req: NextRequest) {
           // Run the full 11-rule analysis on this specific asset
           const includeLiq = contentStr ? (contentStr.toLowerCase().includes("liquidation") || contentStr.includes("لیکوید")) : false;
           const marketData = await analyzeMarketData(bestAsset.symbol, 30, includeLiq);
-          
-          const decision = await generateStructuredTradeResponse(JSON.stringify(marketData, null, 2), tryPro);
+          const marketStateWithIntent = { ...marketData, hunterIntent: bestAsset.action };
+          const decision = await generateStructuredTradeResponse(JSON.stringify(marketStateWithIntent, null, 2), tryPro);
           replyText = `🎯 Trade Setup: ${bestAsset.symbol}\n\n` +
                       `Live Balance: $${marketData.liveBalance.toFixed(2)}\n` +
                       `Risk Amount (1.6%): $${marketData.riskAmount.toFixed(2)}\n\n` +

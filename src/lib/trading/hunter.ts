@@ -24,6 +24,7 @@ export interface HuntResult {
 
 export interface HuntTrade {
   symbol: string;
+  action: 'BUY' | 'SELL';
   entryPrice: number;
   targetPrice: number;
   stopLoss: number;
@@ -62,18 +63,35 @@ export async function huntForSetup(targetProfitPerc: number): Promise<HuntTrade 
 
       if (closestSupport === 0 || closestResistance === Infinity) continue;
 
-      const targetDistancePerc = ((closestResistance - currentPrice) / currentPrice) * 100;
-      const distanceToSupportPerc = ((currentPrice - closestSupport) / currentPrice) * 100;
+      const distanceUpPerc = ((closestResistance - currentPrice) / currentPrice) * 100;
+      const distanceDownPerc = ((currentPrice - closestSupport) / currentPrice) * 100;
 
-      if (targetDistancePerc >= targetProfitPerc && distanceToSupportPerc <= 4.0) {
-        const score = targetDistancePerc - distanceToSupportPerc;
+      // Evaluate LONG setup
+      if (distanceUpPerc >= targetProfitPerc && distanceDownPerc <= 4.0) {
+        const score = distanceUpPerc - distanceDownPerc;
         if (score > bestScore) {
           bestScore = score;
           bestTrade = {
             symbol: asset,
+            action: 'BUY',
             entryPrice: currentPrice,
             targetPrice: closestResistance,
             stopLoss: closestSupport * 0.99
+          };
+        }
+      }
+
+      // Evaluate SHORT setup
+      if (distanceDownPerc >= targetProfitPerc && distanceUpPerc <= 4.0) {
+        const score = distanceDownPerc - distanceUpPerc;
+        if (score > bestScore) {
+          bestScore = score;
+          bestTrade = {
+            symbol: asset,
+            action: 'SELL',
+            entryPrice: currentPrice,
+            targetPrice: closestSupport, // For short, target is the support
+            stopLoss: closestResistance * 1.01 // For short, SL is above resistance
           };
         }
       }
