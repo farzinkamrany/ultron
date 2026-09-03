@@ -1,9 +1,22 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import ccxt from 'ccxt';
+import { verifyQStashSignature } from '@/lib/qstash';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
+    // 0. Verify QStash signature for security (prevent DDoS/Rate Limit attacks)
+    const isQStash = !!req.headers.get("upstash-signature");
+    if (isQStash) {
+      const isValid = await verifyQStashSignature(req);
+      if (!isValid) {
+        console.error("[Manage Trades] Invalid QStash signature");
+        return new NextResponse("Unauthorized", { status: 401 });
+      }
+    } else if (process.env.NODE_ENV === 'production') {
+      console.error("[Manage Trades] Direct access blocked. Must use QStash.");
+      return new NextResponse("Unauthorized", { status: 401 });
+    }
     // 1. Fetch all OPEN paper trades
     const { data: openTrades, error: fetchError } = await supabase
       .from('paper_trades')
