@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "fetch-history": "node --max-old-space-size=8192 node_modules/tsx/dist/cli.mjs scripts/fetch-history.ts",
+    "backtest": "node --max-old-space-size=8192 node_modules/tsx/dist/cli.mjs scripts/backtest.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
