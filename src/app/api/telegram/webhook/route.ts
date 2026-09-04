@@ -116,7 +116,7 @@ export async function POST(req: NextRequest) {
       // Fallback: you could call the worker directly but it might timeout.
     } else {
       // Publish to QStash — this returns immediately while QStash calls the worker async
-      await fetch(`https://qstash.upstash.io/v2/publish/${appUrl}/api/telegram/ai-worker`, {
+      const qstashRes = await fetch(`https://qstash.upstash.io/v2/publish/${appUrl}/api/telegram/ai-worker`, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${qstashToken}`,
@@ -131,6 +131,14 @@ export async function POST(req: NextRequest) {
           photoFileId
         })
       });
+      
+      if (!qstashRes.ok) {
+        const errorText = await qstashRes.text();
+        console.error("❌ QStash Publish Failed:", qstashRes.status, errorText);
+        await sendTelegramMessage(chatId, `⚠️ **خطای سیستم QStash:** سرور Upstash پیام شما را قبول نکرد (کد ${qstashRes.status}). لطفاً لاگ‌های Vercel را برای /api/telegram/webhook چک کنید.`);
+      } else {
+        console.log("✅ QStash Publish Success for chat:", chatId);
+      }
     } // Return 200 immediately — Telegram is satisfied, QStash handles the rest
     return new NextResponse('OK', { status: 200 });
 
