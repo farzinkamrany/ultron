@@ -4,6 +4,7 @@ import ccxt from 'ccxt';
 import { verifyQStashSignature } from '@/lib/qstash';
 import { redis } from '@/lib/redis';
 import { CTOConfig } from '@/lib/ai';
+import { sendTelegramMessage } from '@/lib/telegram';
 
 export const maxDuration = 60; // Allow 60s for Vercel execution to avoid 504 Timeout
 export const dynamic = 'force-dynamic';
@@ -60,51 +61,60 @@ export async function GET(req: NextRequest) {
       const currentPrice = ticker.last;
       let newStatus = trade.status;
       let newStopLoss = trade.stop_loss;
+      let newTakeProfit = trade.take_profit;
+      let newRationale = trade.rationale || '';
       let pnl = 0;
       let closedAt = null;
-
-      let newTakeProfit = trade.take_profit;
 
       // 2. Check PnL and hit triggers
       if (trade.position_type === 'LONG') {
         if (currentPrice <= trade.stop_loss) {
-          // If we hit stop loss, check if it's the original SL or a trailing SL in profit
           newStatus = trade.stop_loss > trade.entry_price ? 'WON' : 'LOST';
           pnl = trade.stop_loss > trade.entry_price 
                 ? currentPrice - trade.entry_price 
                 : -Math.abs(trade.entry_price - trade.stop_loss);
           closedAt = new Date().toISOString();
-        } else if (currentPrice >= trade.take_profit) {
-          // Asymmetric Runner + Pyramiding: Extend TP, lock in SL, open new trade
-          const distance = trade.take_profit - trade.entry_price;
-          newStopLoss = trade.take_profit - (distance * 0.2); // Lock in 80% of the target's profit
-          newTakeProfit = trade.take_profit + distance; // Extend target
-          
-          console.log(`[Manage Trades] LONG Runner extended! New SL: ${newStopLoss}, New TP: ${newTakeProfit}`);
-          
-          // Pyramid Scale-In (Blocked if DEFCON > 0)
-          if (defconLevel === 0) {
-            newTradesToInsert.push({
-              symbol: trade.symbol,
-              position_type: 'LONG',
-              entry_price: currentPrice,
-              take_profit: newTakeProfit,
-              stop_loss: newStopLoss,
-              status: 'OPEN',
-              rationale: 'Pyramid Scale-In (Risk-Free)'
-            });
-          } else {
-            console.log(`[Manage Trades] Pyramiding blocked due to DEFCON ${defconLevel}`);
-          }
-
         } else {
-          // 3. Trailing Stop Logic (True Break-Even)
           const distanceToTp = trade.take_profit - trade.entry_price;
           const currentProfit = currentPrice - trade.entry_price;
+          const profitPerc = currentProfit / distanceToTp;
           
-          if (currentProfit >= distanceToTp * 0.5 && trade.stop_loss < trade.entry_price) {
-            newStopLoss = trade.entry_price * (1 + FEE_RATE); // Move to True Break-Even (Cover Fees)
-            console.log(`[Manage Trades] True Break-Even activated for ${trade.symbol}`);
+          // Stage 1: 50% Mark
+          if (profitPerc >= 0.5 && profitPerc < 0.75 && trade.stop_loss < trade.entry_price) {
+            newStopLoss = trade.entry_price * (1 + FEE_RATE);
+            if (defconLevel === 0 && !newRationale.includes('T1')) {
+              newRationale += ' | Pyramid T1';
+              newTradesToInsert.push({
+                symbol: trade.symbol, position_type: 'LONG', entry_price: currentPrice,
+                take_profit: trade.take_profit, stop_loss: newStopLoss, status: 'OPEN', rationale: 'Pyramid T1 Scale-In'
+              });
+            }
+          }
+          // Stage 2: 75% Mark
+          else if (profitPerc >= 0.75 && profitPerc < 1.0 && trade.stop_loss < trade.entry_price + (distanceToTp * 0.5)) {
+            newStopLoss = trade.entry_price + (distanceToTp * 0.5);
+            if (defconLevel === 0 && !newRationale.includes('T2')) {
+              newRationale += ' | Pyramid T2';
+              newTradesToInsert.push({
+                symbol: trade.symbol, position_type: 'LONG', entry_price: currentPrice,
+                take_profit: trade.take_profit, stop_loss: newStopLoss, status: 'OPEN', rationale: 'Pyramid T2 Scale-In'
+              });
+            }
+          }
+          // Stage 3: 100% Mark (TP Extension)
+          else if (currentPrice >= trade.take_profit) {
+            if (defconLevel === 0) {
+              newStopLoss = trade.take_profit - (distanceToTp * 0.2);
+              newTakeProfit = trade.take_profit + distanceToTp;
+              newTradesToInsert.push({
+                symbol: trade.symbol, position_type: 'LONG', entry_price: currentPrice,
+                take_profit: newTakeProfit, stop_loss: newStopLoss, status: 'OPEN', rationale: 'Pyramid T3 (Extended)'
+              });
+            } else {
+              newStatus = 'WON';
+              pnl = currentPrice - trade.entry_price;
+              closedAt = new Date().toISOString();
+            }
           }
         }
       } else {
@@ -115,43 +125,53 @@ export async function GET(req: NextRequest) {
                 ? trade.entry_price - currentPrice
                 : -Math.abs(trade.stop_loss - trade.entry_price);
           closedAt = new Date().toISOString();
-        } else if (currentPrice <= trade.take_profit) {
-          // Asymmetric Runner + Pyramiding
-          const distance = trade.entry_price - trade.take_profit;
-          newStopLoss = trade.take_profit + (distance * 0.2); // Lock in 80% of the target's profit
-          newTakeProfit = trade.take_profit - distance; // Extend target downward
-          
-          console.log(`[Manage Trades] SHORT Runner extended! New SL: ${newStopLoss}, New TP: ${newTakeProfit}`);
-
-          // Pyramid Scale-In (Blocked if DEFCON > 0)
-          if (defconLevel === 0) {
-            newTradesToInsert.push({
-              symbol: trade.symbol,
-              position_type: 'SHORT',
-              entry_price: currentPrice,
-              take_profit: newTakeProfit,
-              stop_loss: newStopLoss,
-              status: 'OPEN',
-              rationale: 'Pyramid Scale-In (Risk-Free)'
-            });
-          } else {
-            console.log(`[Manage Trades] Pyramiding blocked due to DEFCON ${defconLevel}`);
-          }
-
         } else {
-          // Trailing Stop Logic (True Break-Even)
           const distanceToTp = trade.entry_price - trade.take_profit;
           const currentProfit = trade.entry_price - currentPrice;
-          
-          if (currentProfit >= distanceToTp * 0.5 && trade.stop_loss > trade.entry_price) {
-            newStopLoss = trade.entry_price * (1 - FEE_RATE); // Move to True Break-Even (Cover Fees)
-            console.log(`[Manage Trades] True Break-Even activated for ${trade.symbol}`);
+          const profitPerc = currentProfit / distanceToTp;
+
+          // Stage 1: 50% Mark
+          if (profitPerc >= 0.5 && profitPerc < 0.75 && trade.stop_loss > trade.entry_price) {
+            newStopLoss = trade.entry_price * (1 - FEE_RATE);
+            if (defconLevel === 0 && !newRationale.includes('T1')) {
+              newRationale += ' | Pyramid T1';
+              newTradesToInsert.push({
+                symbol: trade.symbol, position_type: 'SHORT', entry_price: currentPrice,
+                take_profit: trade.take_profit, stop_loss: newStopLoss, status: 'OPEN', rationale: 'Pyramid T1 Scale-In'
+              });
+            }
+          }
+          // Stage 2: 75% Mark
+          else if (profitPerc >= 0.75 && profitPerc < 1.0 && trade.stop_loss > trade.entry_price - (distanceToTp * 0.5)) {
+            newStopLoss = trade.entry_price - (distanceToTp * 0.5);
+            if (defconLevel === 0 && !newRationale.includes('T2')) {
+              newRationale += ' | Pyramid T2';
+              newTradesToInsert.push({
+                symbol: trade.symbol, position_type: 'SHORT', entry_price: currentPrice,
+                take_profit: trade.take_profit, stop_loss: newStopLoss, status: 'OPEN', rationale: 'Pyramid T2 Scale-In'
+              });
+            }
+          }
+          // Stage 3: 100% Mark (TP Extension)
+          else if (currentPrice <= trade.take_profit) {
+            if (defconLevel === 0) {
+              newStopLoss = trade.take_profit + (distanceToTp * 0.2);
+              newTakeProfit = trade.take_profit - distanceToTp;
+              newTradesToInsert.push({
+                symbol: trade.symbol, position_type: 'SHORT', entry_price: currentPrice,
+                take_profit: newTakeProfit, stop_loss: newStopLoss, status: 'OPEN', rationale: 'Pyramid T3 (Extended)'
+              });
+            } else {
+              newStatus = 'WON';
+              pnl = trade.entry_price - currentPrice;
+              closedAt = new Date().toISOString();
+            }
           }
         }
       }
 
       // 4. Update the DB
-      if (newStatus !== trade.status || newStopLoss !== trade.stop_loss || newTakeProfit !== trade.take_profit) {
+      if (newStatus !== trade.status || newStopLoss !== trade.stop_loss || newTakeProfit !== trade.take_profit || newRationale !== trade.rationale) {
         updates.push(
           supabase
             .from('paper_trades')
@@ -159,6 +179,7 @@ export async function GET(req: NextRequest) {
               status: newStatus,
               stop_loss: newStopLoss,
               take_profit: newTakeProfit,
+              rationale: newRationale,
               pnl: pnl,
               closed_at: closedAt
             })
@@ -171,7 +192,18 @@ export async function GET(req: NextRequest) {
     
     if (newTradesToInsert.length > 0) {
       const { error: insertError } = await supabase.from('paper_trades').insert(newTradesToInsert);
-      if (insertError) console.error("[Manage Trades] Failed to insert Pyramiding trades:", insertError);
+      if (insertError) {
+        console.error("[Manage Trades] Failed to insert Pyramiding trades:", insertError);
+      } else {
+        const chatId = process.env.TELEGRAM_CHAT_ID;
+        if (chatId) {
+          const msg = `🔥 **هرم‌سازی تهاجمی (Anti-Martingale)** 🔥\n\n` + 
+            `سیستم وارد فاز هرم‌سازی شد و پوزیشن جدیدی باز کرد!\n` +
+            `تعداد پوزیشن‌های هرمیِ باز شده: ${newTradesToInsert.length}\n` +
+            `سیستم تمام ریسک این پوزیشن‌ها را صفر کرد و در حالِ بلعیدنِ روند است! 🚀`;
+          await sendTelegramMessage(chatId, msg);
+        }
+      }
     }
 
     return NextResponse.json({ 
