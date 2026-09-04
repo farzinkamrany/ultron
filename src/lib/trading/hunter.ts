@@ -5,16 +5,17 @@ import { CTOConfig } from '../ai';
 
 const TOP_ALTCOINS = [
   // Top 50 Liquid Altcoins on Binance/Bybit
-  'BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT', 'XRP/USDT',
-  'ADA/USDT', 'AVAX/USDT', 'LINK/USDT', 'MATIC/USDT', 'DOT/USDT',
-  'DOGE/USDT', 'SHIB/USDT', 'LTC/USDT', 'ATOM/USDT', 'UNI/USDT',
-  'NEAR/USDT', 'APT/USDT', 'INJ/USDT', 'OP/USDT', 'ARB/USDT',
-  'TON/USDT', 'BCH/USDT', 'TRX/USDT', 'ICP/USDT', 'XLM/USDT',
-  'FIL/USDT', 'RNDR/USDT', 'STX/USDT', 'MKR/USDT', 'VET/USDT',
-  'GRT/USDT', 'THETA/USDT', 'AAVE/USDT', 'LDO/USDT', 'SNX/USDT',
-  'CRV/USDT', 'SAND/USDT', 'MANA/USDT', 'AXS/USDT', 'GALA/USDT',
-  'ALGO/USDT', 'EGLD/USDT', 'FTM/USDT', 'QNT/USDT', 'XTZ/USDT',
-  'HBAR/USDT', 'EOS/USDT', 'ZEC/USDT', 'DASH/USDT', 'PEPE/USDT'
+  // 'BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT', 'XRP/USDT',
+  // 'ADA/USDT', 'AVAX/USDT', 'LINK/USDT', 'MATIC/USDT', 'DOT/USDT',
+  // 'DOGE/USDT', 'SHIB/USDT', 'LTC/USDT', 'ATOM/USDT', 'UNI/USDT',
+  // 'NEAR/USDT', 'APT/USDT', 'INJ/USDT', 'OP/USDT', 'ARB/USDT',
+  // 'TON/USDT', 'BCH/USDT', 'TRX/USDT', 'ICP/USDT', 'XLM/USDT',
+  // 'FIL/USDT', 'RNDR/USDT', 'STX/USDT', 'MKR/USDT', 'VET/USDT',
+  // 'GRT/USDT', 'THETA/USDT', 'AAVE/USDT', 'LDO/USDT', 'SNX/USDT',
+  // 'CRV/USDT', 'SAND/USDT', 'MANA/USDT', 'AXS/USDT', 'GALA/USDT',
+  // 'ALGO/USDT', 'EGLD/USDT', 'FTM/USDT', 'QNT/USDT', 'XTZ/USDT',
+  // 'HBAR/USDT', 'EOS/USDT', 'ZEC/USDT', 'DASH/USDT', 'PEPE/USDT'
+  'ETH/USDT' // Locked to ETH on 30m timeframe for maximum profit/peace-of-mind ratio
 ];
 
 export interface HuntResult {
@@ -58,7 +59,7 @@ export async function huntForSetup(fallbackTargetProfitPerc: number): Promise<Hu
     // === FAST PASS: GANN & R:R FILTER ===
     const tickers = await exchange.fetchTickers(TOP_ALTCOINS);
     const candidates: any[] = [];
-    
+
     for (const asset of TOP_ALTCOINS) {
       const ticker = tickers[asset];
       if (!ticker) continue;
@@ -66,7 +67,7 @@ export async function huntForSetup(fallbackTargetProfitPerc: number): Promise<Hu
       if (currentPrice === 0) continue;
 
       const { supports, resistances } = calculateGannSquareOf9(currentPrice);
-      
+
       let closestSupport = 0;
       for (const s of supports) {
         if (currentPrice >= s) { closestSupport = s; break; }
@@ -83,7 +84,7 @@ export async function huntForSetup(fallbackTargetProfitPerc: number): Promise<Hu
       const longTP = closestResistance;
       const longSL = closestSupport * (1 - slBuffer);
       const longRR = (longTP - currentPrice) / (currentPrice - longSL);
-      
+
       // Check SHORT math
       const shortTP = closestSupport;
       const shortSL = closestResistance * (1 + slBuffer);
@@ -106,16 +107,16 @@ export async function huntForSetup(fallbackTargetProfitPerc: number): Promise<Hu
     // === DEEP PASS: SMC VALIDATION ===
     for (const candidate of candidates) {
       try {
-        // Fetch 5m candles. We need enough candles to check liquidity sweeps based on CTO's lookback
-        const ohlcv = await exchange.fetchOHLCV(candidate.asset, '5m', undefined, smcLookback + 5);
+        // Fetch 30m candles. We need enough candles to check liquidity sweeps based on CTO's lookback
+        const ohlcv = await exchange.fetchOHLCV(candidate.asset, '30m', undefined, smcLookback + 5);
         if (!ohlcv || ohlcv.length === 0) continue;
-        
+
         const candles = ohlcv.map(c => ({
-          timestamp: c[0] as number, 
-          open: c[1] as number, 
-          high: c[2] as number, 
-          low: c[3] as number, 
-          close: c[4] as number, 
+          timestamp: c[0] as number,
+          open: c[1] as number,
+          high: c[2] as number,
+          low: c[3] as number,
+          close: c[4] as number,
           volume: c[5] as number
         }));
 
