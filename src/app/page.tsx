@@ -89,9 +89,13 @@ function ActivePositions() {
 
 // --- Sub-Components ---
 function ChatInterface({ messages, isLoading, sendMessage, input, setInput, isVoiceActive, setIsVoiceActive }: any) {
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, isLoading]);
+  useEffect(() => { 
+    if (scrollRef.current) {
+      scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+    }
+  }, [messages, isLoading]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -116,7 +120,7 @@ function ChatInterface({ messages, isLoading, sendMessage, input, setInput, isVo
         </div>
       </div>
 
-      <div className="flex-1 p-5 overflow-y-auto space-y-6">
+      <div ref={scrollRef} className="flex-1 p-5 overflow-y-auto space-y-6">
         <AnimatePresence initial={false}>
           {messages.map((msg: Message) => (
             <motion.div
@@ -154,7 +158,6 @@ function ChatInterface({ messages, isLoading, sendMessage, input, setInput, isVo
             </div>
           </motion.div>
         )}
-        <div ref={bottomRef} />
       </div>
 
       <div className="p-4 border-t border-white/10 bg-black/40">
