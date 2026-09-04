@@ -177,6 +177,10 @@ Ultron is a rapidly evolving entity. Below is the historical and operational log
 - **New Multipliers:** `RANGING` risk increased from 0.5% to **3.0%**. `TRENDING` risk increased from 3.0% to **6.0%**.
 - **Drawdown Acceptance:** The operator explicitly accepted the 1.8% probability of hitting a 40% account drawdown (17 consecutive losses on 15m timeframe) in exchange for exponentiating the profit curve.
 
+**✅ Protocol V13.0: The God-Mind (Autonomous Regime Shifting & Liquidity Ceiling)**
+- **Regime Awareness:** The engine now autonomously detects the macro market phase using `detectMarketRegime()`. If `TRENDING`, it actively trades `BTC/USDT` on `15m` for explosive yield. If `RANGING`, it defensively switches to `ETH/USDT` on `30m` to avoid micro-chop.
+- **Liquidity Ceiling Halt:** The AI tracks the cumulative PnL. When the theoretical equity surpasses $1,000,000, it instantly halts all trading and sends a Telegram SOS instructing the operator to liquidate, thereby preventing catastrophic slippage from Bybit's order book depth limits.
+
 ---
 
 ## 7. Future Roadmap

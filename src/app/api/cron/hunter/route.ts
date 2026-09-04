@@ -34,6 +34,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: 'CIRCUIT BREAKER ACTIVE - TRADING HALTED' });
     }
 
+    // 1.5 LIQUIDITY CEILING DETECTOR (Protocol V13.0)
+    const currentBalance = 1000 + totalPnl;
+    if (currentBalance >= 1000000) {
+      const chatId = process.env.TELEGRAM_CHAT_ID;
+      if (chatId) {
+        await sendTelegramMessage(chatId, `🚨 **سقف نقدینگی صرافی پر شد!** 🚨\n\nموجودی استراتژی از مرز ۱ میلیون دلار عبور کرد. سفارشاتِ ما آنقدر بزرگ شده‌اند که صرافی بای‌بیت دیگر توان پر کردن آن‌ها را بدون لغزش شدید (Slippage) ندارد.\n\n🛑 **دستور:** لطفاً پول‌ها را نقد کنید، حساب را پاک‌سازی کنید و دوباره فقط با ۱۰۰۰ دلار استارت بزنید!`);
+      }
+      return NextResponse.json({ message: 'LIQUIDITY CEILING REACHED - TRADING HALTED' });
+    }
+
     // 2. Hunt for a setup with at least 3% profit potential
     const tradeSetup = await huntForSetup(3.0);
     const chatId = process.env.TELEGRAM_CHAT_ID;

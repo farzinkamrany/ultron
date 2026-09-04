@@ -3,20 +3,13 @@ import { calculateGannSquareOf9 } from './gann';
 import { redis } from '../redis';
 import { CTOConfig } from '../ai';
 
-const TOP_ALTCOINS = [
-  // Top 50 Liquid Altcoins on Binance/Bybit
-  // 'BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT', 'XRP/USDT',
-  // 'ADA/USDT', 'AVAX/USDT', 'LINK/USDT', 'MATIC/USDT', 'DOT/USDT',
-  // 'DOGE/USDT', 'SHIB/USDT', 'LTC/USDT', 'ATOM/USDT', 'UNI/USDT',
-  // 'NEAR/USDT', 'APT/USDT', 'INJ/USDT', 'OP/USDT', 'ARB/USDT',
-  // 'TON/USDT', 'BCH/USDT', 'TRX/USDT', 'ICP/USDT', 'XLM/USDT',
-  // 'FIL/USDT', 'RNDR/USDT', 'STX/USDT', 'MKR/USDT', 'VET/USDT',
-  // 'GRT/USDT', 'THETA/USDT', 'AAVE/USDT', 'LDO/USDT', 'SNX/USDT',
-  // 'CRV/USDT', 'SAND/USDT', 'MANA/USDT', 'AXS/USDT', 'GALA/USDT',
-  // 'ALGO/USDT', 'EGLD/USDT', 'FTM/USDT', 'QNT/USDT', 'XTZ/USDT',
-  // 'HBAR/USDT', 'EOS/USDT', 'ZEC/USDT', 'DASH/USDT', 'PEPE/USDT'
-  'BTC/USDT' // Beast Mode: Locked to BTC on 15m timeframe for maximum aggressive compounding
-];
+import { detectMarketRegime } from './risk';
+
+const BEAST_MODE_SYMBOL = 'BTC/USDT';
+const BEAST_MODE_TF = '15m';
+
+const SHIELD_MODE_SYMBOL = 'ETH/USDT';
+const SHIELD_MODE_TF = '30m';
 
 export interface HuntResult {
   symbol: string;
@@ -56,11 +49,18 @@ export async function huntForSetup(fallbackTargetProfitPerc: number): Promise<Hu
   let bestTrade: HuntTrade | null = null;
 
   try {
+    // === AUTONOMOUS REGIME DETECTION (Protocol V13.0) ===
+    // We check the macro regime on BTC to decide the market mood.
+    const regime = await detectMarketRegime('BTC/USDT');
+    const targetSymbol = regime === 'TRENDING' ? BEAST_MODE_SYMBOL : SHIELD_MODE_SYMBOL;
+    const targetTF = regime === 'TRENDING' ? BEAST_MODE_TF : SHIELD_MODE_TF;
+    const activeAssets = [targetSymbol];
+
     // === FAST PASS: GANN & R:R FILTER ===
-    const tickers = await exchange.fetchTickers(TOP_ALTCOINS);
+    const tickers = await exchange.fetchTickers(activeAssets);
     const candidates: any[] = [];
 
-    for (const asset of TOP_ALTCOINS) {
+    for (const asset of activeAssets) {
       const ticker = tickers[asset];
       if (!ticker) continue;
       const currentPrice = ticker.last || 0;
@@ -107,8 +107,8 @@ export async function huntForSetup(fallbackTargetProfitPerc: number): Promise<Hu
     // === DEEP PASS: SMC VALIDATION ===
     for (const candidate of candidates) {
       try {
-        // Fetch 15m candles. We need enough candles to check liquidity sweeps based on CTO's lookback
-        const ohlcv = await exchange.fetchOHLCV(candidate.asset, '15m', undefined, smcLookback + 5);
+        // Fetch dynamic timeframe candles based on the regime
+        const ohlcv = await exchange.fetchOHLCV(candidate.asset, targetTF, undefined, smcLookback + 5);
         if (!ohlcv || ohlcv.length === 0) continue;
 
         const candles = ohlcv.map(c => ({
