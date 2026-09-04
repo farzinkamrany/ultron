@@ -80,3 +80,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ status: 'critical_failure', error: globalError.message }, { status: 500 });
   }
 }
+
+export async function POST(req: NextRequest) {
+  return GET(req);
+}
+
