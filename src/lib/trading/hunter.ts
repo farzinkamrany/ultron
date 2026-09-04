@@ -15,7 +15,7 @@ const TOP_ALTCOINS = [
   // 'CRV/USDT', 'SAND/USDT', 'MANA/USDT', 'AXS/USDT', 'GALA/USDT',
   // 'ALGO/USDT', 'EGLD/USDT', 'FTM/USDT', 'QNT/USDT', 'XTZ/USDT',
   // 'HBAR/USDT', 'EOS/USDT', 'ZEC/USDT', 'DASH/USDT', 'PEPE/USDT'
-  'ETH/USDT' // Locked to ETH on 30m timeframe for maximum profit/peace-of-mind ratio
+  'BTC/USDT' // Beast Mode: Locked to BTC on 15m timeframe for maximum aggressive compounding
 ];
 
 export interface HuntResult {
@@ -107,8 +107,8 @@ export async function huntForSetup(fallbackTargetProfitPerc: number): Promise<Hu
     // === DEEP PASS: SMC VALIDATION ===
     for (const candidate of candidates) {
       try {
-        // Fetch 30m candles. We need enough candles to check liquidity sweeps based on CTO's lookback
-        const ohlcv = await exchange.fetchOHLCV(candidate.asset, '30m', undefined, smcLookback + 5);
+        // Fetch 15m candles. We need enough candles to check liquidity sweeps based on CTO's lookback
+        const ohlcv = await exchange.fetchOHLCV(candidate.asset, '15m', undefined, smcLookback + 5);
         if (!ohlcv || ohlcv.length === 0) continue;
 
         const candles = ohlcv.map(c => ({

@@ -34,8 +34,8 @@ export async function calculateDynamicKelly(symbol: string): Promise<number> {
   const regime = await detectMarketRegime(symbol);
   
   if (regime === 'TRENDING') {
-    return 0.03; // 3% Risk
+    return 0.06; // 6% Risk (Hyper-Aggressive Bull)
   } else {
-    return 0.005; // 0.5% Risk
+    return 0.03; // 3% Risk (Hyper-Aggressive Chop)
   }
 }
