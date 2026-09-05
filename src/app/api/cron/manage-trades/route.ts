@@ -84,7 +84,19 @@ export async function GET(req: NextRequest) {
       let pnl = 0;
       let closedAt = null;
 
-      if (tradeMode === 'MICRO') {
+      // STALE TRADE PROTECTOR (Time-based Kill Switch)
+      const tradeAgeHours = trade.created_at ? (Date.now() - new Date(trade.created_at).getTime()) / (1000 * 60 * 60) : 0;
+      const MAX_TRADE_HOURS = 72; // 3 days max holding time
+      
+      if (tradeAgeHours >= MAX_TRADE_HOURS) {
+        newStatus = trade.position_type === 'LONG' 
+            ? (currentPrice > trade.entry_price ? 'WON' : 'LOST')
+            : (currentPrice < trade.entry_price ? 'WON' : 'LOST');
+        pnl = trade.position_type === 'LONG' ? (currentPrice - trade.entry_price) : (trade.entry_price - currentPrice);
+        newRationale = newRationale + ` | TIMEOUT (Forced close after ${MAX_TRADE_HOURS}h)`;
+        closedAt = new Date().toISOString();
+        console.log(`[Manage Trades] Trade ${trade.symbol} timed out after ${MAX_TRADE_HOURS}h. Forced closed at ${currentPrice}`);
+      } else if (tradeMode === 'MICRO') {
         // MICRO MODE: Trust the exchange. If position is missing or 0, it hit TP/SL on the exchange.
         const pos = livePositions.find(p => p.symbol === hlSymbol);
         const contracts = pos ? parseFloat((pos.contracts || 0).toString()) : 0;
