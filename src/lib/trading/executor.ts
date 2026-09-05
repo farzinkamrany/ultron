@@ -126,24 +126,29 @@ export async function executeTrade(signal: TradeSignal): Promise<void> {
       const totalMargin = await getTotalOpenMargin(exchange);
       const todayLoss = await getTodayLoss();
       if (todayLoss >= MAX_DAILY_LOSS_USD) return;
+      // Map generic /USDT symbols (e.g. BTC/USDT, ETH/USDT) to Hyperliquid perp symbols (BTC/USDC:USDC)
+      const hlSymbol = signal.symbol.includes('/USDT') 
+        ? signal.symbol.replace('/USDT', '/USDC:USDC') 
+        : signal.symbol;
+      
       const orderValueUsd = Math.min(MAX_SINGLE_ORDER_USD, MAX_TOTAL_MARGIN_USD - totalMargin);
       const amount = orderValueUsd / livePrice;
       const side = signal.action === "BUY" ? "buy" : "sell";
       
       // Execute main entry order
-      const order = await exchange.createMarketOrder(signal.symbol, side, amount);
+      const order = await exchange.createMarketOrder(hlSymbol, side, amount);
       
       // Execute SL and TP trigger orders
       const oppositeSide = side === "buy" ? "sell" : "buy";
       
       // Stop Loss
-      await exchange.createOrder(signal.symbol, 'stop', oppositeSide, amount, undefined, { 
+      await exchange.createOrder(hlSymbol, 'stop', oppositeSide, amount, undefined, { 
         triggerPrice: signal.stopLoss, 
         reduceOnly: true 
       });
 
       // Take Profit
-      await exchange.createOrder(signal.symbol, 'take_profit', oppositeSide, amount, undefined, { 
+      await exchange.createOrder(hlSymbol, 'take_profit', oppositeSide, amount, undefined, { 
         triggerPrice: signal.takeProfit, 
         reduceOnly: true 
       });
