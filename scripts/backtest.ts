@@ -6,15 +6,15 @@ import { findOrderBlocks } from '../src/lib/trading/ict';
 
 // Backtest Config
 const INITIAL_CAPITAL = 1000;
-const MAX_LOSS_LIMIT = 400;
-const RISK_PER_TRADE = 10;
+const MAX_LOSS_LIMIT = 900; // Allow more drawdown for compounding (90% of start)
+// We will now calculate risk dynamically as 1% of balance
 const MAKER_FEE = 0.0002;
 const TAKER_FEE = 0.0005;
 const SL_BUFFER = 0.003;
 const SMC_LOOKBACK = 10; 
 
 async function runBacktest() {
-  const filePath = path.join(process.cwd(), 'data', 'btc_5m_history.csv');
+  const filePath = path.join(process.cwd(), 'data', 'btc_15m_4years.csv');
   if (!fs.existsSync(filePath)) {
     console.error("Historical CSV not found. Please run 'npx tsx scripts/fetch-history.ts' first.");
     return;
@@ -31,8 +31,10 @@ async function runBacktest() {
     losses: 0,
     breakEvens: 0,
     totalFeesPaid: 0,
-    bull2021: { pnl: 0, trades: 0, wins: 0 },
-    bear2022: { pnl: 0, trades: 0, wins: 0 },
+    year2021: { pnl: 0, trades: 0, wins: 0 },
+    year2022: { pnl: 0, trades: 0, wins: 0 },
+    year2023: { pnl: 0, trades: 0, wins: 0 },
+    year2024: { pnl: 0, trades: 0, wins: 0 },
     maxDrawdown: 0,
     peakBalance: INITIAL_CAPITAL,
   };
@@ -62,6 +64,8 @@ async function runBacktest() {
     const date = new Date(timestamp);
     const year = date.getUTCFullYear();
     
+    // Process 2021 to 2024
+    if (year < 2021 || year > 2024) continue;
     const candle = { timestamp, open: Number(cols[1]), high: Number(cols[2]), low: Number(cols[3]), close: Number(cols[4]), volume: Number(cols[5]) };
     candles.push(candle);
     
@@ -128,9 +132,10 @@ async function runBacktest() {
         const movePerc = action === 'BUY' ? (exitPrice - entryPrice) / entryPrice : (entryPrice - exitPrice) / entryPrice;
         const positionMultiplier = activeTrade.pyramidStage > 0 ? 2 : 1; 
         
-        // Use initial SL to calculate original position size
+        // Compounding: Risk 1% of the balance we had at entry
+        const riskAmount = activeTrade.balanceAtEntry * 0.01;
         const stopLossPerc = Math.abs(entryPrice - activeTrade.initialSl) / entryPrice;
-        const positionSize = RISK_PER_TRADE / stopLossPerc;
+        const positionSize = riskAmount / stopLossPerc;
         
         const rawPnl = positionSize * movePerc * positionMultiplier;
         
@@ -147,13 +152,21 @@ async function runBacktest() {
         else stats.losses++;
         
         if (year === 2021) {
-          stats.bull2021.trades++;
-          stats.bull2021.pnl += pnl;
-          if (pnl > 0) stats.bull2021.wins++;
+          stats.year2021.trades++;
+          stats.year2021.pnl += pnl;
+          if (pnl > 0) stats.year2021.wins++;
         } else if (year === 2022) {
-          stats.bear2022.trades++;
-          stats.bear2022.pnl += pnl;
-          if (pnl > 0) stats.bear2022.wins++;
+          stats.year2022.trades++;
+          stats.year2022.pnl += pnl;
+          if (pnl > 0) stats.year2022.wins++;
+        } else if (year === 2023) {
+          stats.year2023.trades++;
+          stats.year2023.pnl += pnl;
+          if (pnl > 0) stats.year2023.wins++;
+        } else if (year === 2024) {
+          stats.year2024.trades++;
+          stats.year2024.pnl += pnl;
+          if (pnl > 0) stats.year2024.wins++;
         }
         
         activeTrade = null;
@@ -215,7 +228,8 @@ async function runBacktest() {
           tp,
           sl,
           initialSl: sl,
-          pyramidStage: 0
+          pyramidStage: 0,
+          balanceAtEntry: balance
         };
       }
     }
@@ -223,7 +237,7 @@ async function runBacktest() {
   
   // PRINT REPORT
   console.log("\n============================================");
-  console.log("       ULTRON BACKTEST REPORT (BTC 5m)");
+  console.log("       ULTRON BACKTEST REPORT (BTC 15m)");
   console.log("============================================");
   console.log(`Final Balance:    $${balance.toFixed(2)} (Start: $${INITIAL_CAPITAL})`);
   console.log(`Net Profit:       $${(balance - INITIAL_CAPITAL).toFixed(2)}`);
@@ -234,13 +248,21 @@ async function runBacktest() {
   console.log(`Loss Rate:        ${((stats.losses / stats.totalTrades) * 100).toFixed(2)}%`);
   console.log(`Break-Evens:      ${((stats.breakEvens / stats.totalTrades) * 100).toFixed(2)}%`);
   
-  console.log("\n--- 2021 (BULL MARKET) ---");
-  const win2021 = stats.bull2021.trades > 0 ? ((stats.bull2021.wins / stats.bull2021.trades) * 100).toFixed(2) : '0.00';
-  console.log(`Trades: ${stats.bull2021.trades} | PnL: $${stats.bull2021.pnl.toFixed(2)} | Win Rate: ${win2021}%`);
+  console.log("\n--- 2021 ---");
+  const win2021 = stats.year2021.trades > 0 ? ((stats.year2021.wins / stats.year2021.trades) * 100).toFixed(2) : '0.00';
+  console.log(`Trades: ${stats.year2021.trades} | PnL: $${stats.year2021.pnl.toFixed(2)} | Win Rate: ${win2021}%`);
   
-  console.log("\n--- 2022 (BEAR MARKET) ---");
-  const win2022 = stats.bear2022.trades > 0 ? ((stats.bear2022.wins / stats.bear2022.trades) * 100).toFixed(2) : '0.00';
-  console.log(`Trades: ${stats.bear2022.trades} | PnL: $${stats.bear2022.pnl.toFixed(2)} | Win Rate: ${win2022}%`);
+  console.log("\n--- 2022 ---");
+  const win2022 = stats.year2022.trades > 0 ? ((stats.year2022.wins / stats.year2022.trades) * 100).toFixed(2) : '0.00';
+  console.log(`Trades: ${stats.year2022.trades} | PnL: $${stats.year2022.pnl.toFixed(2)} | Win Rate: ${win2022}%`);
+
+  console.log("\n--- 2023 ---");
+  const win2023 = stats.year2023.trades > 0 ? ((stats.year2023.wins / stats.year2023.trades) * 100).toFixed(2) : '0.00';
+  console.log(`Trades: ${stats.year2023.trades} | PnL: $${stats.year2023.pnl.toFixed(2)} | Win Rate: ${win2023}%`);
+
+  console.log("\n--- 2024 ---");
+  const win2024 = stats.year2024.trades > 0 ? ((stats.year2024.wins / stats.year2024.trades) * 100).toFixed(2) : '0.00';
+  console.log(`Trades: ${stats.year2024.trades} | PnL: $${stats.year2024.pnl.toFixed(2)} | Win Rate: ${win2024}%`);
   console.log("============================================\n");
 }
 

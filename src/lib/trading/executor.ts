@@ -4,10 +4,10 @@
  * Routes trade signals to either PAPER trading (Supabase DB) or
  * MICRO live trading (real CCXT exchange orders) based on TRADE_MODE env var.
  *
- * ⚠️ KILL SWITCH RULES — HARDCODED, NEVER CONFIGURABLE VIA ENV:
- *   - Max total open margin: $50
- *   - Max single order size: $20
- *   - Daily loss hard limit: $15
+ * ⚠️ KILL SWITCH RULES (DYNAMIC RISK):
+ *   - Max total open margin: 50% of free balance
+ *   - Max single order size: 10x leverage cap (1% risk / SL%)
+ *   - Daily loss limit: 3% of free balance
  *   - On any uncaught error: close ALL positions immediately + Telegram alert
  */
 
@@ -18,9 +18,7 @@ import { logError } from "@/lib/logger";
 import type { TradeSignal } from "./gann";
 import { calculateDynamicKelly } from "./risk";
 
-const MAX_TOTAL_MARGIN_USD = 50;
-const MAX_SINGLE_ORDER_USD = 20;
-const MAX_DAILY_LOSS_USD = 15;
+// Hardcoded limits removed in favor of dynamic risk sizing
 
 function buildExchange() {
   const exchange = new ccxt.hyperliquid({
@@ -124,16 +122,42 @@ export async function executeTrade(signal: TradeSignal): Promise<void> {
   if (mode === "MICRO") {
     const exchange = buildExchange();
     try {
-      const totalMargin = await getTotalOpenMargin(exchange);
+      // 1. Fetch Live Balance
+      const balanceInfo = await exchange.fetchBalance();
+      const liveBalance = balanceInfo['USDC']?.free || balanceInfo['USDT']?.free || 1000;
+
+      // 2. Kill Switch (3% daily loss limit)
+      const maxDailyLoss = liveBalance * 0.03;
       const todayLoss = await getTodayLoss();
-      if (todayLoss >= MAX_DAILY_LOSS_USD) return;
+      if (todayLoss >= maxDailyLoss) {
+         console.warn(`[Kill Switch] Daily loss (${todayLoss}) exceeds 3% limit (${maxDailyLoss})`);
+         return;
+      }
+
+      // 3. Margin Cap (max 50% of balance tied up in margin)
+      const totalMargin = await getTotalOpenMargin(exchange);
+      if (totalMargin > liveBalance * 0.5) {
+         console.warn("[Risk] Used margin exceeds 50% of account balance.");
+         return; 
+      }
+
       // Map generic /USDT symbols (e.g. BTC/USDT, ETH/USDT) to Hyperliquid perp symbols (BTC/USDC:USDC)
       const hlSymbol = signal.symbol.includes('/USDT') 
         ? signal.symbol.replace('/USDT', '/USDC:USDC') 
         : signal.symbol;
       
-      const orderValueUsd = Math.min(MAX_SINGLE_ORDER_USD, MAX_TOTAL_MARGIN_USD - totalMargin);
-      const amount = orderValueUsd / livePrice;
+      // 4. Dynamic Position Sizing (1% Risk)
+      const riskAmount = liveBalance * 0.01;
+      const stopLossPerc = Math.abs(livePrice - signal.stopLoss) / livePrice;
+      let targetPositionUsd = riskAmount / stopLossPerc;
+      
+      // 5. Max Leverage Cap (10x of free balance)
+      const maxAllowedPositionUsd = liveBalance * 10;
+      if (targetPositionUsd > maxAllowedPositionUsd) {
+          targetPositionUsd = maxAllowedPositionUsd;
+      }
+      
+      const amount = targetPositionUsd / livePrice;
       const side = signal.action === "BUY" ? "buy" : "sell";
       
       // Execute main entry order
