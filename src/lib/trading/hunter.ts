@@ -52,8 +52,8 @@ export async function huntForSetup(fallbackTargetProfitPerc: number): Promise<Hu
     // === AUTONOMOUS REGIME DETECTION (Protocol V13.0) ===
     // We check the macro regime on BTC to decide the market mood.
     const regime = await detectMarketRegime('BTC/USDT');
-    const targetSymbol = regime === 'TRENDING' ? BEAST_MODE_SYMBOL : SHIELD_MODE_SYMBOL;
-    const targetTF = regime === 'TRENDING' ? BEAST_MODE_TF : SHIELD_MODE_TF;
+    const targetSymbol = regime === 'CALM' ? BEAST_MODE_SYMBOL : SHIELD_MODE_SYMBOL;
+    const targetTF = regime === 'CALM' ? BEAST_MODE_TF : SHIELD_MODE_TF;
     const activeAssets = [targetSymbol];
 
     // === FAST PASS: GANN & R:R FILTER ===
