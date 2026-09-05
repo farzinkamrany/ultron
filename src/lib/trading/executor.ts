@@ -228,7 +228,7 @@ export async function executeTrade(signal: TradeSignal): Promise<void> {
         triggerPrice: signal.takeProfit, 
         reduceOnly: true 
       });
-      await supabase.from("paper_trades").insert({
+      const { error } = await supabase.from("paper_trades").insert({
         symbol: signal.symbol,
         position_type: signal.action === "BUY" ? "LONG" : "SHORT",
         entry_price: livePrice,
@@ -237,6 +237,11 @@ export async function executeTrade(signal: TradeSignal): Promise<void> {
         status: "OPEN",
         pnl: 0,
       });
+
+      if (error) {
+        throw new Error(`[Executor MICRO] Supabase insert failed: ${error.message}`);
+      }
+
       await broadcastVipSignal(signal, livePrice);
     } catch (err: any) {
       await logError("EXECUTOR_MICRO", err, { signal }, true);

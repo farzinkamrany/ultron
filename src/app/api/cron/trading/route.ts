@@ -62,29 +62,8 @@ export async function POST(req: NextRequest) {
     const signal = evaluateSetup(symbol, currentPrice, candles);
 
     if (signal.action !== "HOLD") {
-      const chatId = process.env.TELEGRAM_ADMIN_CHAT_ID;
-      
-      const msg = `📈 <b>GANN TRADE SIGNAL ALARM</b> 📈
-
-` +
-                  `<b>Asset:</b> ${signal.symbol}
-` +
-                  `<b>Action:</b> ${signal.action}
-` +
-                  `<b>Entry:</b> $${signal.entryPrice.toFixed(2)}
-` +
-                  `<b>Stop-Loss:</b> $${signal.stopLoss.toFixed(2)}
-` +
-                  `<b>Target:</b> $${signal.takeProfit.toFixed(2)}
-
-` +
-                  `<i>${signal.reason}</i>`;
-                  
-      if (chatId) {
-         await sendTelegramMessage(chatId, msg);
-      }
-      
       // Pass signal to the executor (handles both PAPER and MICRO modes)
+      // VIP Signal is now strictly sent by executor.ts ONLY AFTER successful exchange execution
       await executeTrade(signal);
     }
 

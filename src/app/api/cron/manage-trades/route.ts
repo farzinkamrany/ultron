@@ -44,18 +44,36 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ message: 'No open trades to manage' });
     }
 
-    const exchange = new ccxt.bybit({ enableRateLimit: true, options: { defaultType: 'spot' } });
+    const tradeMode = process.env.TRADE_MODE || 'PAPER';
+    const exchange = new ccxt.hyperliquid({
+      walletAddress: process.env.HYPERLIQUID_WALLET_ADDRESS || "",
+      privateKey: process.env.HYPERLIQUID_PRIVATE_KEY || "",
+      enableRateLimit: true,
+      options: { defaultType: 'swap' }
+    });
+    exchange.setSandboxMode(true); // Testnet
     
-    // Group by symbol to batch ticker fetch
+    // Convert symbols to Hyperliquid format
     const symbols = [...new Set(openTrades.map(t => t.symbol))];
-    const tickers = await exchange.fetchTickers(symbols);
+    const hlSymbols = symbols.map(s => s.includes('/USDT') ? s.replace('/USDT', '/USDC:USDC') : s);
+    const tickers = await exchange.fetchTickers(hlSymbols);
 
-    const FEE_RATE = 0.0012; // 0.12% offset to cover Bybit Taker Fee + Slippage
+    let livePositions: any[] = [];
+    if (tradeMode === 'MICRO') {
+      try {
+        livePositions = await exchange.fetchPositions();
+      } catch (err) {
+        console.error("[Manage Trades] Failed to fetch Hyperliquid positions:", err);
+      }
+    }
+
+    const FEE_RATE = 0.0012; // 0.12% offset
     const updates = [];
     const newTradesToInsert: any[] = [];
 
     for (const trade of openTrades) {
-      const ticker = tickers[trade.symbol];
+      const hlSymbol = trade.symbol.includes('/USDT') ? trade.symbol.replace('/USDT', '/USDC:USDC') : trade.symbol;
+      const ticker = tickers[hlSymbol];
       if (!ticker || !ticker.last) continue;
 
       const currentPrice = ticker.last;
@@ -66,105 +84,137 @@ export async function GET(req: NextRequest) {
       let pnl = 0;
       let closedAt = null;
 
-      // 2. Check PnL and hit triggers
-      if (trade.position_type === 'LONG') {
-        if (currentPrice <= trade.stop_loss) {
-          newStatus = trade.stop_loss > trade.entry_price ? 'WON' : 'LOST';
-          pnl = trade.stop_loss > trade.entry_price 
-                ? currentPrice - trade.entry_price 
-                : -Math.abs(trade.entry_price - trade.stop_loss);
+      if (tradeMode === 'MICRO') {
+        // MICRO MODE: Trust the exchange. If position is missing or 0, it hit TP/SL on the exchange.
+        const pos = livePositions.find(p => p.symbol === hlSymbol);
+        const contracts = pos ? parseFloat((pos.contracts || 0).toString()) : 0;
+        
+        if (contracts === 0) {
+          // Position closed by exchange
+          newStatus = 'CLOSED';
           closedAt = new Date().toISOString();
-        } else {
-          const distanceToTp = trade.take_profit - trade.entry_price;
-          const currentProfit = currentPrice - trade.entry_price;
-          const profitPerc = currentProfit / distanceToTp;
           
-          // Stage 1: 50% Mark
-          if (profitPerc >= 0.5 && profitPerc < 0.75 && trade.stop_loss < trade.entry_price) {
-            newStopLoss = trade.entry_price * (1 + FEE_RATE);
-            if (defconLevel === 0 && !newRationale.includes('T1')) {
-              newRationale += ' | Pyramid T1';
-              newTradesToInsert.push({
-                symbol: trade.symbol, position_type: 'LONG', entry_price: currentPrice,
-                take_profit: trade.take_profit, stop_loss: newStopLoss, status: 'OPEN', rationale: 'Pyramid T1 Scale-In'
-              });
-            }
+          // Estimate win/loss based on current price proximity to TP/SL (rough estimation since we don't fetch exact fill)
+          const distToSL = Math.abs(currentPrice - trade.stop_loss);
+          const distToTP = Math.abs(currentPrice - trade.take_profit);
+          if (distToTP < distToSL) {
+            newStatus = 'WON';
+            pnl = trade.position_type === 'LONG' ? (trade.take_profit - trade.entry_price) : (trade.entry_price - trade.take_profit);
+          } else {
+            newStatus = 'LOST';
+            pnl = -Math.abs(trade.entry_price - trade.stop_loss);
           }
-          // Stage 2: 75% Mark
-          else if (profitPerc >= 0.75 && profitPerc < 1.0 && trade.stop_loss < trade.entry_price + (distanceToTp * 0.5)) {
-            newStopLoss = trade.entry_price + (distanceToTp * 0.5);
-            if (defconLevel === 0 && !newRationale.includes('T2')) {
-              newRationale += ' | Pyramid T2';
-              newTradesToInsert.push({
-                symbol: trade.symbol, position_type: 'LONG', entry_price: currentPrice,
-                take_profit: trade.take_profit, stop_loss: newStopLoss, status: 'OPEN', rationale: 'Pyramid T2 Scale-In'
-              });
-            }
-          }
-          // Stage 3: 100% Mark (TP Extension)
-          else if (currentPrice >= trade.take_profit) {
-            if (defconLevel === 0) {
-              newStopLoss = trade.take_profit - (distanceToTp * 0.2);
-              newTakeProfit = trade.take_profit + distanceToTp;
-              newTradesToInsert.push({
-                symbol: trade.symbol, position_type: 'LONG', entry_price: currentPrice,
-                take_profit: newTakeProfit, stop_loss: newStopLoss, status: 'OPEN', rationale: 'Pyramid T3 (Extended)'
-              });
-            } else {
-              newStatus = 'WON';
-              pnl = currentPrice - trade.entry_price;
-              closedAt = new Date().toISOString();
-            }
-          }
+          
+          console.log(`[Manage Trades] MICRO trade ${trade.symbol} closed on exchange. Marked as ${newStatus}.`);
+        } else {
+          // Position is still open on exchange. Let it be.
+          continue; 
         }
       } else {
-        // SHORT Logic
-        if (currentPrice >= trade.stop_loss) {
-          newStatus = trade.stop_loss < trade.entry_price ? 'WON' : 'LOST';
-          pnl = trade.stop_loss < trade.entry_price
-                ? trade.entry_price - currentPrice
-                : -Math.abs(trade.stop_loss - trade.entry_price);
-          closedAt = new Date().toISOString();
+        // PAPER MODE: Simulate exact hits and pyramiding
+        if (trade.position_type === 'LONG') {
+          if (currentPrice <= trade.stop_loss) {
+            newStatus = trade.stop_loss > trade.entry_price ? 'WON' : 'LOST';
+            pnl = trade.stop_loss > trade.entry_price 
+                  ? currentPrice - trade.entry_price 
+                  : -Math.abs(trade.entry_price - trade.stop_loss);
+            closedAt = new Date().toISOString();
+          } else {
+            const distanceToTp = trade.take_profit - trade.entry_price;
+            const currentProfit = currentPrice - trade.entry_price;
+            const profitPerc = currentProfit / distanceToTp;
+            
+            // Stage 1: 50% Mark
+            if (profitPerc >= 0.5 && profitPerc < 0.75 && trade.stop_loss < trade.entry_price) {
+              newStopLoss = trade.entry_price * (1 + FEE_RATE);
+              if (defconLevel === 0 && !newRationale.includes('T1')) {
+                newRationale += ' | Pyramid T1';
+                newTradesToInsert.push({
+                  symbol: trade.symbol, position_type: 'LONG', entry_price: currentPrice,
+                  take_profit: trade.take_profit, stop_loss: newStopLoss, status: 'OPEN', rationale: 'Pyramid T1 Scale-In', pnl: 0
+                });
+              }
+            }
+            // Stage 2: 75% Mark
+            else if (profitPerc >= 0.75 && profitPerc < 1.0 && trade.stop_loss < trade.entry_price + (distanceToTp * 0.5)) {
+              newStopLoss = trade.entry_price + (distanceToTp * 0.5);
+              if (defconLevel === 0 && !newRationale.includes('T2')) {
+                newRationale += ' | Pyramid T2';
+                newTradesToInsert.push({
+                  symbol: trade.symbol, position_type: 'LONG', entry_price: currentPrice,
+                  take_profit: trade.take_profit, stop_loss: newStopLoss, status: 'OPEN', rationale: 'Pyramid T2 Scale-In', pnl: 0
+                });
+              }
+            }
+            // Stage 3: 100% Mark (TP Extension)
+            else if (currentPrice >= trade.take_profit) {
+              if (defconLevel === 0) {
+                newStopLoss = trade.take_profit - (distanceToTp * 0.2);
+                newTakeProfit = trade.take_profit + distanceToTp;
+                if (!newRationale.includes('T3')) {
+                  newTradesToInsert.push({
+                    symbol: trade.symbol, position_type: 'LONG', entry_price: currentPrice,
+                    take_profit: newTakeProfit, stop_loss: newStopLoss, status: 'OPEN', rationale: 'Pyramid T3 (Extended)', pnl: 0
+                  });
+                }
+              } else {
+                newStatus = 'WON';
+                pnl = currentPrice - trade.entry_price;
+                closedAt = new Date().toISOString();
+              }
+            }
+          }
         } else {
-          const distanceToTp = trade.entry_price - trade.take_profit;
-          const currentProfit = trade.entry_price - currentPrice;
-          const profitPerc = currentProfit / distanceToTp;
+          // SHORT Logic
+          if (currentPrice >= trade.stop_loss) {
+            newStatus = trade.stop_loss < trade.entry_price ? 'WON' : 'LOST';
+            pnl = trade.stop_loss < trade.entry_price
+                  ? trade.entry_price - currentPrice
+                  : -Math.abs(trade.stop_loss - trade.entry_price);
+            closedAt = new Date().toISOString();
+          } else {
+            const distanceToTp = trade.entry_price - trade.take_profit;
+            const currentProfit = trade.entry_price - currentPrice;
+            const profitPerc = currentProfit / distanceToTp;
 
-          // Stage 1: 50% Mark
-          if (profitPerc >= 0.5 && profitPerc < 0.75 && trade.stop_loss > trade.entry_price) {
-            newStopLoss = trade.entry_price * (1 - FEE_RATE);
-            if (defconLevel === 0 && !newRationale.includes('T1')) {
-              newRationale += ' | Pyramid T1';
-              newTradesToInsert.push({
-                symbol: trade.symbol, position_type: 'SHORT', entry_price: currentPrice,
-                take_profit: trade.take_profit, stop_loss: newStopLoss, status: 'OPEN', rationale: 'Pyramid T1 Scale-In'
-              });
+            // Stage 1: 50% Mark
+            if (profitPerc >= 0.5 && profitPerc < 0.75 && trade.stop_loss > trade.entry_price) {
+              newStopLoss = trade.entry_price * (1 - FEE_RATE);
+              if (defconLevel === 0 && !newRationale.includes('T1')) {
+                newRationale += ' | Pyramid T1';
+                newTradesToInsert.push({
+                  symbol: trade.symbol, position_type: 'SHORT', entry_price: currentPrice,
+                  take_profit: trade.take_profit, stop_loss: newStopLoss, status: 'OPEN', rationale: 'Pyramid T1 Scale-In', pnl: 0
+                });
+              }
             }
-          }
-          // Stage 2: 75% Mark
-          else if (profitPerc >= 0.75 && profitPerc < 1.0 && trade.stop_loss > trade.entry_price - (distanceToTp * 0.5)) {
-            newStopLoss = trade.entry_price - (distanceToTp * 0.5);
-            if (defconLevel === 0 && !newRationale.includes('T2')) {
-              newRationale += ' | Pyramid T2';
-              newTradesToInsert.push({
-                symbol: trade.symbol, position_type: 'SHORT', entry_price: currentPrice,
-                take_profit: trade.take_profit, stop_loss: newStopLoss, status: 'OPEN', rationale: 'Pyramid T2 Scale-In'
-              });
+            // Stage 2: 75% Mark
+            else if (profitPerc >= 0.75 && profitPerc < 1.0 && trade.stop_loss > trade.entry_price - (distanceToTp * 0.5)) {
+              newStopLoss = trade.entry_price - (distanceToTp * 0.5);
+              if (defconLevel === 0 && !newRationale.includes('T2')) {
+                newRationale += ' | Pyramid T2';
+                newTradesToInsert.push({
+                  symbol: trade.symbol, position_type: 'SHORT', entry_price: currentPrice,
+                  take_profit: trade.take_profit, stop_loss: newStopLoss, status: 'OPEN', rationale: 'Pyramid T2 Scale-In', pnl: 0
+                });
+              }
             }
-          }
-          // Stage 3: 100% Mark (TP Extension)
-          else if (currentPrice <= trade.take_profit) {
-            if (defconLevel === 0) {
-              newStopLoss = trade.take_profit + (distanceToTp * 0.2);
-              newTakeProfit = trade.take_profit - distanceToTp;
-              newTradesToInsert.push({
-                symbol: trade.symbol, position_type: 'SHORT', entry_price: currentPrice,
-                take_profit: newTakeProfit, stop_loss: newStopLoss, status: 'OPEN', rationale: 'Pyramid T3 (Extended)'
-              });
-            } else {
-              newStatus = 'WON';
-              pnl = trade.entry_price - currentPrice;
-              closedAt = new Date().toISOString();
+            // Stage 3: 100% Mark (TP Extension)
+            else if (currentPrice <= trade.take_profit) {
+              if (defconLevel === 0) {
+                newStopLoss = trade.take_profit + (distanceToTp * 0.2);
+                newTakeProfit = trade.take_profit - distanceToTp;
+                if (!newRationale.includes('T3')) {
+                  newTradesToInsert.push({
+                    symbol: trade.symbol, position_type: 'SHORT', entry_price: currentPrice,
+                    take_profit: newTakeProfit, stop_loss: newStopLoss, status: 'OPEN', rationale: 'Pyramid T3 (Extended)', pnl: 0
+                  });
+                }
+              } else {
+                newStatus = 'WON';
+                pnl = trade.entry_price - currentPrice;
+                closedAt = new Date().toISOString();
+              }
             }
           }
         }
