@@ -145,29 +145,34 @@ export default function PnLDashboard() {
               <p className="text-muted-foreground text-sm py-4 col-span-full">No algorithmic trades executed yet.</p>
             ) : (
               trades.slice(0, 10).map((trade) => (
-                <div key={trade.id} className="p-4 rounded-lg bg-card/50 border border-border/30 flex items-center justify-between group hover:border-primary/30 transition-all">
-                  <div className="flex items-center space-x-4">
-                    <div className={`p-2.5 rounded-xl ${trade.position_type === 'LONG' ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
-                      {trade.position_type === 'LONG' ? <TrendingUp className="w-5 h-5" /> : <TrendingDown className="w-5 h-5" />}
+                <div key={trade.id} className="p-3 rounded-lg bg-card/50 border border-border/30 flex items-center justify-between group hover:border-primary/30 transition-all gap-2">
+                  <div className="flex items-center space-x-3 min-w-0">
+                    <div className={`p-2 shrink-0 rounded-xl ${trade.position_type === 'LONG' ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
+                      {trade.position_type === 'LONG' ? <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5" /> : <TrendingDown className="w-4 h-4 sm:w-5 sm:h-5" />}
                     </div>
-                    <div>
-                      <div className="font-bold text-base flex items-center space-x-2">
-                        <span>{trade.symbol}</span>
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded-sm font-bold tracking-widest ${trade.position_type === 'LONG' ? 'bg-green-500/20 text-green-500' : 'bg-red-500/20 text-red-500'}`}>
+                    <div className="min-w-0">
+                      <div className="font-bold text-sm sm:text-base flex items-center gap-2 flex-wrap">
+                        <span className="truncate">{trade.symbol}</span>
+                        <span className={`text-[9px] sm:text-[10px] px-1.5 py-0.5 rounded-sm font-bold tracking-widest shrink-0 ${trade.position_type === 'LONG' ? 'bg-green-500/20 text-green-500' : 'bg-red-500/20 text-red-500'}`}>
                           {trade.position_type}
                         </span>
                       </div>
-                      <div className="text-[11px] font-mono text-muted-foreground mt-1 flex flex-col gap-0.5">
-                        <span>Entry: ${trade.entry_price}</span>
-                        <span className="flex items-center space-x-2">
-                          <span className="text-green-500/90">TP: ${trade.take_profit}</span>
-                          <span className="text-red-500/90">SL: ${trade.stop_loss}</span>
+                      <div className="text-[10px] sm:text-[11px] font-mono text-muted-foreground mt-1 flex flex-col gap-0.5">
+                        <span className="flex items-center gap-1 flex-wrap">
+                          <span>Entry: ${trade.entry_price}</span>
+                          <span className="text-muted-foreground/60">
+                            • {new Date(trade.created_at).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </span>
+                        <span className="flex items-center gap-2 flex-wrap">
+                          <span className="text-green-500/90 truncate">TP: ${trade.take_profit}</span>
+                          <span className="text-red-500/90 truncate">SL: ${trade.stop_loss}</span>
                         </span>
                       </div>
                     </div>
                   </div>
-                  <div className="text-right flex flex-col items-end justify-center">
-                    <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-sm border ${
+                  <div className="text-right flex flex-col items-end justify-center shrink-0">
+                    <span className={`text-[9px] sm:text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-sm border ${
                       trade.status === 'WON' ? 'bg-green-500/10 text-green-500 border-green-500/20' :
                       trade.status === 'LOST' ? 'bg-red-500/10 text-red-500 border-red-500/20' :
                       'bg-blue-500/10 text-blue-500 border-blue-500/20'
@@ -175,8 +180,8 @@ export default function PnLDashboard() {
                       {trade.status}
                     </span>
                     {trade.status !== 'OPEN' && (
-                      <span className={`text-sm font-bold font-mono mt-2 ${trade.pnl >= 0 ? "text-green-500" : "text-red-500"}`}>
-                        {trade.pnl >= 0 ? "+" : ""}{trade.pnl} <span className="text-[10px]">USDT</span>
+                      <span className={`text-xs sm:text-sm font-bold font-mono mt-1 ${trade.pnl >= 0 ? "text-green-500" : "text-red-500"}`}>
+                        {trade.pnl >= 0 ? "+" : ""}{Number(trade.pnl).toFixed(2)} <span className="text-[9px]">USDT</span>
                       </span>
                     )}
                   </div>
