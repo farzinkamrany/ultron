@@ -6,7 +6,7 @@ import { CTOConfig } from '../ai';
 import { detectMarketRegime } from './risk';
 
 const BEAST_MODE_SYMBOL = 'BTC/USDT';
-const BEAST_MODE_TF = '15m';
+const BEAST_MODE_TF = '5m';
 
 const SHIELD_MODE_SYMBOL = 'ETH/USDT';
 const SHIELD_MODE_TF = '30m';
