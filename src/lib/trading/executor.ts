@@ -101,6 +101,35 @@ async function getTodayLoss(): Promise<number> {
   return Math.abs(data.reduce((sum, t) => sum + (t.pnl || 0), 0));
 }
 
+async function broadcastVipSignal(signal: TradeSignal, livePrice: number) {
+  const vipChannelId = process.env.TELEGRAM_VIP_CHANNEL_ID;
+  if (!vipChannelId) return;
+
+  const type = signal.action === "BUY" ? "🟢 LONG" : "🔴 SHORT";
+  const rr = (signal.action === "BUY" 
+    ? (signal.takeProfit - livePrice) / (livePrice - signal.stopLoss) 
+    : (livePrice - signal.takeProfit) / (signal.stopLoss - livePrice)).toFixed(2);
+  
+  const msg = `💎 **ULTRON VIP SIGNAL** 💎
+  
+🔹 **Asset:** #${signal.symbol.replace(/[^a-zA-Z0-9]/g, '')}
+🔹 **Action:** ${type}
+🔹 **Entry Zone:** $${livePrice.toFixed(4)}
+
+🎯 **Take Profit:** $${signal.takeProfit.toFixed(4)}
+⛔️ **Stop Loss:** $${signal.stopLoss.toFixed(4)}
+📊 **Risk/Reward:** 1:${rr}
+
+⚡️ *Autonomous setup detected by Ultron AI*`;
+
+  try {
+    await sendTelegramMessage(vipChannelId, msg);
+  } catch (err: any) {
+    console.error("[VIP Signal] Broadcast failed:", err.message);
+  }
+}
+
+
 export async function executeTrade(signal: TradeSignal): Promise<void> {
   const mode = process.env.TRADE_MODE || "PAPER";
   if (signal.action === "HOLD") return;
@@ -129,6 +158,7 @@ export async function executeTrade(signal: TradeSignal): Promise<void> {
     });
     if (error) throw new Error(`[Executor PAPER] Supabase insert failed: ${error.message}`);
     console.log(`[Executor PAPER] Logged trade: ${signal.action} ${signal.symbol} @ ${livePrice} (Live)`);
+    await broadcastVipSignal(signal, livePrice);
     return;
   }
 
@@ -207,6 +237,7 @@ export async function executeTrade(signal: TradeSignal): Promise<void> {
         status: "OPEN",
         pnl: 0,
       });
+      await broadcastVipSignal(signal, livePrice);
     } catch (err: any) {
       await logError("EXECUTOR_MICRO", err, { signal }, true);
       await emergencyCloseAll(exchange, err.message);
