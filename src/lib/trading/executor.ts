@@ -23,14 +23,15 @@ const MAX_SINGLE_ORDER_USD = 20;
 const MAX_DAILY_LOSS_USD = 15;
 
 function buildExchange() {
-  const exchange = new ccxt.bybit({
-    apiKey: process.env.BYBIT_API_KEY || "",
-    secret: process.env.BYBIT_API_SECRET || "",
+  const exchange = new ccxt.hyperliquid({
+    walletAddress: process.env.HYPERLIQUID_WALLET_ADDRESS || "",
+    privateKey: process.env.HYPERLIQUID_PRIVATE_KEY || "",
     enableRateLimit: true,
     options: {
       defaultType: 'swap',
     }
   });
+  exchange.setSandboxMode(true); // ENABLE TESTNET (Change to false to go live)
   return exchange;
 }
 

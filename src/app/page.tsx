@@ -31,7 +31,7 @@ function LivePnLDisplay() {
 
   return (
     <span className={totalPnl >= 0 ? "text-green-500" : "text-red-500"}>
-      {totalPnl > 0 ? "+" : ""}{totalPnl.toFixed(2)} <span className="text-sm opacity-80 font-normal">USDT</span>
+      {totalPnl > 0 ? "+" : ""}{totalPnl.toFixed(2)} <span className="text-sm opacity-80 font-normal">USDC</span>
     </span>
   );
 }
@@ -274,7 +274,7 @@ export default function UltronDashboard() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: msgsToSend.map(m => ({ role: m.role, content: m.content })) }),
+        body: JSON.stringify({ messages: msgsToSend.map((m: any) => ({ role: m.role, content: m.content })) }),
       });
       
       if (!res.ok) {
