@@ -129,7 +129,24 @@ export async function executeTrade(signal: TradeSignal): Promise<void> {
       const orderValueUsd = Math.min(MAX_SINGLE_ORDER_USD, MAX_TOTAL_MARGIN_USD - totalMargin);
       const amount = orderValueUsd / livePrice;
       const side = signal.action === "BUY" ? "buy" : "sell";
+      
+      // Execute main entry order
       const order = await exchange.createMarketOrder(signal.symbol, side, amount);
+      
+      // Execute SL and TP trigger orders
+      const oppositeSide = side === "buy" ? "sell" : "buy";
+      
+      // Stop Loss
+      await exchange.createOrder(signal.symbol, 'stop', oppositeSide, amount, undefined, { 
+        triggerPrice: signal.stopLoss, 
+        reduceOnly: true 
+      });
+
+      // Take Profit
+      await exchange.createOrder(signal.symbol, 'take_profit', oppositeSide, amount, undefined, { 
+        triggerPrice: signal.takeProfit, 
+        reduceOnly: true 
+      });
       await supabase.from("paper_trades").insert({
         symbol: signal.symbol,
         position_type: signal.action === "BUY" ? "LONG" : "SHORT",

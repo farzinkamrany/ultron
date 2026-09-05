@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "fetch-history": "node --max-old-space-size=8192 node_modules/tsx/dist/cli.mjs scripts/fetch-history.ts",
-    "backtest": "node --max-old-space-size=8192 node_modules/tsx/dist/cli.mjs scripts/backtest.ts"
+    "backtest": "node --max-old-space-size=8192 node_modules/tsx/dist/cli.mjs scripts/backtest.ts",
+    "paper": "node --max-old-space-size=8192 node_modules/tsx/dist/cli.mjs scripts/paper-trade.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
@@ -17,7 +18,7 @@
     "@upstash/qstash": "^2.11.3",
     "@upstash/redis": "^1.38.3",
     "astronomy-engine": "^2.1.19",
-    "ccxt": "^4.5.76",
+    "ccxt": "^4.5.58",
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",
     "framer-motion": "^11.0.0",
@@ -25,7 +26,7 @@
     "https-proxy-agent": "^9.1.0",
     "lightweight-charts": "^5.2.1",
     "lucide-react": "^0.427.0",
-    "next": "14.2.5",
+    "next": "^14.2.35",
     "node-fetch": "^2.7.0",
     "protobufjs": "^7.6.6",
     "react": "^18.3.1",

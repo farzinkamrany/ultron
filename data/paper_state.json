@@ -1,0 +1,18 @@
+{
+  "balance": 1000,
+  "peakBalance": 1000,
+  "maxDrawdown": 0,
+  "totalTrades": 0,
+  "wins": 0,
+  "activeTrade": {
+    "action": "BUY",
+    "entryPrice": 79701,
+    "tp": 80550.19096606551,
+    "sl": 79391.5458995277,
+    "initialSl": 79391.5458995277,
+    "pyramidStage": 0,
+    "riskAmount": 10,
+    "openTimestamp": 1788601188767
+  },
+  "tradeHistory": []
+}

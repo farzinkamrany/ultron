@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import ccxt from "ccxt";
-import { analyzeGannSetup, Candle } from "@/lib/trading/gann";
+import { Candle } from "@/lib/trading/gann";
+import { evaluateSetup } from "@/lib/trading/strategy";
 import { sendTelegramMessage } from "@/lib/telegram";
 import { logError } from "@/lib/logger";
 import { supabase } from "@/lib/supabase";
@@ -18,18 +19,18 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    // Initialize CCXT Exchange
-    const exchange = new ccxt.bybit({ enableRateLimit: true });
+    // Initialize CCXT Exchange (Kucoin to avoid IP blocks)
+    const exchange = new ccxt.kucoin({ enableRateLimit: true });
 
     const symbol = "BTC/USDT";
-    const timeframe = "1d"; // Daily candles for macro Gann analysis
+    const timeframe = "15m"; // 15m candles for SMC+Gann analysis
     
     console.log(`[Trading Engine] Fetching ${timeframe} candles for ${symbol}...`);
     
     // Fetch last 100 days with robust error handling
     let ohlcv;
     try {
-      ohlcv = await exchange.fetchOHLCV(symbol, timeframe, undefined, 100);
+      ohlcv = await exchange.fetchOHLCV(symbol, timeframe, undefined, 20);
     } catch (error: any) {
       // Handle ExchangeNotAvailable or HTTP 451 (Unavailable For Legal Reasons)
       if (error instanceof ccxt.ExchangeNotAvailable || error.message.includes('451') || error.message.includes('403')) {
@@ -58,7 +59,7 @@ export async function POST(req: NextRequest) {
     
     console.log(`[Trading Engine] Current ${symbol} price: ${currentPrice}. Analyzing Gann structures...`);
     
-    const signal = analyzeGannSetup(symbol, currentPrice, candles);
+    const signal = evaluateSetup(symbol, currentPrice, candles);
 
     if (signal.action !== "HOLD") {
       const chatId = process.env.TELEGRAM_ADMIN_CHAT_ID;
