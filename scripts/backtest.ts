@@ -36,6 +36,8 @@ async function runBacktest() {
     year2022: { pnl: 0, trades: 0, wins: 0 },
     year2023: { pnl: 0, trades: 0, wins: 0 },
     year2024: { pnl: 0, trades: 0, wins: 0 },
+    year2025: { pnl: 0, trades: 0, wins: 0 },
+    year2026: { pnl: 0, trades: 0, wins: 0 },
     maxDrawdown: 0,
     peakBalance: INITIAL_CAPITAL,
   };
@@ -65,8 +67,8 @@ async function runBacktest() {
     const date = new Date(timestamp);
     const year = date.getUTCFullYear();
     
-    // Process 2021 to 2024
-    if (year < 2021 || year > 2024) continue;
+    // Process 2021 to 2026
+    if (year < 2021 || year > 2026) continue;
     const candle = { timestamp, open: Number(cols[1]), high: Number(cols[2]), low: Number(cols[3]), close: Number(cols[4]), volume: Number(cols[5]) };
     candles.push(candle);
     
@@ -168,6 +170,14 @@ async function runBacktest() {
           stats.year2024.trades++;
           stats.year2024.pnl += pnl;
           if (pnl > 0) stats.year2024.wins++;
+        } else if (year === 2025) {
+          stats.year2025.trades++;
+          stats.year2025.pnl += pnl;
+          if (pnl > 0) stats.year2025.wins++;
+        } else if (year === 2026) {
+          stats.year2026.trades++;
+          stats.year2026.pnl += pnl;
+          if (pnl > 0) stats.year2026.wins++;
         }
         
         activeTrade = null;
@@ -217,9 +227,9 @@ async function runBacktest() {
       const obs = findOrderBlocks(candles);
       let isValid = false;
       if (action === 'BUY') {
-        isValid = !!obs.find(ob => ob.type === 'BULLISH_OB' && ob.sweptLiquidity);
+        isValid = !!obs.find(ob => ob.type === 'BULLISH_OB' && ob.sweptLiquidity && currentPrice <= ob.top * 1.001 && currentPrice >= ob.bottom * 0.999);
       } else {
-        isValid = !!obs.find(ob => ob.type === 'BEARISH_OB' && ob.sweptLiquidity);
+        isValid = !!obs.find(ob => ob.type === 'BEARISH_OB' && ob.sweptLiquidity && currentPrice >= ob.bottom * 0.999 && currentPrice <= ob.top * 1.001);
       }
       
       if (isValid) {
@@ -264,6 +274,14 @@ async function runBacktest() {
   console.log("\n--- 2024 ---");
   const win2024 = stats.year2024.trades > 0 ? ((stats.year2024.wins / stats.year2024.trades) * 100).toFixed(2) : '0.00';
   console.log(`Trades: ${stats.year2024.trades} | PnL: $${stats.year2024.pnl.toFixed(2)} | Win Rate: ${win2024}%`);
+
+  console.log("\n--- 2025 ---");
+  const win2025 = stats.year2025.trades > 0 ? ((stats.year2025.wins / stats.year2025.trades) * 100).toFixed(2) : '0.00';
+  console.log(`Trades: ${stats.year2025.trades} | PnL: $${stats.year2025.pnl.toFixed(2)} | Win Rate: ${win2025}%`);
+
+  console.log("\n--- 2026 ---");
+  const win2026 = stats.year2026.trades > 0 ? ((stats.year2026.wins / stats.year2026.trades) * 100).toFixed(2) : '0.00';
+  console.log(`Trades: ${stats.year2026.trades} | PnL: $${stats.year2026.pnl.toFixed(2)} | Win Rate: ${win2026}%`);
   console.log("============================================\n");
 }
 

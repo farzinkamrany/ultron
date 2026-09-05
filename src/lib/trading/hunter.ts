@@ -111,6 +111,35 @@ export async function huntForSetup(fallbackTargetProfitPerc: number): Promise<Hu
         const ohlcv = await exchange.fetchOHLCV(candidate.asset, targetTF, undefined, smcLookback + 5);
         if (!ohlcv || ohlcv.length === 0) continue;
 
+        let macroOhlcv;
+        try { macroOhlcv = await exchange.fetchOHLCV(candidate.asset, '1d', undefined, 365); } 
+        catch (err) { macroOhlcv = ohlcv; }
+
+        let absoluteLow = Infinity;
+        let absoluteHigh = -Infinity;
+        let pivotTimestamp = 0;
+        let highTimestamp = 0;
+
+        for (const c of macroOhlcv) {
+          const timestamp = c[0] as number;
+          const high = c[2] as number;
+          const low = c[3] as number;
+          if (low < absoluteLow) { absoluteLow = low; pivotTimestamp = timestamp; }
+          if (high > absoluteHigh) { absoluteHigh = high; highTimestamp = timestamp; }
+        }
+
+        const trueScaleFactor = (absoluteHigh - absoluteLow) / 365;
+        const daysSincePivot = Math.floor((Date.now() - pivotTimestamp) / (1000 * 60 * 60 * 24));
+        const daysSinceHigh = Math.floor((Date.now() - highTimestamp) / (1000 * 60 * 60 * 24));
+
+        const { calculateGannAngles, calculateDownwardGannAngles, calculateTimeCycles, calculateCosmicAlignment } = await import('./gann');
+        const upwardAngles = calculateGannAngles(absoluteLow, daysSincePivot, candidate.currentPrice, trueScaleFactor);
+        const downwardAngles = calculateDownwardGannAngles(absoluteHigh, daysSinceHigh, candidate.currentPrice, trueScaleFactor);
+        const { isReversalWindow } = calculateTimeCycles(daysSincePivot);
+        const cosmos = calculateCosmicAlignment(candidate.currentPrice);
+
+        let gannContext = '';
+
         const candles = ohlcv.map(c => ({
           timestamp: c[0] as number,
           open: c[1] as number,
@@ -124,7 +153,15 @@ export async function huntForSetup(fallbackTargetProfitPerc: number): Promise<Hu
         const obs = findOrderBlocks(candles);
 
         if (candidate.action === 'BUY') {
-          const validOB = obs.find(ob => ob.type === 'BULLISH_OB' && ob.sweptLiquidity);
+          if (downwardAngles.position.includes('BELOW 2x1')) {
+            console.log(`[Hunter] Rejected ${candidate.asset} BUY: Freefall downward angle.`);
+            continue;
+          }
+          if (upwardAngles.position.includes('ABOVE')) gannContext += ' | Upward Gann Angle';
+          if (isReversalWindow) gannContext += ' | TIME REVERSAL';
+          if (cosmos.planetaryAspect) gannContext += ` | ${cosmos.planetaryAspect}`;
+
+          const validOB = obs.find(ob => ob.type === 'BULLISH_OB' && ob.sweptLiquidity && candidate.currentPrice <= ob.top * 1.001 && candidate.currentPrice >= ob.bottom * 0.999);
           if (validOB) {
             bestTrade = {
               symbol: candidate.asset,
@@ -132,12 +169,20 @@ export async function huntForSetup(fallbackTargetProfitPerc: number): Promise<Hu
               entryPrice: candidate.currentPrice,
               targetPrice: candidate.tp,
               stopLoss: candidate.sl,
-              execution_context: `R:R=${candidate.rr.toFixed(2)} | GannSL=${candidate.sl.toFixed(4)} | GannTP=${candidate.tp.toFixed(4)} | SMC=Bullish_OB_Swept`
+              execution_context: `R:R=${candidate.rr.toFixed(2)} | SMC_OB_Swept_Mitigated${gannContext}`
             };
             break; // Found the best trade, stop checking
           }
         } else {
-          const validOB = obs.find(ob => ob.type === 'BEARISH_OB' && ob.sweptLiquidity);
+          if (upwardAngles.position.includes('ABOVE 2x1')) {
+            console.log(`[Hunter] Rejected ${candidate.asset} SELL: Extreme Bullish upward angle.`);
+            continue;
+          }
+          if (downwardAngles.position.includes('BELOW')) gannContext += ' | Downward Gann Angle';
+          if (isReversalWindow) gannContext += ' | TIME REVERSAL';
+          if (cosmos.planetaryAspect) gannContext += ` | ${cosmos.planetaryAspect}`;
+
+          const validOB = obs.find(ob => ob.type === 'BEARISH_OB' && ob.sweptLiquidity && candidate.currentPrice >= ob.bottom * 0.999 && candidate.currentPrice <= ob.top * 1.001);
           if (validOB) {
             bestTrade = {
               symbol: candidate.asset,
@@ -145,7 +190,7 @@ export async function huntForSetup(fallbackTargetProfitPerc: number): Promise<Hu
               entryPrice: candidate.currentPrice,
               targetPrice: candidate.tp,
               stopLoss: candidate.sl,
-              execution_context: `R:R=${candidate.rr.toFixed(2)} | GannSL=${candidate.sl.toFixed(4)} | GannTP=${candidate.tp.toFixed(4)} | SMC=Bearish_OB_Swept`
+              execution_context: `R:R=${candidate.rr.toFixed(2)} | SMC_OB_Swept_Mitigated${gannContext}`
             };
             break; // Found the best trade, stop checking
           }

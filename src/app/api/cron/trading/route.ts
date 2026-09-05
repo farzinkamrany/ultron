@@ -59,7 +59,25 @@ export async function POST(req: NextRequest) {
     
     console.log(`[Trading Engine] Current ${symbol} price: ${currentPrice}. Analyzing Gann structures...`);
     
-    const signal = evaluateSetup(symbol, currentPrice, candles);
+    // Fetch macro 1d candles for Full Gann Logic
+    let macroOhlcv;
+    try {
+      macroOhlcv = await exchange.fetchOHLCV(symbol, '1d', undefined, 365);
+    } catch (err) {
+      console.error("[Trading Engine] Could not fetch daily macro candles:", err);
+      macroOhlcv = ohlcv; // Fallback
+    }
+
+    const macroCandles: Candle[] = macroOhlcv.map(c => ({
+      timestamp: c[0] as number,
+      open: c[1] as number,
+      high: c[2] as number,
+      low: c[3] as number,
+      close: c[4] as number,
+      volume: c[5] as number,
+    }));
+
+    const signal = evaluateSetup(symbol, currentPrice, candles, macroCandles);
 
     if (signal.action !== "HOLD") {
       // Pass signal to the executor (handles both PAPER and MICRO modes)

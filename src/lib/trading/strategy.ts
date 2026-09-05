@@ -1,7 +1,7 @@
-import { calculateGannSquareOf9, TradeSignal } from './gann';
+import { calculateGannSquareOf9, calculateTimeCycles, calculateGannAngles, calculateDownwardGannAngles, calculateCosmicAlignment, TradeSignal } from './gann';
 import { findOrderBlocks } from './ict';
 
-export function evaluateSetup(symbol: string, currentPrice: number, candles: any[]): TradeSignal {
+export function evaluateSetup(symbol: string, currentPrice: number, candles: any[], macroCandles: any[]): TradeSignal {
   const SL_BUFFER = 0.003;
   const { supports, resistances } = calculateGannSquareOf9(currentPrice);
   
@@ -32,17 +32,55 @@ export function evaluateSetup(symbol: string, currentPrice: number, candles: any
   if (action) {
     const obs = findOrderBlocks(candles);
     const isValid = action === 'BUY'
-      ? !!obs.find(ob => ob.type === 'BULLISH_OB' && ob.sweptLiquidity)
-      : !!obs.find(ob => ob.type === 'BEARISH_OB' && ob.sweptLiquidity);
+      ? !!obs.find(ob => ob.type === 'BULLISH_OB' && ob.sweptLiquidity && currentPrice <= ob.top * 1.001 && currentPrice >= ob.bottom * 0.999)
+      : !!obs.find(ob => ob.type === 'BEARISH_OB' && ob.sweptLiquidity && currentPrice >= ob.bottom * 0.999 && currentPrice <= ob.top * 1.001);
     
     if (isValid) {
+      // FULL GANN FILTERS
+      let absoluteLow = Infinity;
+      let absoluteHigh = -Infinity;
+      let pivotTimestamp = 0;
+      let highTimestamp = 0;
+
+      for (const candle of macroCandles) {
+        if (candle.low < absoluteLow) { absoluteLow = candle.low; pivotTimestamp = candle.timestamp; }
+        if (candle.high > absoluteHigh) { absoluteHigh = candle.high; highTimestamp = candle.timestamp; }
+      }
+
+      const trueScaleFactor = (absoluteHigh - absoluteLow) / 365;
+      const daysSincePivot = Math.floor((Date.now() - pivotTimestamp) / (1000 * 60 * 60 * 24));
+      const daysSinceHigh = Math.floor((Date.now() - highTimestamp) / (1000 * 60 * 60 * 24));
+
+      const upwardAngles = calculateGannAngles(absoluteLow, daysSincePivot, currentPrice, trueScaleFactor);
+      const downwardAngles = calculateDownwardGannAngles(absoluteHigh, daysSinceHigh, currentPrice, trueScaleFactor);
+      
+      const { isReversalWindow } = calculateTimeCycles(daysSincePivot);
+      const cosmos = calculateCosmicAlignment(currentPrice);
+
+      let gannContext = '';
+
+      if (action === 'BUY') {
+        if (downwardAngles.position.includes('BELOW 2x1')) {
+          return { symbol, action: 'HOLD', entryPrice: currentPrice, takeProfit: 0, stopLoss: 0, reason: 'Rejected: Downward Gann Angle indicates Freefall.' };
+        }
+        if (upwardAngles.position.includes('ABOVE')) gannContext += ' | Strong Upward Gann Angle';
+      } else if (action === 'SELL') {
+        if (upwardAngles.position.includes('ABOVE 2x1')) {
+          return { symbol, action: 'HOLD', entryPrice: currentPrice, takeProfit: 0, stopLoss: 0, reason: 'Rejected: Upward Gann Angle indicates Extreme Bull.' };
+        }
+        if (downwardAngles.position.includes('BELOW')) gannContext += ' | Strong Downward Gann Angle';
+      }
+
+      if (isReversalWindow) gannContext += ' | TIME REVERSAL WINDOW ACTIVE';
+      if (cosmos.planetaryAspect) gannContext += ` | COSMIC VOLATILITY (${cosmos.planetaryAspect})`;
+
       return {
         symbol,
         action,
         entryPrice: currentPrice,
         takeProfit: tp,
         stopLoss: sl,
-        reason: `Valid SMC+Gann Setup. ${action} at $${currentPrice.toFixed(2)}. Confluence found with swept liquidity OB.`
+        reason: `Valid SMC+Gann Setup. ${action} at $${currentPrice.toFixed(2)}. Confluence found with swept liquidity OB.${gannContext}`
       };
     }
   }
