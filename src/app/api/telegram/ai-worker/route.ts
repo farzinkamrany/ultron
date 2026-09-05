@@ -202,16 +202,28 @@ export async function POST(req: NextRequest) {
           }
         }
       } else {
-        // Normal Chatbot AI Response
         let persona: 'dev' | 'quant' = 'quant';
         const textLower = (contentStr || "").toLowerCase();
         const devKeywords = ['react', 'next.js', 'zustand', 'typescript', 'bug'];
-        const quantKeywords = ['چارت', 'لانگ', 'شورت', 'شکار', 'gann'];
+        const quantKeywords = ['چارت', 'لانگ', 'شورت', 'شکار', 'gann', 'وضعیت', 'بازار', 'مارکت', 'atr', 'kelly'];
 
         if (textLower.startsWith('/dev') || devKeywords.some(kw => textLower.includes(kw))) {
           persona = 'dev';
         } else if (quantKeywords.some(kw => textLower.includes(kw))) {
           persona = 'quant';
+          
+          // Inject live market regime if they ask about the market
+          if (textLower.includes('وضعیت') || textLower.includes('بازار') || textLower.includes('مارکت') || textLower.includes('روند')) {
+            try {
+              const { detectMarketRegime, calculateDynamicKelly } = await import('@/lib/trading/risk');
+              const regime = await detectMarketRegime('BTC/USDT');
+              const risk = await calculateDynamicKelly('BTC/USDT');
+              const statusStr = `[SYSTEM UPDATE: The current live market regime is ${regime}. The ATR Kelly risk engine is locked at ${(risk * 100).toFixed(1)}%. Use this exact data to answer the user's question about the market status.]`;
+              messages.push({ role: 'user', content: statusStr });
+            } catch (e) {
+              console.error("Failed to inject live regime:", e);
+            }
+          }
         }
 
         replyText = await generateAIResponse(messages, false, tryPro, persona);
