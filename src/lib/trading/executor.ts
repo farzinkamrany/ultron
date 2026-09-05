@@ -136,19 +136,20 @@ export async function executeTrade(signal: TradeSignal): Promise<void> {
       const side = signal.action === "BUY" ? "buy" : "sell";
       
       // Execute main entry order
+      await exchange.loadMarkets();
       const order = await exchange.createMarketOrder(hlSymbol, side, amount);
       
       // Execute SL and TP trigger orders
       const oppositeSide = side === "buy" ? "sell" : "buy";
       
       // Stop Loss
-      await exchange.createOrder(hlSymbol, 'stop', oppositeSide, amount, undefined, { 
+      await exchange.createOrder(hlSymbol, 'market', oppositeSide, amount, undefined, { 
         triggerPrice: signal.stopLoss, 
         reduceOnly: true 
       });
 
       // Take Profit
-      await exchange.createOrder(hlSymbol, 'take_profit', oppositeSide, amount, undefined, { 
+      await exchange.createOrder(hlSymbol, 'market', oppositeSide, amount, undefined, { 
         triggerPrice: signal.takeProfit, 
         reduceOnly: true 
       });
@@ -174,15 +175,16 @@ export async function closeMicroPosition(symbol: string, positionType: "LONG" | 
   if (mode !== "MICRO") return;
   const exchange = buildExchange();
   try {
-    const openOrders = await exchange.fetchOpenOrders(symbol);
+    const hlSymbol = symbol.includes('/USDT') ? symbol.replace('/USDT', '/USDC:USDC') : symbol;
+    const openOrders = await exchange.fetchOpenOrders(hlSymbol);
     for (const order of openOrders) {
-      if (order.id) await exchange.cancelOrder(order.id, symbol);
+      if (order.id) await exchange.cancelOrder(order.id, hlSymbol);
     }
     const side = positionType === "LONG" ? "sell" : "buy";
-    const positions = await exchange.fetchPositions([symbol]);
-    const pos = positions.find((p: any) => p.symbol === symbol);
+    const positions = await exchange.fetchPositions([hlSymbol]);
+    const pos = positions.find((p: any) => p.symbol === hlSymbol);
     if (pos && parseFloat((pos.contracts || 0).toString()) > 0) {
-      await exchange.createMarketOrder(symbol, side, Math.abs(parseFloat((pos.contracts || 0).toString())));
+      await exchange.createMarketOrder(hlSymbol, side, Math.abs(parseFloat((pos.contracts || 0).toString())));
     }
   } catch (err: any) {
     await logError("EXECUTOR_CLOSE_POSITION", err, { symbol, positionType }, false);
