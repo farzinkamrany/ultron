@@ -159,8 +159,9 @@ export async function executeTrade(signal: TradeSignal): Promise<void> {
         ? signal.symbol.replace('/USDT', '/USDC:USDC') 
         : signal.symbol;
       
-      // 4. Dynamic Position Sizing (1% Risk)
-      const riskAmount = liveBalance * 0.01;
+      // 4. Dynamic Position Sizing (ATR Kelly Criterion)
+      const kellyPercent = await calculateDynamicKelly(signal.symbol);
+      const riskAmount = liveBalance * kellyPercent;
       const stopLossPerc = Math.abs(livePrice - signal.stopLoss) / livePrice;
       let targetPositionUsd = riskAmount / stopLossPerc;
       
