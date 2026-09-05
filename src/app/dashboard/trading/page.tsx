@@ -159,14 +159,14 @@ export default function PnLDashboard() {
                       </div>
                       <div className="text-[10px] sm:text-[11px] font-mono text-muted-foreground mt-1 flex flex-col gap-0.5">
                         <span className="flex items-center gap-1 flex-wrap">
-                          <span>Entry: ${trade.entry_price}</span>
+                          <span>Entry: ${Number(trade.entry_price).toFixed(1)}</span>
                           <span className="text-muted-foreground/60">
                             • {new Date(trade.created_at).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' })}
                           </span>
                         </span>
                         <span className="flex items-center gap-2 flex-wrap">
-                          <span className="text-green-500/90 truncate">TP: ${trade.take_profit}</span>
-                          <span className="text-red-500/90 truncate">SL: ${trade.stop_loss}</span>
+                          <span className="text-green-500/90 truncate">TP: ${Number(trade.take_profit).toFixed(1)}</span>
+                          <span className="text-red-500/90 truncate">SL: ${Number(trade.stop_loss).toFixed(1)}</span>
                         </span>
                       </div>
                     </div>
@@ -181,7 +181,7 @@ export default function PnLDashboard() {
                     </span>
                     {trade.status !== 'OPEN' && (
                       <span className={`text-xs sm:text-sm font-bold font-mono mt-1 ${trade.pnl >= 0 ? "text-green-500" : "text-red-500"}`}>
-                        {trade.pnl >= 0 ? "+" : ""}{Number(trade.pnl).toFixed(2)} <span className="text-[9px]">USDT</span>
+                        {trade.pnl >= 0 ? "+" : ""}{Number(trade.pnl).toFixed(1)} <span className="text-[9px]">USDT</span>
                       </span>
                     )}
                   </div>
