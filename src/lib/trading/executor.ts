@@ -37,7 +37,8 @@ function buildExchange() {
 
 async function getLivePrice(symbol: string): Promise<number> {
   const exchange = buildExchange();
-  const ticker = await exchange.fetchTicker(symbol);
+  const hlSymbol = symbol.includes('/USDT') ? symbol.replace('/USDT', '/USDC:USDC') : symbol;
+  const ticker = await exchange.fetchTicker(hlSymbol);
   return ticker.last || 0;
 }
 
