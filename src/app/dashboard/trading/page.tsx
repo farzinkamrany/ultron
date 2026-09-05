@@ -157,8 +157,12 @@ export default function PnLDashboard() {
                           {trade.position_type}
                         </span>
                       </div>
-                      <div className="text-xs font-mono text-muted-foreground mt-1">
-                        Entry: ${trade.entry_price}
+                      <div className="text-[11px] font-mono text-muted-foreground mt-1 flex flex-col gap-0.5">
+                        <span>Entry: ${trade.entry_price}</span>
+                        <span className="flex items-center space-x-2">
+                          <span className="text-green-500/90">TP: ${trade.take_profit}</span>
+                          <span className="text-red-500/90">SL: ${trade.stop_loss}</span>
+                        </span>
                       </div>
                     </div>
                   </div>
