@@ -4,18 +4,15 @@ import path from 'path';
 
 async function fetchAndSave() {
   const exchange = new ccxt.kucoin({ enableRateLimit: true });
-  const symbol = 'BTC/USDT';
+  const symbol = process.argv[2] || 'BTC/USDT';
+  const fileName = process.argv[3] || 'btc_15m_4years.csv';
   const timeframe = '15m';
-  // Start from Jan 1 2021
-  let since = exchange.parse8601('2021-01-01T00:00:00Z');
+  const startDate = process.argv[4] || '2021-01-01T00:00:00Z';
+  let since = exchange.parse8601(startDate);
   // End on Dec 31 2024
   const endTime = exchange.parse8601('2024-12-31T23:59:59Z');
   
-  const csvPath = path.join(process.cwd(), 'data', 'btc_15m_history.csv');
-  
-  // We will APPEND to the existing file or just create a new one for 2023-2024
-  // Actually let's just write to a temporary file btc_15m_2324.csv
-  const tempPath = path.join(process.cwd(), 'data', 'btc_15m_4years.csv');
+  const tempPath = path.join(process.cwd(), 'data', fileName);
   fs.writeFileSync(tempPath, 'timestamp,open,high,low,close,volume\n');
   
   let fetchedCount = 0;

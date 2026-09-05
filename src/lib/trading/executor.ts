@@ -173,8 +173,14 @@ export async function executeTrade(signal: TradeSignal): Promise<void> {
       const amount = targetPositionUsd / livePrice;
       const side = signal.action === "BUY" ? "buy" : "sell";
       
-      // Execute main entry order
+      // Cancel any existing ghost orders for this symbol to avoid conflicts
       await exchange.loadMarkets();
+      const openOrders = await exchange.fetchOpenOrders(hlSymbol);
+      for (const order of openOrders) {
+        if (order.id) await exchange.cancelOrder(order.id, hlSymbol);
+      }
+      
+      // Execute main entry order
       const order = await exchange.createMarketOrder(hlSymbol, side, amount);
       
       // Execute SL and TP trigger orders

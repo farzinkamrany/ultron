@@ -10,11 +10,12 @@ const MAX_LOSS_LIMIT = 900; // Allow more drawdown for compounding (90% of start
 // We will now calculate risk dynamically as 1% of balance
 const MAKER_FEE = 0.0002;
 const TAKER_FEE = 0.0005;
-const SL_BUFFER = 0.003;
+const SL_BUFFER = 0.006; // Widened from 0.003 to catch ETH and SOL Gann levels
 const SMC_LOOKBACK = 10; 
 
 async function runBacktest() {
-  const filePath = path.join(process.cwd(), 'data', 'btc_15m_4years.csv');
+  const fileName = process.argv[2] || 'btc_15m_4years.csv';
+  const filePath = path.join(process.cwd(), 'data', fileName);
   if (!fs.existsSync(filePath)) {
     console.error("Historical CSV not found. Please run 'npx tsx scripts/fetch-history.ts' first.");
     return;
