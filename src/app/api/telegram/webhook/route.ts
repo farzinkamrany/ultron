@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { sendTelegramMessage, sendTelegramAction } from '@/lib/telegram';
 import { redis } from '@/lib/redis';
 import { logExpense } from '@/lib/ultron-tracker';
+import { triggerPanicClose } from '@/lib/trading/executor';
 
 export const maxDuration = 30;
 export const runtime = "nodejs";
@@ -11,15 +12,25 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
 
-    const message = body?.message;
-    if (!message || (!message.text && !message.voice && !message.photo)) {
+    let chatId = "";
+    let text = "";
+    let voiceFileId;
+    let photoFileId;
+
+    if (body?.callback_query) {
+      chatId = body.callback_query.message.chat.id.toString();
+      text = body.callback_query.data; // The callback data (e.g., 'panic_close')
+    } else if (body?.message) {
+      const message = body.message;
+      if (!message.text && !message.voice && !message.photo) return new NextResponse('OK', { status: 200 });
+      chatId = message.chat.id.toString();
+      text = message.text || message.caption || "";
+      voiceFileId = message.voice?.file_id;
+      photoFileId = message.photo && message.photo.length > 0 ? message.photo[message.photo.length - 1].file_id : undefined;
+    } else {
       return new NextResponse('OK', { status: 200 });
     }
 
-    const chatId = message.chat.id.toString();
-    const text = message.text || message.caption || "";
-    const voiceFileId = message.voice?.file_id;
-    const photoFileId = message.photo && message.photo.length > 0 ? message.photo[message.photo.length - 1].file_id : undefined;
     const allowedChatIdsStr = process.env.TELEGRAM_ALLOWED_CHAT_IDS || process.env.TELEGRAM_CHAT_ID || "";
     const allowedChatIds = allowedChatIdsStr.split(',').map((id: string) => id.trim());
 
@@ -92,11 +103,22 @@ export async function POST(req: NextRequest) {
       return new NextResponse('OK', { status: 200 });
     }
 
+    if (text === 'panic_close' || text.startsWith('/panic')) {
+      try {
+        await triggerPanicClose();
+        // Answer callback query if needed (usually a separate endpoint, but we can just send a message)
+      } catch (e) {
+        console.error("Panic close failed:", e);
+      }
+      return new NextResponse('OK', { status: 200 });
+    }
+
     if (text.startsWith('/dashboard')) {
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://ultron-assistant-iota.vercel.app";
-      await sendTelegramMessage(chatId, "📊 Open Ultron Life OS:", {
+      await sendTelegramMessage(chatId, "📊 **Ultron Control Center**\n\nSelect an option below:", {
         inline_keyboard: [
-          [{ text: "📊 Open Dashboard", web_app: { url: `${appUrl}/` } }]
+          [{ text: "📊 Open Life OS Dashboard", web_app: { url: `${appUrl}/` } }],
+          [{ text: "🚨 PANIC CLOSE ALL TRADES 🚨", callback_data: "panic_close" }]
         ]
       });
       return new NextResponse('OK', { status: 200 });

@@ -65,6 +65,19 @@ All open positions have been cancelled immediately.`
   }
 }
 
+export async function triggerPanicClose(): Promise<void> {
+  const mode = process.env.TRADE_MODE || "PAPER";
+  if (mode === "PAPER") {
+    // Just close paper trades in DB
+    await supabase.from("paper_trades").update({ status: "CLOSED", closed_at: new Date().toISOString() }).eq("status", "OPEN");
+    const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID;
+    if (adminChatId) await sendTelegramMessage(adminChatId, "🚨 Paper trades panic closed.");
+    return;
+  }
+  const exchange = buildExchange();
+  await emergencyCloseAll(exchange, "MANUAL PANIC BUTTON PRESSED BY ADMIN");
+}
+
 async function getTotalOpenMargin(exchange: Exchange): Promise<number> {
   try {
     const positions = await exchange.fetchPositions();
