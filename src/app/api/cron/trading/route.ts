@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
     const exchange = new ccxt.kucoin({ enableRateLimit: true });
 
     const symbol = "BTC/USDT";
-    const timeframe = "5m"; // 5m candles for SMC+Gann analysis
+    const timeframe = "15m"; // 15m candles for SMC+Gann analysis
     
     console.log(`[Trading Engine] Fetching ${timeframe} candles for ${symbol}...`);
     

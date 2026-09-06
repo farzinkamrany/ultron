@@ -4,7 +4,7 @@ import { findOrderBlocks } from '../src/lib/trading/ict';
 import { loadPaperState, savePaperState } from '../src/lib/trading/paperState';
 
 const SYMBOL = 'BTC/USDT';
-const TIMEFRAME = '5m';
+const TIMEFRAME = '15m';
 const SMC_LOOKBACK = 10;
 const RISK_PERC = 0.01;
 const MAKER_FEE = 0.0002;

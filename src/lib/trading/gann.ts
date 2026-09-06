@@ -23,12 +23,49 @@ export interface TradeSignal {
 /**
  * Calculates Support/Resistance levels based on Gann Square of 9
  */
-export function calculateGannSquareOf9(price: number): { supports: number[], resistances: number[] } {
-  const root = Math.sqrt(price);
-  const increments = [0.125, 0.25, 0.5, 1, 1.5, 2, 3, 4]; 
+export function calculateGannSquareOf9(pivotPrice: number, currentPrice: number): { supports: number[], resistances: number[] } {
+  // Gann harmonic angles in a 360-degree cycle:
+  // 45° (0.125), 90° (0.25), 120° (0.333), 144° (0.4), 180° (0.5), 270° (0.75), 360° (1.0)
+  const increments = [0.125, 0.25, 0.333, 0.4, 0.5, 0.75, 1.0];
   
-  const supports = increments.map(inc => Math.pow(root - inc, 2));
-  const resistances = increments.map(inc => Math.pow(root + inc, 2));
+  const root = Math.sqrt(pivotPrice);
+  const targetRoot = Math.sqrt(currentPrice);
+  const cycleDiff = Math.abs(targetRoot - root);
+  const baseCycles = Math.floor(cycleDiff);
+  
+  const supports: number[] = [];
+  const resistances: number[] = [];
+  
+  // Project harmonic levels for the current cycle and the next cycle
+  for (let cycleOffset = baseCycles - 1; cycleOffset <= baseCycles + 1; cycleOffset++) {
+    for (const inc of increments) {
+      if (currentPrice >= pivotPrice) {
+         const level = Math.pow(root + cycleOffset + inc, 2);
+         if (level <= currentPrice) supports.push(level);
+         if (level > currentPrice) resistances.push(level);
+      } else {
+         const level = Math.pow(root - (cycleOffset + inc), 2);
+         if (level >= currentPrice) resistances.push(level);
+         if (level < currentPrice) supports.push(level);
+      }
+    }
+  }
+  
+  // Add the base cycle borders (0 degrees / 360 degrees)
+  for (let cycleOffset = baseCycles - 1; cycleOffset <= baseCycles + 1; cycleOffset++) {
+      if (currentPrice >= pivotPrice) {
+          const level = Math.pow(root + cycleOffset, 2);
+          if (level <= currentPrice) supports.push(level);
+          if (level > currentPrice) resistances.push(level);
+      } else {
+          const level = Math.pow(root - cycleOffset, 2);
+          if (level >= currentPrice) resistances.push(level);
+          if (level < currentPrice) supports.push(level);
+      }
+  }
+
+  supports.sort((a, b) => b - a); // descending
+  resistances.sort((a, b) => a - b); // ascending
   
   return { supports, resistances };
 }
