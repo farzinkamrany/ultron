@@ -140,10 +140,10 @@ export async function GET(req: NextRequest) {
             if (profitPerc >= 0.5 && profitPerc < 0.75 && trade.stop_loss < trade.entry_price) {
               newStopLoss = trade.entry_price * (1 + FEE_RATE);
               if (defconLevel === 0 && !newRationale.includes('T1')) {
-                newRationale += ' | Pyramid T1';
+                newRationale += ' | Asymmetric Pyramid T1';
                 newTradesToInsert.push({
                   symbol: trade.symbol, position_type: 'LONG', entry_price: currentPrice,
-                  take_profit: trade.take_profit, stop_loss: newStopLoss, status: 'OPEN', rationale: 'Pyramid T1 Scale-In', pnl: 0
+                  take_profit: trade.take_profit, stop_loss: newStopLoss, status: 'OPEN', rationale: 'Pyramid T1 Asymmetric Scale-In (Risking Unrealized PnL)', pnl: 0
                 });
               }
             }
@@ -151,10 +151,10 @@ export async function GET(req: NextRequest) {
             else if (profitPerc >= 0.75 && profitPerc < 1.0 && trade.stop_loss < trade.entry_price + (distanceToTp * 0.5)) {
               newStopLoss = trade.entry_price + (distanceToTp * 0.5);
               if (defconLevel === 0 && !newRationale.includes('T2')) {
-                newRationale += ' | Pyramid T2';
+                newRationale += ' | Asymmetric Pyramid T2';
                 newTradesToInsert.push({
                   symbol: trade.symbol, position_type: 'LONG', entry_price: currentPrice,
-                  take_profit: trade.take_profit, stop_loss: newStopLoss, status: 'OPEN', rationale: 'Pyramid T2 Scale-In', pnl: 0
+                  take_profit: trade.take_profit, stop_loss: newStopLoss, status: 'OPEN', rationale: 'Pyramid T2 Asymmetric Scale-In (Risking Unrealized PnL)', pnl: 0
                 });
               }
             }
@@ -193,10 +193,10 @@ export async function GET(req: NextRequest) {
             if (profitPerc >= 0.5 && profitPerc < 0.75 && trade.stop_loss > trade.entry_price) {
               newStopLoss = trade.entry_price * (1 - FEE_RATE);
               if (defconLevel === 0 && !newRationale.includes('T1')) {
-                newRationale += ' | Pyramid T1';
+                newRationale += ' | Asymmetric Pyramid T1';
                 newTradesToInsert.push({
                   symbol: trade.symbol, position_type: 'SHORT', entry_price: currentPrice,
-                  take_profit: trade.take_profit, stop_loss: newStopLoss, status: 'OPEN', rationale: 'Pyramid T1 Scale-In', pnl: 0
+                  take_profit: trade.take_profit, stop_loss: newStopLoss, status: 'OPEN', rationale: 'Pyramid T1 Asymmetric Scale-In (Risking Unrealized PnL)', pnl: 0
                 });
               }
             }
@@ -204,10 +204,10 @@ export async function GET(req: NextRequest) {
             else if (profitPerc >= 0.75 && profitPerc < 1.0 && trade.stop_loss > trade.entry_price - (distanceToTp * 0.5)) {
               newStopLoss = trade.entry_price - (distanceToTp * 0.5);
               if (defconLevel === 0 && !newRationale.includes('T2')) {
-                newRationale += ' | Pyramid T2';
+                newRationale += ' | Asymmetric Pyramid T2';
                 newTradesToInsert.push({
                   symbol: trade.symbol, position_type: 'SHORT', entry_price: currentPrice,
-                  take_profit: trade.take_profit, stop_loss: newStopLoss, status: 'OPEN', rationale: 'Pyramid T2 Scale-In', pnl: 0
+                  take_profit: trade.take_profit, stop_loss: newStopLoss, status: 'OPEN', rationale: 'Pyramid T2 Asymmetric Scale-In (Risking Unrealized PnL)', pnl: 0
                 });
               }
             }
@@ -259,10 +259,10 @@ export async function GET(req: NextRequest) {
       } else {
         const chatId = process.env.TELEGRAM_CHAT_ID;
         if (chatId) {
-          const msg = `🔥 **هرم‌سازی تهاجمی (Anti-Martingale)** 🔥\n\n` + 
-            `سیستم وارد فاز هرم‌سازی شد و پوزیشن جدیدی باز کرد!\n` +
+          const msg = `🔥 **هرم‌سازی نامتقارن (Asymmetric Scale-In)** 🔥\n\n` + 
+            `سیستم وارد فاز هرم‌سازی شد و پوزیشن جدیدی با استفاده از سود بازنشده (Unrealized PnL) باز کرد!\n` +
             `تعداد پوزیشن‌های هرمیِ باز شده: ${newTradesToInsert.length}\n` +
-            `سیستم تمام ریسک این پوزیشن‌ها را صفر کرد و در حالِ بلعیدنِ روند است! 🚀`;
+            `سیستم تمام ریسک اولیه را صفر کرد و در حالِ بلعیدنِ روند با سود خودش است! 🚀`;
           await sendTelegramMessage(chatId, msg);
         }
       }

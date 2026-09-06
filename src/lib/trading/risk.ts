@@ -39,12 +39,28 @@ export async function detectMarketRegime(symbol: string): Promise<'WILD' | 'CALM
   }
 }
 
-export async function calculateDynamicKelly(symbol: string): Promise<number> {
+export async function calculateDynamicKelly(symbol: string, winRate: number = 0.45, rr: number = 2.0): Promise<number> {
   const regime = await detectMarketRegime(symbol);
   
+  // f = (bp - q) / b
+  const p = winRate;
+  const q = 1 - p;
+  const b = rr;
+  
+  const kellyFraction = (b * p - q) / b;
+  
+  if (kellyFraction <= 0) return 0; // Negative expectancy, don't trade
+
+  // In WILD markets, we use a Half-Kelly or Quarter-Kelly for defense
+  // In CALM markets, we use a more aggressive Half-Kelly
+  
+  let riskPercentage = 0;
   if (regime === 'CALM') {
-    return 0.015; // 1.5% Risk (Stable trending market - maximize profit)
+    riskPercentage = kellyFraction * 0.5; // Half-Kelly (Aggressive but mathematically safe)
   } else {
-    return 0.005; // 0.5% Risk (Wild/Choppy market - defensive mode)
+    riskPercentage = kellyFraction * 0.25; // Quarter-Kelly (Defensive)
   }
+
+  // Cap maximum risk per trade at 5% to prevent blow-ups even with perfect Kelly
+  return Math.min(riskPercentage, 0.05);
 }

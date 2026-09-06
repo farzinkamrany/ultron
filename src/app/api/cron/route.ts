@@ -107,7 +107,7 @@ ALIGNMENT STATUS: ${cosmos.alignmentString}`;
         }
 
         // Calculate immediate W.D. Gann Square of 9 levels around the current price
-        const gann = calculateGannSquareOf9(currentPrice);
+        const gann = calculateGannSquareOf9(currentPrice, currentPrice);
         const closestSupport = Math.max(...gann.supports);
         const closestResistance = Math.min(...gann.resistances);
 
