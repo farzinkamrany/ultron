@@ -70,9 +70,6 @@ async function runBacktest() {
     // Process 2021 to 2026
     if (year < 2021 || year > 2026) continue;
     
-    // Stop after 6 months (Jan to Jun 2021)
-    if (year === 2021 && date.getUTCMonth() > 5) break;
-    
     const candle = { timestamp, open: Number(cols[1]), high: Number(cols[2]), low: Number(cols[3]), close: Number(cols[4]), volume: Number(cols[5]) };
     candles.push(candle);
     

@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { redis } from '@/lib/redis';
 import { sendTelegramMessage, sendTelegramAction, getTelegramFileBuffer, sendTelegramVoice } from '@/lib/telegram';
 import { generateAIResponse, generateStructuredTradeResponse } from '@/lib/ai';
-import { executeTrade } from "@/lib/trading/executor";
+import { runTradingCycle } from "@/lib/trading/executor";
 import { generateSpeech } from '@/lib/audio';
 import { verifyQStashSignature } from '@/lib/qstash';
 import { huntForSetup } from '@/lib/trading/hunter';
@@ -139,14 +139,7 @@ export async function POST(req: NextRequest) {
           // V8.0: Paper Trading Citadel Auto-Execution
           if (decision.action === 'BUY' || decision.action === 'SELL') {
             try {
-              await executeTrade({
-                symbol: bestAsset.symbol,
-                action: decision.action,
-                entryPrice: decision.entryPrice || 0,
-                stopLoss: decision.stopLoss || 0,
-                takeProfit: (decision as any).projectedTarget || 0,
-                reason: decision.reasoning
-              });
+              await runTradingCycle(bestAsset.symbol);
               replyText += `\n\n✅ [Citadel] Trade automatically logged to Paper-Net.`;
             } catch (execErr: any) {
               replyText += `\n\n❌ [Citadel] Execution Blocked: ${execErr.message}`;

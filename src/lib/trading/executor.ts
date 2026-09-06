@@ -1,26 +1,24 @@
 /**
- * Ultron Trading Executor — V4.1
+ * Ultron Trading Executor — V5.0 (Pure Quant)
  *
  * Routes trade signals to either PAPER trading (Supabase DB) or
- * MICRO live trading (real CCXT exchange orders) based on TRADE_MODE env var.
- *
- * ⚠️ KILL SWITCH RULES (DYNAMIC RISK):
- *   - Max total open margin: 50% of free balance
- *   - Max single order size: 10x leverage cap (1% risk / SL%)
- *   - Daily loss limit: 3% of free balance
- *   - On any uncaught error: close ALL positions immediately + Telegram alert
+ * MICRO live trading (real CCXT exchange orders).
+ * 
+ * Strict execution sequence:
+ * 1. Hyperliquid Order
+ * 2. Supabase Logging
+ * 3. VIP Telegram Broadcast (LLM PR)
  */
 
 import ccxt, { Exchange } from "ccxt";
 import { supabase } from "@/lib/supabase";
 import { sendTelegramMessage } from "@/lib/telegram";
 import { logError } from "@/lib/logger";
-import type { TradeSignal } from "./gann";
 import { calculateDynamicKelly } from "./risk";
+import { evaluateSetup, Candle, SetupSignal } from "./financial-intelligence";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
-// Hardcoded limits removed in favor of dynamic risk sizing
-
-function buildExchange() {
+function buildHyperliquid() {
   const exchange = new ccxt.hyperliquid({
     walletAddress: process.env.HYPERLIQUID_WALLET_ADDRESS || "",
     privateKey: process.env.HYPERLIQUID_PRIVATE_KEY || "",
@@ -29,15 +27,8 @@ function buildExchange() {
       defaultType: 'swap',
     }
   });
-  exchange.setSandboxMode(true); // ENABLE TESTNET (Change to false to go live)
+  exchange.setSandboxMode(true);
   return exchange;
-}
-
-async function getLivePrice(symbol: string): Promise<number> {
-  const exchange = buildExchange();
-  const hlSymbol = symbol.includes('/USDT') ? symbol.replace('/USDT', '/USDC:USDC') : symbol;
-  const ticker = await exchange.fetchTicker(hlSymbol);
-  return ticker.last || 0;
 }
 
 async function emergencyCloseAll(exchange: Exchange, reason: string) {
@@ -53,11 +44,7 @@ async function emergencyCloseAll(exchange: Exchange, reason: string) {
     if (adminChatId) {
       await sendTelegramMessage(
         adminChatId,
-        `🚨 <b>ULTRON KILL SWITCH ACTIVATED</b> 🚨
-
-<b>Reason:</b> ${reason}
-
-All open positions have been cancelled immediately.`
+        `🚨 <b>ULTRON KILL SWITCH ACTIVATED</b> 🚨\n\n<b>Reason:</b> ${reason}\n\nAll open positions have been cancelled immediately.`
       );
     }
   } catch (err: any) {
@@ -68,22 +55,19 @@ All open positions have been cancelled immediately.`
 export async function triggerPanicClose(): Promise<void> {
   const mode = process.env.TRADE_MODE || "PAPER";
   if (mode === "PAPER") {
-    // Just close paper trades in DB
     await supabase.from("paper_trades").update({ status: "CLOSED", closed_at: new Date().toISOString() }).eq("status", "OPEN");
     const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID;
     if (adminChatId) await sendTelegramMessage(adminChatId, "🚨 Paper trades panic closed.");
     return;
   }
-  const exchange = buildExchange();
+  const exchange = buildHyperliquid();
   await emergencyCloseAll(exchange, "MANUAL PANIC BUTTON PRESSED BY ADMIN");
 }
 
 async function getTotalOpenMargin(exchange: Exchange): Promise<number> {
   try {
     const positions = await exchange.fetchPositions();
-    return positions.reduce((sum: number, p: any) => {
-      return sum + Math.abs(parseFloat(p.initialMargin || p.notional || 0));
-    }, 0);
+    return positions.reduce((sum: number, p: any) => sum + Math.abs(parseFloat(p.initialMargin || p.notional || 0)), 0);
   } catch {
     return 0;
   }
@@ -101,90 +85,119 @@ async function getTodayLoss(): Promise<number> {
   return Math.abs(data.reduce((sum, t) => sum + (t.pnl || 0), 0));
 }
 
-async function broadcastVipSignal(signal: TradeSignal, livePrice: number) {
+async function broadcastVipSignal(signal: SetupSignal, livePrice: number) {
   const vipChannelId = process.env.TELEGRAM_VIP_CHANNEL_ID;
   if (!vipChannelId) return;
 
-  const type = signal.action === "BUY" ? "🟢 LONG" : "🔴 SHORT";
-  const rr = (signal.action === "BUY" 
-    ? (signal.takeProfit - livePrice) / (livePrice - signal.stopLoss) 
-    : (livePrice - signal.takeProfit) / (signal.stopLoss - livePrice)).toFixed(2);
-  
-  const msg = `💎 **ULTRON VIP SIGNAL** 💎
-  
-🔹 **Asset:** #${signal.symbol.replace(/[^a-zA-Z0-9]/g, '')}
-🔹 **Action:** ${type}
-🔹 **Entry Zone:** $${livePrice.toFixed(4)}
-
-🎯 **Take Profit:** $${signal.takeProfit.toFixed(4)}
-⛔️ **Stop Loss:** $${signal.stopLoss.toFixed(4)}
-📊 **Risk/Reward:** 1:${rr}
-
-⚡️ *Autonomous setup detected by Ultron AI*`;
-
   try {
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    
+    const prompt = `You are the PR manager for Ultron, an elite quantitative trading bot. 
+    Write a highly professional, engaging, and exciting VIP Telegram message for a new trade that was just executed.
+    
+    Trade Details:
+    - Asset: ${signal.symbol}
+    - Action: ${signal.action} (LONG or SHORT)
+    - Entry Price: $${livePrice.toFixed(4)}
+    - Take Profit: $${signal.takeProfit.toFixed(4)}
+    - Stop Loss: $${signal.stopLoss.toFixed(4)}
+    
+    The message must include these exact numbers, use emojis tastefully, and highlight that this was driven by our Pure Quant Engine (SMC + Gann).
+    Do NOT include any markdown code blocks, just raw text ready for Telegram. Keep it concise.`;
+
+    const result = await model.generateContent(prompt);
+    let msg = result.response.text().trim();
+
     await sendTelegramMessage(vipChannelId, msg);
   } catch (err: any) {
-    console.error("[VIP Signal] Broadcast failed:", err.message);
+    console.error("[VIP Signal] LLM/Broadcast failed, falling back to standard format:", err.message);
+    const type = signal.action === "LONG" ? "🟢 LONG" : "🔴 SHORT";
+    const msg = `💎 **ULTRON VIP SIGNAL (QUANT)** 💎\n🔹 Asset: #${signal.symbol.replace(/[^a-zA-Z0-9]/g, '')}\n🔹 Action: ${type}\n🔹 Entry: $${livePrice.toFixed(4)}\n🎯 TP: $${signal.takeProfit.toFixed(4)}\n⛔️ SL: $${signal.stopLoss.toFixed(4)}`;
+    await sendTelegramMessage(vipChannelId, msg);
   }
 }
 
-
-export async function executeTrade(signal: TradeSignal): Promise<void> {
+export async function runTradingCycle(symbol: string = "BTC/USDT"): Promise<void> {
   const mode = process.env.TRADE_MODE || "PAPER";
-  if (signal.action === "HOLD") return;
-
-  const livePrice = await getLivePrice(signal.symbol);
-
-  // --- ANTI-SLIPPAGE GUARD (V14.2) ---
-  const currentRisk = signal.action === "BUY" ? livePrice - signal.stopLoss : signal.stopLoss - livePrice;
-  const currentReward = signal.action === "BUY" ? signal.takeProfit - livePrice : livePrice - signal.takeProfit;
   
-  if (currentRisk <= 0 || currentReward <= 0) {
-    console.warn(`[Slippage Guard] Trade parameters invalidated by price spike. Canceling trade.`);
+  // Data Fetching via Kucoin (for clean OHLCV data without IP limits)
+  const dataExchange = new ccxt.kucoin({ enableRateLimit: true });
+  
+  let ohlcv15m, ohlcv1h;
+  try {
+    ohlcv15m = await dataExchange.fetchOHLCV(symbol, "15m", undefined, 20);
+    ohlcv1h = await dataExchange.fetchOHLCV(symbol, "1h", undefined, 365); // need 200 for EMA
+  } catch (error: any) {
+    console.error(`[Trading Engine] Data fetch failed: ${error.message}`);
+    await logError("API_TRADING_FETCH", error, { symbol }, false);
     return;
   }
   
-  const currentRR = currentReward / currentRisk;
-  if (currentRR < 1.8) { // Added a tiny tolerance (1.8 instead of strict 2.0) for micro-fluctuations
-    console.warn(`[Slippage Guard] Live RR dropped to ${currentRR.toFixed(2)} due to slippage (Min: 1.8). Trade canceled.`);
+  const mapCandles = (ohlcv: any[]): Candle[] => ohlcv.map(c => ({
+    timestamp: c[0] as number,
+    open: c[1] as number,
+    high: c[2] as number,
+    low: c[3] as number,
+    close: c[4] as number,
+    volume: c[5] as number,
+  }));
+  
+  const candles15m = mapCandles(ohlcv15m);
+  const candles1h = mapCandles(ohlcv1h);
+  
+  if (candles15m.length < 5 || candles1h.length < 200) {
+    console.warn(`[Trading Engine] Insufficient data. 15m: ${candles15m.length}, 1h: ${candles1h.length}`);
     return;
   }
+  
+  const livePrice = candles15m[candles15m.length - 1].close;
+  
+  // Engine Evaluation
+  const signal = evaluateSetup(symbol, candles15m, candles1h);
+  console.log(`[Quant Engine] Setup evaluated: ${signal.action}. Reason: ${signal.reason || 'Valid setup'}`);
+  
+  if (signal.action === "WAIT") return;
 
+  // Execution Phase
   if (mode === "PAPER") {
+    // Check concurrent trades
     const { data: openTrades } = await supabase.from("paper_trades").select("*").eq("status", "OPEN");
     if (openTrades && openTrades.length > 0) {
       const isLongOpen = openTrades.some(t => t.position_type === "LONG");
       const isShortOpen = openTrades.some(t => t.position_type === "SHORT");
-      const newType = signal.action === "BUY" ? "LONG" : "SHORT";
-      if (newType === "LONG" && isLongOpen) return;
-      if (newType === "SHORT" && isShortOpen) return;
+      if (signal.action === "LONG" && isLongOpen) return;
+      if (signal.action === "SHORT" && isShortOpen) return;
     }
 
-    const kellyRisk = await calculateDynamicKelly(signal.symbol);
+    // 1. (Simulated) Exchange Order
+    // 2. Database Insert
     const { error } = await supabase.from("paper_trades").insert({
       symbol: signal.symbol,
-      position_type: signal.action === "BUY" ? "LONG" : "SHORT",
+      position_type: signal.action,
       entry_price: livePrice,
       stop_loss: signal.stopLoss,
       take_profit: signal.takeProfit,
       status: "OPEN",
       pnl: 0,
     });
-    if (error) throw new Error(`[Executor PAPER] Supabase insert failed: ${error.message}`);
-    console.log(`[Executor PAPER] Logged trade: ${signal.action} ${signal.symbol} @ ${livePrice} (Live)`);
+    if (error) {
+      console.error(`[Executor PAPER] Supabase insert failed: ${error.message}`);
+      return;
+    }
+    
+    // 3. Telegram VIP Broadcast
+    console.log(`[Executor PAPER] Logged trade: ${signal.action} ${signal.symbol} @ ${livePrice}`);
     await broadcastVipSignal(signal, livePrice);
     return;
   }
 
   if (mode === "MICRO") {
-    const exchange = buildExchange();
+    const exchange = buildHyperliquid();
     try {
-      // 1. Fetch Live Balance
       const balanceInfo = await exchange.fetchBalance();
       const liveBalance = balanceInfo['USDC']?.free || balanceInfo['USDT']?.free || 1000;
 
-      // 2. Kill Switch (3% daily loss limit)
       const maxDailyLoss = liveBalance * 0.03;
       const todayLoss = await getTodayLoss();
       if (todayLoss >= maxDailyLoss) {
@@ -192,60 +205,43 @@ export async function executeTrade(signal: TradeSignal): Promise<void> {
          return;
       }
 
-      // 3. Margin Cap (max 50% of balance tied up in margin)
       const totalMargin = await getTotalOpenMargin(exchange);
       if (totalMargin > liveBalance * 0.5) {
          console.warn("[Risk] Used margin exceeds 50% of account balance.");
          return; 
       }
 
-      // Map generic /USDT symbols (e.g. BTC/USDT, ETH/USDT) to Hyperliquid perp symbols (BTC/USDC:USDC)
-      const hlSymbol = signal.symbol.includes('/USDT') 
-        ? signal.symbol.replace('/USDT', '/USDC:USDC') 
-        : signal.symbol;
+      const hlSymbol = signal.symbol.includes('/USDT') ? signal.symbol.replace('/USDT', '/USDC:USDC') : signal.symbol;
       
-      // 4. Dynamic Position Sizing (ATR Kelly Criterion)
       const kellyPercent = await calculateDynamicKelly(signal.symbol);
       const riskAmount = liveBalance * kellyPercent;
       const stopLossPerc = Math.abs(livePrice - signal.stopLoss) / livePrice;
       let targetPositionUsd = riskAmount / stopLossPerc;
       
-      // 5. Max Leverage Cap (10x of free balance)
       const maxAllowedPositionUsd = liveBalance * 10;
       if (targetPositionUsd > maxAllowedPositionUsd) {
           targetPositionUsd = maxAllowedPositionUsd;
       }
       
       const amount = targetPositionUsd / livePrice;
-      const side = signal.action === "BUY" ? "buy" : "sell";
+      const side = signal.action === "LONG" ? "buy" : "sell";
       
-      // Cancel any existing ghost orders for this symbol to avoid conflicts
       await exchange.loadMarkets();
       const openOrders = await exchange.fetchOpenOrders(hlSymbol);
       for (const order of openOrders) {
         if (order.id) await exchange.cancelOrder(order.id, hlSymbol);
       }
       
-      // Execute main entry order
-      const order = await exchange.createMarketOrder(hlSymbol, side, amount);
-      
-      // Execute SL and TP trigger orders
+      // 1. EXCHANGE EXECUTION
+      await exchange.createMarketOrder(hlSymbol, side, amount);
       const oppositeSide = side === "buy" ? "sell" : "buy";
+      await exchange.createOrder(hlSymbol, 'market', oppositeSide, amount, undefined, { triggerPrice: signal.stopLoss, reduceOnly: true });
+      await exchange.createOrder(hlSymbol, 'market', oppositeSide, amount, undefined, { triggerPrice: signal.takeProfit, reduceOnly: true });
       
-      // Stop Loss
-      await exchange.createOrder(hlSymbol, 'market', oppositeSide, amount, undefined, { 
-        triggerPrice: signal.stopLoss, 
-        reduceOnly: true 
-      });
-
-      // Take Profit
-      await exchange.createOrder(hlSymbol, 'market', oppositeSide, amount, undefined, { 
-        triggerPrice: signal.takeProfit, 
-        reduceOnly: true 
-      });
+      // 2. SUPABASE LOGGING
       const { error } = await supabase.from("paper_trades").insert({
         symbol: signal.symbol,
-        position_type: signal.action === "BUY" ? "LONG" : "SHORT",
+        position_type: signal.action,
         entry_price: livePrice,
         stop_loss: signal.stopLoss,
         take_profit: signal.takeProfit,
@@ -257,11 +253,11 @@ export async function executeTrade(signal: TradeSignal): Promise<void> {
         throw new Error(`[Executor MICRO] Supabase insert failed: ${error.message}`);
       }
 
+      // 3. TELEGRAM VIP BROADCAST
       await broadcastVipSignal(signal, livePrice);
     } catch (err: any) {
       await logError("EXECUTOR_MICRO", err, { signal }, true);
       await emergencyCloseAll(exchange, err.message);
-      throw err;
     }
   }
 }
@@ -269,7 +265,7 @@ export async function executeTrade(signal: TradeSignal): Promise<void> {
 export async function closeMicroPosition(symbol: string, positionType: "LONG" | "SHORT"): Promise<void> {
   const mode = process.env.TRADE_MODE || "PAPER";
   if (mode !== "MICRO") return;
-  const exchange = buildExchange();
+  const exchange = buildHyperliquid();
   try {
     const hlSymbol = symbol.includes('/USDT') ? symbol.replace('/USDT', '/USDC:USDC') : symbol;
     const openOrders = await exchange.fetchOpenOrders(hlSymbol);
