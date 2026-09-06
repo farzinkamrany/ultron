@@ -23,7 +23,7 @@ export interface TradeSignal {
 /**
  * Calculates Support/Resistance levels based on Gann Square of 9
  */
-export function calculateGannSquareOf9(pivotPrice: number, currentPrice: number): { supports: number[], resistances: number[] } {
+export function calculateGannSquareOf9(pivotPrice: number, currentPrice: number = pivotPrice): { supports: number[], resistances: number[] } {
   // Gann harmonic angles in a 360-degree cycle:
   // 45° (0.125), 90° (0.25), 120° (0.333), 144° (0.4), 180° (0.5), 270° (0.75), 360° (1.0)
   const increments = [0.125, 0.25, 0.333, 0.4, 0.5, 0.75, 1.0];

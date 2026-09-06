@@ -9,13 +9,13 @@ export const maxDuration = 60; // Allow enough time for ccxt scanning
 
 export async function POST(request: NextRequest) {
   const isDev = process.env.NODE_ENV === 'development';
-  
+
   // Authenticate using Vercel CRON_SECRET or Upstash QStash
   if (!isDev) {
     const authHeader = request.headers.get('authorization');
     const isVercelCron = authHeader === `Bearer ${process.env.CRON_SECRET}`;
     const isQStash = !!request.headers.get('upstash-signature');
-    
+
     if (isQStash) {
       const isValid = await verifyQStashSignature(request);
       if (!isValid) return new NextResponse('Unauthorized QStash', { status: 401 });
@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
     // 1. GLOBAL CIRCUIT BREAKER (Hard Stop at -$400 PnL to protect $600 balance)
     const { data: allTrades } = await supabase.from('paper_trades').select('pnl').not('pnl', 'is', null);
     const totalPnl = allTrades ? allTrades.reduce((sum, t) => sum + (t.pnl || 0), 0) : 0;
-    
+
     if (totalPnl <= -400) {
       console.error("[CIRCUIT BREAKER] Account dropped by $400. Halting all new trades to protect remaining $600.");
       return NextResponse.json({ message: 'CIRCUIT BREAKER ACTIVE - TRADING HALTED' });
@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
     // 2. Hunt for a setup with at least 3% profit potential
     const tradeSetup = await huntForSetup(3.0);
     const chatId = process.env.TELEGRAM_CHAT_ID;
-    
+
     if (!chatId) {
       throw new Error('TELEGRAM_CHAT_ID is not defined');
     }
@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
         `📉 حد ضرر گَن (SL): **$${tradeSetup.stopLoss.toFixed(4)}**\n\n` +
         `🧠 **منطق ورود:**\n${tradeSetup.execution_context}\n\n` +
         `سیستم به طور خودکار این معامله را تا قفل کردنِ سود مدیریت می‌کند! 🚀`;
-      
+
       await sendTelegramMessage(chatId, message);
     } else {
       console.log("[Hunter Cron] No high-quality setups found in this cycle.");
