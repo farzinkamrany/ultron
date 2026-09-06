@@ -5,9 +5,11 @@ import { CTOConfig } from '../ai';
 
 import { detectMarketRegime } from './risk';
 
-// Strict Core (V14.0)
-const CORE_ASSET = 'BTC/USDT';
-const CORE_TF = '15m';
+const BEAST_MODE_SYMBOLS = ['BTC/USDT', 'SOL/USDT', 'INJ/USDT'];
+const BEAST_MODE_TF = '5m';
+
+const SHIELD_MODE_SYMBOLS = ['ETH/USDT', 'BNB/USDT'];
+const SHIELD_MODE_TF = '30m';
 
 export interface HuntResult {
   symbol: string;
@@ -47,10 +49,11 @@ export async function huntForSetup(fallbackTargetProfitPerc: number): Promise<Hu
   let bestTrade: HuntTrade | null = null;
 
   try {
-    // === CORE TARGET (Protocol V14.0) ===
-    // Engine locked strictly to BTC/USDT. Altcoins disabled.
-    const activeAssets = [CORE_ASSET];
-    const targetTF = CORE_TF;
+    // === AUTONOMOUS REGIME DETECTION ===
+    // We check the macro regime on BTC to decide the market mood.
+    const regime = await detectMarketRegime('BTC/USDT');
+    const activeAssets = regime === 'CALM' ? BEAST_MODE_SYMBOLS : SHIELD_MODE_SYMBOLS;
+    const targetTF = regime === 'CALM' ? BEAST_MODE_TF : SHIELD_MODE_TF;
 
     // === FAST PASS: GANN & R:R FILTER ===
     const tickers = await exchange.fetchTickers(activeAssets);

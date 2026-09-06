@@ -25,17 +25,39 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    // 1. GLOBAL CIRCUIT BREAKER (Hard Stop at -$400 PnL to protect $600 balance)
-    const { data: allTrades } = await supabase.from('paper_trades').select('pnl').not('pnl', 'is', null);
-    const totalPnl = allTrades ? allTrades.reduce((sum, t) => sum + (t.pnl || 0), 0) : 0;
+    // 1. GLOBAL CIRCUIT BREAKER (Trailing Drawdown 25%)
+    const { data: allTrades } = await supabase.from('paper_trades').select('pnl, created_at').not('pnl', 'is', null).order('created_at', { ascending: true });
+    
+    let currentBalance = 1000;
+    let peakBalance = 1000;
+    
+    if (allTrades) {
+      for (const t of allTrades) {
+        currentBalance += (t.pnl || 0);
+        if (currentBalance > peakBalance) {
+          peakBalance = currentBalance;
+        }
+      }
+    }
+    
+    const maxAllowedDrawdown = peakBalance * 0.25;
+    if (peakBalance - currentBalance >= maxAllowedDrawdown) {
+      console.error(`[SHIELD PROTOCOL] 25% Trailing Drawdown hit. Peak: $${peakBalance}, Current: $${currentBalance}. Halting trading.`);
+      return NextResponse.json({ message: 'SHIELD PROTOCOL: 25% TRAILING DRAWDOWN ACTIVE - TRADING HALTED' });
+    }
 
-    if (totalPnl <= -400) {
-      console.error("[CIRCUIT BREAKER] Account dropped by $400. Halting all new trades to protect remaining $600.");
-      return NextResponse.json({ message: 'CIRCUIT BREAKER ACTIVE - TRADING HALTED' });
+    // 1.2 CORRELATION FILTER (Max 3 Open Trades)
+    const { count: openTradesCount, error: countError } = await supabase
+      .from('paper_trades')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'OPEN');
+      
+    if (openTradesCount && openTradesCount >= 3) {
+      console.log("[SHIELD PROTOCOL] Correlation Filter Active: Already have 3 open trades. Skipping hunt.");
+      return NextResponse.json({ message: 'SHIELD PROTOCOL: CORRELATION FILTER ACTIVE - MAX TRADES REACHED' });
     }
 
     // 1.5 LIQUIDITY CEILING DETECTOR (Protocol V13.0)
-    const currentBalance = 1000 + totalPnl;
     if (currentBalance >= 1000000) {
       const chatId = process.env.TELEGRAM_CHAT_ID;
       if (chatId) {
