@@ -136,6 +136,21 @@ export async function executeTrade(signal: TradeSignal): Promise<void> {
 
   const livePrice = await getLivePrice(signal.symbol);
 
+  // --- ANTI-SLIPPAGE GUARD (V14.2) ---
+  const currentRisk = signal.action === "BUY" ? livePrice - signal.stopLoss : signal.stopLoss - livePrice;
+  const currentReward = signal.action === "BUY" ? signal.takeProfit - livePrice : livePrice - signal.takeProfit;
+  
+  if (currentRisk <= 0 || currentReward <= 0) {
+    console.warn(`[Slippage Guard] Trade parameters invalidated by price spike. Canceling trade.`);
+    return;
+  }
+  
+  const currentRR = currentReward / currentRisk;
+  if (currentRR < 1.8) { // Added a tiny tolerance (1.8 instead of strict 2.0) for micro-fluctuations
+    console.warn(`[Slippage Guard] Live RR dropped to ${currentRR.toFixed(2)} due to slippage (Min: 1.8). Trade canceled.`);
+    return;
+  }
+
   if (mode === "PAPER") {
     const { data: openTrades } = await supabase.from("paper_trades").select("*").eq("status", "OPEN");
     if (openTrades && openTrades.length > 0) {

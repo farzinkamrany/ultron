@@ -8,9 +8,9 @@
     "action": "BUY",
     "entryPrice": 79701,
     "tp": 80550.19096606551,
-    "sl": 79391.5458995277,
+    "sl": 79701,
     "initialSl": 79391.5458995277,
-    "pyramidStage": 0,
+    "pyramidStage": 1,
     "riskAmount": 10,
     "openTimestamp": 1788601188767
   },

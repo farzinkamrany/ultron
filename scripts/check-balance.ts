@@ -1,5 +1,6 @@
 import { config } from 'dotenv';
-config({ path: '.env.local' });
+import path from 'path';
+config({ path: path.resolve(process.cwd(), '.env.local') });
 import { supabase } from '../src/lib/supabase';
 
 async function checkBalance() {
