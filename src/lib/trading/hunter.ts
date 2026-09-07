@@ -5,11 +5,13 @@ import { CTOConfig } from '../ai';
 
 import { detectMarketRegime } from './risk';
 
-const BEAST_MODE_SYMBOLS = ['BTC/USDT', 'SOL/USDT', 'INJ/USDT'];
-const BEAST_MODE_TF = '5m';
+// ============ PHASE 1: SNOWBALL (15m) - ETH Only (Best Risk/Reward) ============
+const BEAST_MODE_SYMBOLS = ['ETH/USDT'];
+const BEAST_MODE_TF = '15m';
 
-const SHIELD_MODE_SYMBOLS = ['ETH/USDT', 'BNB/USDT'];
-const SHIELD_MODE_TF = '30m';
+// ============ PHASE 2: SNIPER (1h) - Multi-asset ============
+const SHIELD_MODE_SYMBOLS = ['BTC/USDT', 'ETH/USDT'];
+const SHIELD_MODE_TF = '1h';
 
 export interface HuntResult {
   symbol: string;
