@@ -159,6 +159,19 @@ export async function runTradingCycle(symbol: string = "BTC/USDT"): Promise<void
   
   if (signal.action === "WAIT") return;
 
+  // Cooldown Check: Prevent revenge trading the same signal (15m OB is valid for a long time)
+  const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+  const { data: recentTrades } = await supabase
+    .from("paper_trades")
+    .select("*")
+    .eq("symbol", signal.symbol)
+    .gte("created_at", twoHoursAgo);
+
+  if (recentTrades && recentTrades.length > 0) {
+    console.log(`[Cooldown] Skipping ${signal.symbol} - a trade was placed in the last 2 hours.`);
+    return;
+  }
+
   // Execution Phase
   if (mode === "PAPER") {
     // Check concurrent trades

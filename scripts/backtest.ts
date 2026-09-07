@@ -11,7 +11,26 @@ const MAX_LOSS_LIMIT = 900; // Allow more drawdown for compounding (90% of start
 const MAKER_FEE = 0.0002;
 const TAKER_FEE = 0.0005;
 const SL_BUFFER = 0.006; // Widened from 0.003 to catch ETH and SOL Gann levels
-const SMC_LOOKBACK = 10; 
+const SMC_LOOKBACK = 30; // Increased to 30 to allow 20-period volume SMA calculation
+
+// Market Friction Simulator
+function simulateSlippage(price: number, action: string, atr: number): number {
+  let slipPerc = 0.0005 + (Math.random() * 0.001); // 0.05% to 0.15%
+  if (atr > price * 0.005) slipPerc *= 2; // Double slippage if ATR is high (> 0.5%)
+  return action === 'BUY' ? price * (1 + slipPerc) : price * (1 - slipPerc);
+}
+
+function calculateATR(candles: any[], period: number = 14): number {
+  if (candles.length < 2) return 0;
+  let trSum = 0;
+  for (let i = Math.max(1, candles.length - period); i < candles.length; i++) {
+    const c = candles[i];
+    const prevC = candles[i - 1];
+    const tr = Math.max(c.high - c.low, Math.abs(c.high - prevC.close), Math.abs(c.low - prevC.close));
+    trSum += tr;
+  }
+  return trSum / Math.min(period, candles.length - 1);
+}
 
 async function runBacktest() {
   const fileName = process.argv[2] || 'btc_15m_4years.csv';
@@ -98,13 +117,12 @@ async function runBacktest() {
       let closed = false;
       let pnl = 0;
       let exitPrice = 0;
-      let isWin = false;
       
       const { entryPrice, sl, tp, action, pyramidStage } = activeTrade;
       
       if (action === 'BUY') {
         if (candle.low <= sl) {
-          exitPrice = sl;
+          exitPrice = sl * 0.999; // 0.1% Stop-Loss Penalty
           closed = true;
         } 
         else if (pyramidStage === 0 && candle.high >= entryPrice + (tp - entryPrice) * 0.5) {
@@ -114,11 +132,10 @@ async function runBacktest() {
         else if (candle.high >= tp) {
           exitPrice = tp;
           closed = true;
-          isWin = true;
         }
       } else {
         if (candle.high >= sl) {
-          exitPrice = sl;
+          exitPrice = sl * 1.001; // 0.1% Stop-Loss Penalty
           closed = true;
         } 
         else if (pyramidStage === 0 && candle.low <= entryPrice - (entryPrice - tp) * 0.5) {
@@ -128,7 +145,6 @@ async function runBacktest() {
         else if (candle.low <= tp) {
           exitPrice = tp;
           closed = true;
-          isWin = true;
         }
       }
       
@@ -143,8 +159,10 @@ async function runBacktest() {
         
         const rawPnl = positionSize * movePerc * positionMultiplier;
         
-        const entryFee = positionSize * TAKER_FEE;
-        const exitFee = (positionSize + Math.abs(rawPnl)) * (isWin ? MAKER_FEE : TAKER_FEE);
+        // Precise Fee Drag (0.05% on total leveraged volume)
+        const totalVolume = positionSize * positionMultiplier;
+        const entryFee = totalVolume * 0.0005;
+        const exitFee = totalVolume * 0.0005;
         pnl = rawPnl - entryFee - exitFee;
         
         balance += pnl;
@@ -209,25 +227,28 @@ async function runBacktest() {
     let action = null;
     let tp = 0;
     let sl = 0;
-    let rr = 0;
     
     if (distanceToSupportPerc <= SL_BUFFER) {
       const longSL = closestSupport * (1 - SL_BUFFER);
       const validTP = resistances.find(r => (r - currentPrice) / (currentPrice - longSL) >= 2.0);
       if (validTP) {
-        action = 'BUY'; tp = validTP; sl = longSL; rr = (validTP - currentPrice) / (currentPrice - longSL);
+        action = 'BUY'; tp = validTP; sl = longSL;
       }
     } 
     else if (distanceToResPerc <= SL_BUFFER) {
       const shortSL = closestResistance * (1 + SL_BUFFER);
       const validTP = supports.find(s => (currentPrice - s) / (shortSL - currentPrice) >= 2.0);
       if (validTP) {
-        action = 'SELL'; tp = validTP; sl = shortSL; rr = (currentPrice - validTP) / (shortSL - currentPrice);
+        action = 'SELL'; tp = validTP; sl = shortSL;
       }
     }
     
     if (action) {
       const obs = findOrderBlocks(candles);
+      
+      const atr = calculateATR(candles);
+      const slippedEntryPrice = simulateSlippage(currentPrice, action, atr);
+      
       let isValid = false;
       if (action === 'BUY') {
         isValid = !!obs.find(ob => ob.type === 'BULLISH_OB' && ob.sweptLiquidity && currentPrice <= ob.top * 1.001 && currentPrice >= ob.bottom * 0.999);
@@ -238,7 +259,7 @@ async function runBacktest() {
       if (isValid) {
         activeTrade = {
           action,
-          entryPrice: currentPrice,
+          entryPrice: slippedEntryPrice,
           tp,
           sl,
           initialSl: sl,

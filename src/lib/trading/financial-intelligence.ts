@@ -31,14 +31,20 @@ export function calculateEMA(candles: Candle[], period: number): number {
 }
 
 export function calculateGannLevels(price: number): { supports: number[], resistances: number[] } {
-  const root = Math.sqrt(price);
+  // Dynamically scale price to make Gann Square math work for crypto (BTC = 60k, Memes = 0.0001)
+  let scale = 1;
+  if (price > 1000) scale = 100;
+  else if (price < 1) scale = 10000;
+
+  const scaledPrice = price / scale;
+  const root = Math.sqrt(scaledPrice);
   const increments = [0.125, 0.25, 0.333, 0.4, 0.5, 0.75, 1.0];
   const supports: number[] = [];
   const resistances: number[] = [];
   
   for (const inc of increments) {
-    supports.push(Math.pow(root - inc, 2));
-    resistances.push(Math.pow(root + inc, 2));
+    supports.push(Math.pow(root - inc, 2) * scale);
+    resistances.push(Math.pow(root + inc, 2) * scale);
   }
   // Sort supports descending (closest to price first)
   supports.sort((a, b) => b - a);
@@ -115,8 +121,8 @@ export function evaluateSetup(
     // Generate Gann levels from the pivot low of the OB
     const gann = calculateGannLevels(ob.obCandle.low);
 
-    // Determine SL (Wick of OB + 0.1% buffer)
-    const sl = ob.obCandle.low * (1 - 0.001); // 0.1% buffer
+    // Determine SL (Wick of OB + 0.5% buffer)
+    const sl = ob.obCandle.low * (1 - 0.005); // 0.5% buffer
     
     // Determine TP (Next Gann Resistance)
     let tp = gann.resistances[0];
@@ -146,7 +152,8 @@ export function evaluateSetup(
     // Generate Gann levels from the pivot high of the OB
     const gann = calculateGannLevels(ob.obCandle.high);
 
-    const sl = ob.obCandle.high * (1 + 0.001); // 0.1% buffer
+    // Determine SL (Wick of OB + 0.5% buffer)
+    const sl = ob.obCandle.high * (1 + 0.005); // 0.5% buffer
     
     let tp = gann.supports[0];
     for (const s of gann.supports) {
