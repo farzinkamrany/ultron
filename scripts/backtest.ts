@@ -113,57 +113,110 @@ async function runBacktest() {
     const currentDrawdown = stats.peakBalance - balance;
     if (currentDrawdown > stats.maxDrawdown) stats.maxDrawdown = currentDrawdown;
 
+    // EMA 50 & 200 Calculations
+    let ema200 = currentPrice;
+    let ema50 = currentPrice;
+    if (candles.length >= 200) {
+      const k200 = 2 / (200 + 1);
+      const k50 = 2 / (50 + 1);
+      ema200 = candles[candles.length - 200].close;
+      ema50 = candles[candles.length - 50].close;
+      for (let i = candles.length - 199; i < candles.length; i++) {
+        ema200 = (candles[i].close * k200) + (ema200 * (1 - k200));
+      }
+      for (let i = candles.length - 49; i < candles.length; i++) {
+        ema50 = (candles[i].close * k50) + (ema50 * (1 - k50));
+      }
+    }
+
     // --- MANAGE ACTIVE TRADE ---
     if (activeTrade) {
       let closed = false;
       let pnl = 0;
       let exitPrice = 0;
       
-      const { entryPrice, sl, tp, action, pyramidStage } = activeTrade;
+      const { entryPrice, tp, action, pyramidStage, initialSl } = activeTrade;
       
       if (action === 'BUY') {
-        if (candle.low <= sl) {
-          exitPrice = sl * 0.999; // 0.1% Stop-Loss Penalty
+        if (candle.low <= activeTrade.sl) {
+          exitPrice = activeTrade.sl * 0.999; // 0.1% Slippage penalty
           closed = true;
         } 
         else if (pyramidStage === 0 && candle.high >= entryPrice + (tp - entryPrice) * 0.5) {
           activeTrade.sl = entryPrice; // BE
-          activeTrade.pyramidStage = 1;
+          activeTrade.pyramidStage = 1; // Double position using house money
         }
-        else if (candle.high >= tp) {
-          exitPrice = tp;
-          closed = true;
+        else if (pyramidStage === 1 && candle.high >= tp) {
+          activeTrade.pyramidStage = 2; // Trailing mode
+          activeTrade.partialExitPrice = tp;
+          activeTrade.sl = Math.max(activeTrade.sl, ema50 * 0.995); 
+        }
+        else if (pyramidStage === 2) {
+          activeTrade.sl = Math.max(activeTrade.sl, ema50 * 0.995);
+          if (candle.low <= activeTrade.sl) {
+             exitPrice = activeTrade.sl;
+             closed = true;
+          }
         }
       } else {
-        if (candle.high >= sl) {
-          exitPrice = sl * 1.001; // 0.1% Stop-Loss Penalty
+        if (candle.high >= activeTrade.sl) {
+          exitPrice = activeTrade.sl * 1.001; // 0.1% Slippage penalty
           closed = true;
         } 
         else if (pyramidStage === 0 && candle.low <= entryPrice - (entryPrice - tp) * 0.5) {
           activeTrade.sl = entryPrice; // BE
           activeTrade.pyramidStage = 1;
         }
-        else if (candle.low <= tp) {
-          exitPrice = tp;
-          closed = true;
+        else if (pyramidStage === 1 && candle.low <= tp) {
+          activeTrade.pyramidStage = 2;
+          activeTrade.partialExitPrice = tp;
+          activeTrade.sl = Math.min(activeTrade.sl, ema50 * 1.005);
+        }
+        else if (pyramidStage === 2) {
+          activeTrade.sl = Math.min(activeTrade.sl, ema50 * 1.005);
+          if (candle.high >= activeTrade.sl) {
+             exitPrice = activeTrade.sl;
+             closed = true;
+          }
         }
       }
       
       if (closed) {
-        const movePerc = action === 'BUY' ? (exitPrice - entryPrice) / entryPrice : (entryPrice - exitPrice) / entryPrice;
-        const positionMultiplier = activeTrade.pyramidStage > 0 ? 2 : 1; 
+        // Compounding: Risk 1.5% of the balance we had at entry
+        const riskAmount = activeTrade.balanceAtEntry * 0.015;
+        const stopLossPerc = Math.abs(entryPrice - initialSl) / entryPrice;
+        const basePositionSize = riskAmount / stopLossPerc;
         
-        // Compounding: Risk 1% of the balance we had at entry
-        const riskAmount = activeTrade.balanceAtEntry * 0.01;
-        const stopLossPerc = Math.abs(entryPrice - activeTrade.initialSl) / entryPrice;
-        const positionSize = riskAmount / stopLossPerc;
+        let totalEntryVolume = 0;
+        let totalExitVolume = 0;
+        let rawPnl = 0;
         
-        const rawPnl = positionSize * movePerc * positionMultiplier;
+        if (activeTrade.pyramidStage === 0) {
+           const movePerc = action === 'BUY' ? (exitPrice - entryPrice) / entryPrice : (entryPrice - exitPrice) / entryPrice;
+           rawPnl = basePositionSize * movePerc;
+           totalEntryVolume = basePositionSize;
+           totalExitVolume = basePositionSize;
+        } 
+        else if (activeTrade.pyramidStage === 1) {
+           const movePerc = action === 'BUY' ? (exitPrice - entryPrice) / entryPrice : (entryPrice - exitPrice) / entryPrice;
+           rawPnl = (basePositionSize * 2) * movePerc;
+           totalEntryVolume = basePositionSize * 2;
+           totalExitVolume = basePositionSize * 2;
+        }
+        else if (activeTrade.pyramidStage === 2) {
+           const movePercTP1 = action === 'BUY' ? (activeTrade.partialExitPrice - entryPrice) / entryPrice : (entryPrice - activeTrade.partialExitPrice) / entryPrice;
+           const movePercTrail = action === 'BUY' ? (exitPrice - entryPrice) / entryPrice : (entryPrice - exitPrice) / entryPrice;
+           
+           const pnlTP1 = basePositionSize * movePercTP1;
+           const pnlTrail = basePositionSize * movePercTrail;
+           
+           rawPnl = pnlTP1 + pnlTrail;
+           totalEntryVolume = basePositionSize * 2;
+           totalExitVolume = basePositionSize * 2;
+        }
         
-        // Precise Fee Drag (0.05% on total leveraged volume)
-        const totalVolume = positionSize * positionMultiplier;
-        const entryFee = totalVolume * 0.0005;
-        const exitFee = totalVolume * 0.0005;
+        const entryFee = totalEntryVolume * 0.0005;
+        const exitFee = totalExitVolume * 0.0005;
         pnl = rawPnl - entryFee - exitFee;
         
         balance += pnl;
@@ -246,16 +299,6 @@ async function runBacktest() {
       const validTP = supports.find(s => (currentPrice - s) / (shortSL - currentPrice) >= 2.0);
       if (validTP) {
         action = 'SELL'; tp = validTP; sl = shortSL;
-      }
-    }
-    
-    // EMA 200 Trend Filter
-    let ema200 = currentPrice;
-    if (candles.length >= 200) {
-      const k = 2 / (200 + 1);
-      ema200 = candles[candles.length - 200].close;
-      for (let i = candles.length - 199; i < candles.length; i++) {
-        ema200 = (candles[i].close * k) + (ema200 * (1 - k));
       }
     }
     

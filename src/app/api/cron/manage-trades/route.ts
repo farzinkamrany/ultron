@@ -66,6 +66,24 @@ export async function GET(req: NextRequest) {
         console.error("[Manage Trades] Failed to fetch Hyperliquid positions:", err);
       }
     }
+    
+    // Fetch 15m candles for EMA 50 Trailing Stop
+    const ema50Cache: Record<string, number> = {};
+    for (const hlSymbol of hlSymbols) {
+       try {
+          const ohlcv = await exchange.fetchOHLCV(hlSymbol, '15m', undefined, 50);
+          if (ohlcv.length >= 50) {
+            const k = 2 / (50 + 1);
+            let ema = ohlcv[0][4] as number;
+            for (let i = 1; i < ohlcv.length; i++) {
+               ema = ((ohlcv[i][4] as number) * k) + (ema * (1 - k));
+            }
+            ema50Cache[hlSymbol] = ema;
+          }
+       } catch (err) {
+          console.error(`[Manage Trades] Failed to fetch OHLCV for ${hlSymbol}:`, err);
+       }
+    }
 
     const FEE_RATE = 0.0012; // 0.12% offset
     const updates = [];
@@ -158,16 +176,22 @@ export async function GET(req: NextRequest) {
                 });
               }
             }
-            // Stage 3: 100% Mark (TP Extension)
+            // Stage 3: 100% Mark (TP Extension & EMA Trailing)
             else if (currentPrice >= trade.take_profit) {
               if (defconLevel === 0) {
-                newStopLoss = trade.take_profit - (distanceToTp * 0.2);
-                newTakeProfit = trade.take_profit + distanceToTp;
-                if (!newRationale.includes('T3')) {
-                  newTradesToInsert.push({
-                    symbol: trade.symbol, position_type: 'LONG', entry_price: currentPrice,
-                    take_profit: newTakeProfit, stop_loss: newStopLoss, status: 'OPEN', rationale: 'Pyramid T3 (Extended)', pnl: 0
-                  });
+                const ema50 = ema50Cache[hlSymbol];
+                if (ema50) {
+                  // Advanced Trailing Stop using EMA 50
+                  newStopLoss = Math.max(trade.stop_loss, ema50 * 0.995);
+                  newTakeProfit = currentPrice * 1.5; // Push TP way up
+                  if (!newRationale.includes('EMA_TRAIL')) {
+                     newRationale += ' | EMA_TRAIL (Riding the trend)';
+                     // We don't insert a new trade, we just ride this one to the moon
+                  }
+                } else {
+                  // Fallback trailing
+                  newStopLoss = trade.take_profit - (distanceToTp * 0.2);
+                  newTakeProfit = trade.take_profit + distanceToTp;
                 }
               } else {
                 newStatus = 'WON';
@@ -211,16 +235,20 @@ export async function GET(req: NextRequest) {
                 });
               }
             }
-            // Stage 3: 100% Mark (TP Extension)
+            // Stage 3: 100% Mark (TP Extension & EMA Trailing)
             else if (currentPrice <= trade.take_profit) {
               if (defconLevel === 0) {
-                newStopLoss = trade.take_profit + (distanceToTp * 0.2);
-                newTakeProfit = trade.take_profit - distanceToTp;
-                if (!newRationale.includes('T3')) {
-                  newTradesToInsert.push({
-                    symbol: trade.symbol, position_type: 'SHORT', entry_price: currentPrice,
-                    take_profit: newTakeProfit, stop_loss: newStopLoss, status: 'OPEN', rationale: 'Pyramid T3 (Extended)', pnl: 0
-                  });
+                const ema50 = ema50Cache[hlSymbol];
+                if (ema50) {
+                  // Advanced Trailing Stop using EMA 50
+                  newStopLoss = Math.min(trade.stop_loss, ema50 * 1.005);
+                  newTakeProfit = currentPrice * 0.5; // Push TP way down
+                  if (!newRationale.includes('EMA_TRAIL')) {
+                     newRationale += ' | EMA_TRAIL (Riding the trend)';
+                  }
+                } else {
+                  newStopLoss = trade.take_profit + (distanceToTp * 0.2);
+                  newTakeProfit = trade.take_profit - distanceToTp;
                 }
               } else {
                 newStatus = 'WON';
