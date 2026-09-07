@@ -44,6 +44,7 @@ async function runBacktest() {
   
   let balance = INITIAL_CAPITAL;
   let activeTrade: any = null;
+  let lastTradeClosedTime = 0;
   
   const stats = {
     totalTrades: 0,
@@ -92,8 +93,8 @@ async function runBacktest() {
     const candle = { timestamp, open: Number(cols[1]), high: Number(cols[2]), low: Number(cols[3]), close: Number(cols[4]), volume: Number(cols[5]) };
     candles.push(candle);
     
-    // Maintain sliding window for memory efficiency
-    if (candles.length > SMC_LOOKBACK + 5) {
+    // Maintain sliding window for memory efficiency (need at least 200 for EMA)
+    if (candles.length > 250) {
       candles.shift();
     }
     
@@ -200,11 +201,16 @@ async function runBacktest() {
         }
         
         activeTrade = null;
+        lastTradeClosedTime = timestamp;
       }
       continue;
     }
     
     // --- HUNT FOR SETUP ---
+    // Enforce 2-hour cooldown (matching live system)
+    if (timestamp - lastTradeClosedTime < 2 * 60 * 60 * 1000) {
+       continue;
+    }
     let absoluteLow = Infinity;
     for (const c of candles) if (c.low < absoluteLow) absoluteLow = c.low;
     const { supports, resistances } = calculateGannSquareOf9(absoluteLow, currentPrice);
@@ -242,6 +248,19 @@ async function runBacktest() {
         action = 'SELL'; tp = validTP; sl = shortSL;
       }
     }
+    
+    // EMA 200 Trend Filter
+    let ema200 = currentPrice;
+    if (candles.length >= 200) {
+      const k = 2 / (200 + 1);
+      ema200 = candles[candles.length - 200].close;
+      for (let i = candles.length - 199; i < candles.length; i++) {
+        ema200 = (candles[i].close * k) + (ema200 * (1 - k));
+      }
+    }
+    
+    if (action === 'BUY' && currentPrice <= ema200) action = null;
+    if (action === 'SELL' && currentPrice >= ema200) action = null;
     
     if (action) {
       const obs = findOrderBlocks(candles);

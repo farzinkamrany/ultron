@@ -28,8 +28,15 @@ export function calculateGannSquareOf9(pivotPrice: number, currentPrice: number 
   // 45° (0.125), 90° (0.25), 120° (0.333), 144° (0.4), 180° (0.5), 270° (0.75), 360° (1.0)
   const increments = [0.125, 0.25, 0.333, 0.4, 0.5, 0.75, 1.0];
   
-  const root = Math.sqrt(pivotPrice);
-  const targetRoot = Math.sqrt(currentPrice);
+  let scale = 1;
+  if (pivotPrice > 1000) scale = 100;
+  else if (pivotPrice < 1) scale = 10000;
+  
+  const scaledPivot = pivotPrice / scale;
+  const scaledCurrent = currentPrice / scale;
+  
+  const root = Math.sqrt(scaledPivot);
+  const targetRoot = Math.sqrt(scaledCurrent);
   const cycleDiff = Math.abs(targetRoot - root);
   const baseCycles = Math.floor(cycleDiff);
   
@@ -40,11 +47,11 @@ export function calculateGannSquareOf9(pivotPrice: number, currentPrice: number 
   for (let cycleOffset = baseCycles - 1; cycleOffset <= baseCycles + 1; cycleOffset++) {
     for (const inc of increments) {
       if (currentPrice >= pivotPrice) {
-         const level = Math.pow(root + cycleOffset + inc, 2);
+         const level = Math.pow(root + cycleOffset + inc, 2) * scale;
          if (level <= currentPrice) supports.push(level);
          if (level > currentPrice) resistances.push(level);
       } else {
-         const level = Math.pow(root - (cycleOffset + inc), 2);
+         const level = Math.pow(root - (cycleOffset + inc), 2) * scale;
          if (level >= currentPrice) resistances.push(level);
          if (level < currentPrice) supports.push(level);
       }
@@ -54,11 +61,11 @@ export function calculateGannSquareOf9(pivotPrice: number, currentPrice: number 
   // Add the base cycle borders (0 degrees / 360 degrees)
   for (let cycleOffset = baseCycles - 1; cycleOffset <= baseCycles + 1; cycleOffset++) {
       if (currentPrice >= pivotPrice) {
-          const level = Math.pow(root + cycleOffset, 2);
+          const level = Math.pow(root + cycleOffset, 2) * scale;
           if (level <= currentPrice) supports.push(level);
           if (level > currentPrice) resistances.push(level);
       } else {
-          const level = Math.pow(root - cycleOffset, 2);
+          const level = Math.pow(root - cycleOffset, 2) * scale;
           if (level >= currentPrice) resistances.push(level);
           if (level < currentPrice) supports.push(level);
       }
