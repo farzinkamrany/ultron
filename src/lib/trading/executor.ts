@@ -178,11 +178,15 @@ export async function runTradingCycle(symbol: string = "BTC/USDT"): Promise<void
   if (mode === "PAPER") {
     // Check concurrent trades
     const { data: openTrades } = await supabase.from("paper_trades").select("*").eq("status", "OPEN");
-    if (openTrades && openTrades.length > 0) {
-      const isLongOpen = openTrades.some(t => t.position_type === "BUY");
-      const isShortOpen = openTrades.some(t => t.position_type === "SELL");
-      if (signal.action === "BUY" && isLongOpen) return;
-      if (signal.action === "SELL" && isShortOpen) return;
+    if (openTrades) {
+      if (openTrades.length >= 5) {
+        console.log(`[Margin] Skipping ${signal.symbol} - MAX_CONCURRENT_TRADES (5) reached.`);
+        return;
+      }
+      if (openTrades.some(t => t.symbol === signal.symbol)) {
+        console.log(`[Margin] Skipping ${signal.symbol} - Already have an open trade for this symbol.`);
+        return;
+      }
     }
 
     // 1. (Simulated) Exchange Order
@@ -227,6 +231,20 @@ export async function runTradingCycle(symbol: string = "BTC/USDT"): Promise<void
       }
 
       const hlSymbol = signal.symbol.includes('/USDT') ? signal.symbol.replace('/USDT', '/USDC:USDC') : signal.symbol;
+      await exchange.loadMarkets();
+      
+      // Margin Allocation Limit Check
+      const positions = await exchange.fetchPositions();
+      const activePositions = positions.filter(p => Math.abs(p.contracts || 0) > 0);
+      
+      if (activePositions.length >= 5) {
+        console.warn(`[Margin] Skipping ${signal.symbol} - Max concurrent trades (5) reached on exchange.`);
+        return;
+      }
+      if (activePositions.some(p => p.symbol === hlSymbol)) {
+        console.warn(`[Margin] Skipping ${signal.symbol} - Already holding position for this symbol.`);
+        return;
+      }
       
       const kellyPercent = await calculateDynamicKelly(signal.symbol);
       const riskAmount = liveBalance * kellyPercent;

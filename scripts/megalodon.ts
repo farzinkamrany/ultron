@@ -96,8 +96,8 @@ async function runMegalodon() {
         symbolStats: {} as Record<string, { trades: number, pnl: number }>
     };
     
-    let activeTrade: any = null;
-    let lastTradeClosedTime = 0;
+    let activeTrades: Record<string, any> = {};
+    let lastTradeClosedTime: Record<string, number> = {};
     
     const buffers: Record<string, MultiCandle[]> = {
         'BTC': [], 'ETH': [], 'SOL': [], 'LINK': [], 'ADA': [],
@@ -118,8 +118,8 @@ async function runMegalodon() {
         const year = date.getFullYear();
         
         // TRADE MANAGEMENT (Cross-Margin)
+        let activeTrade = activeTrades[symbol];
         if (activeTrade) {
-            if (activeTrade.symbol !== symbol) continue; // Waiting for the tick of the active coin
             
             if (balance > stats.peakBalance) stats.peakBalance = balance;
             const drawdown = stats.peakBalance - balance;
@@ -263,14 +263,16 @@ async function runMegalodon() {
                   console.log(`\n💥 CIRCUIT BREAKER HIT at ${date.toISOString()}! Balance: $${balance.toFixed(2)}`);
                   break;
                 }
-                lastTradeClosedTime = timestamp;
-                activeTrade = null;
+                lastTradeClosedTime[symbol] = timestamp;
+                delete activeTrades[symbol];
             }
             continue;
         }
         
         // TRIGGER LOGIC
-        if (timestamp - lastTradeClosedTime < 1000 * 60 * 15) continue; // Cooldown
+        if (Object.keys(activeTrades).length >= 5) continue; // Max 5 concurrent trades
+        const lastClose = lastTradeClosedTime[symbol] || 0;
+        if (timestamp - lastClose < 1000 * 60 * 15) continue; // Cooldown
         
         const gann = calculateGannSquareOf9(currentPrice);
         const supports = gann.supports.sort((a, b) => b - a);
@@ -315,7 +317,7 @@ async function runMegalodon() {
         
         if (action) {
             const chop = calculateChoppinessIndex(candles, 288);
-            activeTrade = {
+            activeTrades[symbol] = {
                 symbol,
                 action,
                 entryPrice: currentPrice,
