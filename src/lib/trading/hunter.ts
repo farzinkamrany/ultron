@@ -109,7 +109,7 @@ export async function huntForSetup(fallbackTargetProfitPerc: number, openSymbols
     for (const candidate of candidates) {
       try {
         // Fetch dynamic timeframe candles based on the regime
-        const ohlcv = await exchange.fetchOHLCV(candidate.asset, targetTF, undefined, smcLookback + 5);
+        const ohlcv = await exchange.fetchOHLCV(candidate.asset, targetTF, undefined, 250);
         if (!ohlcv || ohlcv.length === 0) continue;
 
         let macroOhlcv;
@@ -141,6 +141,17 @@ export async function huntForSetup(fallbackTargetProfitPerc: number, openSymbols
 
         let gannContext = '';
 
+        const closes = ohlcv.map(c => c[4] as number);
+        let ema200 = closes[0];
+        if (closes.length >= 200) {
+            ema200 = closes.slice(0, 200).reduce((a, b) => a + b, 0) / 200;
+            const k = 2 / (200 + 1);
+            for (let i = 200; i < closes.length; i++) {
+                ema200 = (closes[i] * k) + (ema200 * (1 - k));
+            }
+        }
+        const trend = closes.length >= 200 ? (candidate.currentPrice > ema200 ? 'UP' : 'DOWN') : 'UNKNOWN';
+
         const candles = ohlcv.map(c => ({
           timestamp: c[0] as number,
           open: c[1] as number,
@@ -164,6 +175,10 @@ export async function huntForSetup(fallbackTargetProfitPerc: number, openSymbols
         const obs = findOrderBlocks(candles);
 
         if (candidate.action === 'BUY') {
+          if (trend === 'DOWN') {
+             console.log(`[Hunter] Rejected ${candidate.asset} BUY: Counter-trend (Price below EMA 200).`);
+             continue;
+          }
           if (isReversalWindow) {
              console.log(`[Hunter] Rejected ${candidate.asset} BUY: TIME REVERSAL ACTIVE.`);
              continue;
@@ -184,7 +199,7 @@ export async function huntForSetup(fallbackTargetProfitPerc: number, openSymbols
           if (upwardAngles.position.includes('ABOVE')) gannContext += ' | Upward Gann Angle';
           if (cosmos.planetaryAspect) gannContext += ` | ${cosmos.planetaryAspect}`;
 
-          const validOB = obs.find(ob => ob.type === 'BULLISH_OB' && ob.sweptLiquidity && candidate.currentPrice <= ob.top * 1.001 && candidate.currentPrice >= ob.bottom * 0.999);
+          const validOB = obs.find(ob => ob.type === 'BULLISH_OB' && ob.sweptLiquidity && !ob.mitigated && candidate.currentPrice <= ob.top * 1.001 && candidate.currentPrice >= ob.bottom * 0.999);
           if (validOB) {
             bestTrade = {
               symbol: candidate.asset,
@@ -197,6 +212,10 @@ export async function huntForSetup(fallbackTargetProfitPerc: number, openSymbols
             break; // Found the best trade, stop checking
           }
         } else {
+          if (trend === 'UP') {
+             console.log(`[Hunter] Rejected ${candidate.asset} SELL: Counter-trend (Price above EMA 200).`);
+             continue;
+          }
           if (isReversalWindow) {
              console.log(`[Hunter] Rejected ${candidate.asset} SELL: TIME REVERSAL ACTIVE.`);
              continue;
@@ -217,7 +236,7 @@ export async function huntForSetup(fallbackTargetProfitPerc: number, openSymbols
           if (downwardAngles.position.includes('BELOW')) gannContext += ' | Downward Gann Angle';
           if (cosmos.planetaryAspect) gannContext += ` | ${cosmos.planetaryAspect}`;
 
-          const validOB = obs.find(ob => ob.type === 'BEARISH_OB' && ob.sweptLiquidity && candidate.currentPrice >= ob.bottom * 0.999 && candidate.currentPrice <= ob.top * 1.001);
+          const validOB = obs.find(ob => ob.type === 'BEARISH_OB' && ob.sweptLiquidity && !ob.mitigated && candidate.currentPrice >= ob.bottom * 0.999 && candidate.currentPrice <= ob.top * 1.001);
           if (validOB) {
             bestTrade = {
               symbol: candidate.asset,

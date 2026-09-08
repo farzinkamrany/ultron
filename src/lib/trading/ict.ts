@@ -77,12 +77,22 @@ export function findOrderBlocks(candles: OHLCV[]) {
     
     // Bullish Order Block (Red candle followed by massive Green candle engulfing it)
     if (isCurrentBearish && isNextBullish && nextBodySize > currentBodySize * 1.5) {
-      orderBlocks.push({
-        type: 'BULLISH_OB',
-        top: current.high, // The mitigation entry point is usually the top or 50% of the OB
-        bottom: current.low,
-        sweptLiquidity: sweptBearishLiquidity
-      });
+      let isMitigated = false;
+      let isInvalidated = false;
+      for (let j = i + 2; j < candles.length; j++) {
+        if (candles[j].low <= current.high) isMitigated = true;
+        if (candles[j].close < current.low) isInvalidated = true;
+      }
+      
+      if (!isInvalidated) {
+        orderBlocks.push({
+          type: 'BULLISH_OB',
+          top: current.high, // The mitigation entry point is usually the top or 50% of the OB
+          bottom: current.low,
+          sweptLiquidity: sweptBearishLiquidity,
+          mitigated: isMitigated
+        });
+      }
     }
     
     // Bearish Order Block (Green candle followed by massive Red candle)
@@ -90,12 +100,22 @@ export function findOrderBlocks(candles: OHLCV[]) {
     const isNextBearish = next.close < next.open;
     
     if (isCurrentBullish && isNextBearish && nextBodySize > currentBodySize * 1.5) {
-      orderBlocks.push({
-        type: 'BEARISH_OB',
-        top: current.high,
-        bottom: current.low, // The mitigation entry point
-        sweptLiquidity: sweptBullishLiquidity
-      });
+      let isMitigated = false;
+      let isInvalidated = false;
+      for (let j = i + 2; j < candles.length; j++) {
+        if (candles[j].high >= current.low) isMitigated = true;
+        if (candles[j].close > current.high) isInvalidated = true;
+      }
+
+      if (!isInvalidated) {
+        orderBlocks.push({
+          type: 'BEARISH_OB',
+          top: current.high,
+          bottom: current.low, // The mitigation entry point
+          sweptLiquidity: sweptBullishLiquidity,
+          mitigated: isMitigated
+        });
+      }
     }
   }
   
