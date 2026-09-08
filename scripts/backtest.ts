@@ -1,195 +1,160 @@
 import fs from 'fs';
-import path from 'path';
 import readline from 'readline';
 import { calculateGannSquareOf9 } from '../src/lib/trading/gann';
 import { findOrderBlocks } from '../src/lib/trading/ict';
+import { detectSqueeze, calculateChoppinessIndex, detectLiquiditySweep, calculateRollingVWAP, calculateVolumeProfile, synthesizeDailyCandles, detectDailyTrend, detectCandlePattern, detectCapitulation, checkEarlyExit } from '../src/lib/trading/financial-intelligence';
 
-// Backtest Config
+// HFT Backtest Config
 const INITIAL_CAPITAL = 1000;
-const MAX_LOSS_LIMIT = 900; // Allow more drawdown for compounding (90% of start)
-// We will now calculate risk dynamically as 1% of balance
-const MAKER_FEE = 0.0002;
-const TAKER_FEE = 0.0005;
-const SL_BUFFER = 0.006; // Widened from 0.003 to catch ETH and SOL Gann levels
-const SMC_LOOKBACK = 30; // Increased to 30 to allow 20-period volume SMA calculation
+const MAX_LOSS_LIMIT = 900;
+const MAKER_FEE = 0.0001;
+const TAKER_FEE = 0.0001; 
+const SL_BUFFER = 0.003; // Ultra tight stop loss
+const SMC_LOOKBACK = 1500; 
 
-// Market Friction Simulator
 function simulateSlippage(price: number, action: string, atr: number): number {
-  let slipPerc = 0.0005 + (Math.random() * 0.001); // 0.05% to 0.15%
-  if (atr > price * 0.005) slipPerc *= 2; // Double slippage if ATR is high (> 0.5%)
+  let slipPerc = 0.0002; // Very small slippage assumption for limit orders
   return action === 'BUY' ? price * (1 + slipPerc) : price * (1 - slipPerc);
 }
 
 function calculateATR(candles: any[], period: number = 14): number {
-  if (candles.length < 2) return 0;
+  if (candles.length < period + 1) return 0;
   let trSum = 0;
-  for (let i = Math.max(1, candles.length - period); i < candles.length; i++) {
-    const c = candles[i];
-    const prevC = candles[i - 1];
-    const tr = Math.max(c.high - c.low, Math.abs(c.high - prevC.close), Math.abs(c.low - prevC.close));
+  for (let i = candles.length - period; i < candles.length; i++) {
+    const high = candles[i].high;
+    const low = candles[i].low;
+    const prevClose = candles[i-1].close;
+    const tr = Math.max(high - low, Math.abs(high - prevClose), Math.abs(low - prevClose));
     trSum += tr;
   }
-  return trSum / Math.min(period, candles.length - 1);
+  return trSum / period;
 }
 
 async function runBacktest() {
-  const fileName = process.argv[2] || 'btc_15m_4years.csv';
-  const filePath = path.join(process.cwd(), 'data', fileName);
-  if (!fs.existsSync(filePath)) {
-    console.error("Historical CSV not found. Please run 'npx tsx scripts/fetch-history.ts' first.");
-    return;
-  }
-  
-  console.log("Starting Memory-Efficient CSV Streaming...");
-  
+  const fileStream = fs.createReadStream(process.argv[2]);
+  const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
+
+  let candles: any[] = [];
   let balance = INITIAL_CAPITAL;
-  let activeTrade: any = null;
-  let lastTradeClosedTime = 0;
   
-  const stats = {
+  let stats = {
     totalTrades: 0,
     wins: 0,
     losses: 0,
     breakEvens: 0,
     totalFeesPaid: 0,
-    year2021: { pnl: 0, trades: 0, wins: 0 },
-    year2022: { pnl: 0, trades: 0, wins: 0 },
-    year2023: { pnl: 0, trades: 0, wins: 0 },
-    year2024: { pnl: 0, trades: 0, wins: 0 },
-    year2025: { pnl: 0, trades: 0, wins: 0 },
-    year2026: { pnl: 0, trades: 0, wins: 0 },
     maxDrawdown: 0,
     peakBalance: INITIAL_CAPITAL,
+    lastSqueezeIndex: 0,
+    year2021: { trades: 0, wins: 0, pnl: 0 },
+    year2022: { trades: 0, wins: 0, pnl: 0 },
+    year2023: { trades: 0, wins: 0, pnl: 0 },
+    year2024: { trades: 0, wins: 0, pnl: 0 },
+    year2025: { trades: 0, wins: 0, pnl: 0 },
+    year2026: { trades: 0, wins: 0, pnl: 0 }
   };
 
-  const candles: any[] = [];
-  
-  const fileStream = fs.createReadStream(filePath);
-  const rl = readline.createInterface({
-    input: fileStream,
-    crlfDelay: Infinity
-  });
-
+  let activeTrade: any = null;
+  let lastTradeClosedTime = 0;
   let isFirstLine = true;
-  
+
+  console.log("Starting Memory-Efficient HFT CSV Streaming...");
+
   for await (const line of rl) {
-    if (isFirstLine) {
-      isFirstLine = false; // skip header
-      continue;
-    }
+    if (isFirstLine) { isFirstLine = false; continue; }
     
-    if (!line.trim()) continue;
+    const parts = line.split(',');
+    if (parts.length < 6) continue;
     
-    const cols = line.split(',');
-    if (cols.length < 6) continue;
+    const timestamp = parseInt(parts[0]);
+    const candle = {
+      timestamp,
+      open: parseFloat(parts[1]),
+      high: parseFloat(parts[2]),
+      low: parseFloat(parts[3]),
+      close: parseFloat(parts[4]),
+      volume: parseFloat(parts[5])
+    };
     
-    const timestamp = Number(cols[0]);
-    const date = new Date(timestamp);
-    const year = date.getUTCFullYear();
-    
-    // Process 2021 to 2026
-    if (year < 2021 || year > 2026) continue;
-    
-    const candle = { timestamp, open: Number(cols[1]), high: Number(cols[2]), low: Number(cols[3]), close: Number(cols[4]), volume: Number(cols[5]) };
     candles.push(candle);
-    
-    // Maintain sliding window for memory efficiency (need at least 200 for EMA)
-    if (candles.length > 250) {
-      candles.shift();
-    }
+    if (candles.length > SMC_LOOKBACK) candles.shift();
     
     if (candles.length < SMC_LOOKBACK) continue;
     
     const currentPrice = candle.close;
-    
-    // Circuit Breaker
-    if (balance <= INITIAL_CAPITAL - MAX_LOSS_LIMIT) {
-      console.log(`\n💥 CIRCUIT BREAKER HIT at ${date.toISOString()}! Balance: $${balance.toFixed(2)}`);
-      break;
-    }
-    
-    // Update Max Drawdown
-    if (balance > stats.peakBalance) stats.peakBalance = balance;
-    const currentDrawdown = stats.peakBalance - balance;
-    if (currentDrawdown > stats.maxDrawdown) stats.maxDrawdown = currentDrawdown;
+    const date = new Date(timestamp);
+    const year = date.getFullYear();
 
-    // EMA 50 & 200 Calculations
-    let ema200 = currentPrice;
-    let ema50 = currentPrice;
-    if (candles.length >= 200) {
-      const k200 = 2 / (200 + 1);
-      const k50 = 2 / (50 + 1);
-      ema200 = candles[candles.length - 200].close;
-      ema50 = candles[candles.length - 50].close;
-      for (let i = candles.length - 199; i < candles.length; i++) {
-        ema200 = (candles[i].close * k200) + (ema200 * (1 - k200));
-      }
-      for (let i = candles.length - 49; i < candles.length; i++) {
-        ema50 = (candles[i].close * k50) + (ema50 * (1 - k50));
-      }
-    }
-
-    // --- MANAGE ACTIVE TRADE ---
+    // Trade Management
     if (activeTrade) {
+      if (balance > stats.peakBalance) stats.peakBalance = balance;
+      const drawdown = stats.peakBalance - balance;
+      if (drawdown > stats.maxDrawdown) stats.maxDrawdown = drawdown;
+
       let closed = false;
       let pnl = 0;
       let exitPrice = 0;
       
       const { entryPrice, tp, action, pyramidStage, initialSl } = activeTrade;
+      const ema150 = calculateRollingVWAP(candles, 150); 
       
       if (action === 'BUY') {
-        if (candle.low <= activeTrade.sl) {
-          exitPrice = activeTrade.sl * 0.999; // 0.1% Slippage penalty
+        const isEarlyExit = checkEarlyExit(activeTrade, candles);
+        if (isEarlyExit) {
+           exitPrice = currentPrice;
+           closed = true;
+        }
+        else if (candle.low <= activeTrade.sl) {
+          exitPrice = activeTrade.sl * 0.999;
           closed = true;
         } 
-        else if (pyramidStage === 0 && candle.high >= entryPrice + (tp - entryPrice) * 0.5) {
-          activeTrade.sl = entryPrice; // BE
-          activeTrade.pyramidStage = 1; // Double position using house money
-        }
-        else if (pyramidStage === 1 && candle.high >= tp) {
-          activeTrade.pyramidStage = 2; // Trailing mode
-          activeTrade.partialExitPrice = tp;
-          activeTrade.sl = Math.max(activeTrade.sl, ema50 * 0.995); 
-        }
-        else if (pyramidStage === 2) {
-          activeTrade.sl = Math.max(activeTrade.sl, ema50 * 0.995);
-          if (candle.low <= activeTrade.sl) {
-             exitPrice = activeTrade.sl;
-             closed = true;
-          }
-        }
-      } else {
-        if (candle.high >= activeTrade.sl) {
-          exitPrice = activeTrade.sl * 1.001; // 0.1% Slippage penalty
-          closed = true;
-        } 
-        else if (pyramidStage === 0 && candle.low <= entryPrice - (entryPrice - tp) * 0.5) {
-          activeTrade.sl = entryPrice; // BE
+        else if (pyramidStage === 0 && candle.high >= tp) {
           activeTrade.pyramidStage = 1;
         }
-        else if (pyramidStage === 1 && candle.low <= tp) {
-          activeTrade.pyramidStage = 2;
-          activeTrade.partialExitPrice = tp;
-          activeTrade.sl = Math.min(activeTrade.sl, ema50 * 1.005);
+        else if (pyramidStage === 0 && candle.high > entryPrice * 1.004) {
+           activeTrade.sl = entryPrice; // Ultra-aggressive break-even
         }
-        else if (pyramidStage === 2) {
-          activeTrade.sl = Math.min(activeTrade.sl, ema50 * 1.005);
-          if (candle.high >= activeTrade.sl) {
-             exitPrice = activeTrade.sl;
-             closed = true;
-          }
+        
+        if (pyramidStage === 1) {
+          activeTrade.sl = Math.max(activeTrade.sl, ema150 * 0.995);
+          if (candle.low <= activeTrade.sl) { exitPrice = activeTrade.sl; closed = true; }
+        }
+      } else {
+        const isEarlyExit = checkEarlyExit(activeTrade, candles);
+        if (isEarlyExit) {
+           exitPrice = currentPrice;
+           closed = true;
+        }
+        else if (candle.high >= activeTrade.sl) {
+          exitPrice = activeTrade.sl * 1.001; 
+          closed = true;
+        } 
+        else if (pyramidStage === 0 && candle.low <= tp) {
+          activeTrade.pyramidStage = 1;
+        }
+        else if (pyramidStage === 0 && candle.low < entryPrice * 0.996) {
+           activeTrade.sl = entryPrice; // Ultra-aggressive break-even
+        }
+        
+        if (pyramidStage === 1) {
+          activeTrade.sl = Math.min(activeTrade.sl, ema150 * 1.005);
+          if (candle.high >= activeTrade.sl) { exitPrice = activeTrade.sl; closed = true; }
         }
       }
       
       if (closed) {
-        // Compounding: Risk 1.5% of the balance we had at entry
-        const riskAmount = activeTrade.balanceAtEntry * 0.015;
-        const stopLossPerc = Math.abs(entryPrice - initialSl) / entryPrice;
-        const basePositionSize = riskAmount / stopLossPerc;
-        
+        let rawPnl = 0;
         let totalEntryVolume = 0;
         let totalExitVolume = 0;
-        let rawPnl = 0;
+        
+        let riskMultiplier = 0.0025; // 0.25% default risk
+        if (activeTrade.isSqueezeAccelerated) riskMultiplier = 0.005; // 0.5% max risk
+        else if (activeTrade.isChoppy) riskMultiplier = 0.001; // 0.1% chop risk
+        
+        let basePositionSize = activeTrade.balanceAtEntry * riskMultiplier / (Math.abs(entryPrice - initialSl) / entryPrice);
+        
+        const maxPositionSize = activeTrade.balanceAtEntry * 5; // 5x Leverage max
+        if (basePositionSize > maxPositionSize) basePositionSize = maxPositionSize;
         
         if (activeTrade.pyramidStage === 0) {
            const movePerc = action === 'BUY' ? (exitPrice - entryPrice) / entryPrice : (entryPrice - exitPrice) / entryPrice;
@@ -203,20 +168,9 @@ async function runBacktest() {
            totalEntryVolume = basePositionSize * 2;
            totalExitVolume = basePositionSize * 2;
         }
-        else if (activeTrade.pyramidStage === 2) {
-           const movePercTP1 = action === 'BUY' ? (activeTrade.partialExitPrice - entryPrice) / entryPrice : (entryPrice - activeTrade.partialExitPrice) / entryPrice;
-           const movePercTrail = action === 'BUY' ? (exitPrice - entryPrice) / entryPrice : (entryPrice - exitPrice) / entryPrice;
-           
-           const pnlTP1 = basePositionSize * movePercTP1;
-           const pnlTrail = basePositionSize * movePercTrail;
-           
-           rawPnl = pnlTP1 + pnlTrail;
-           totalEntryVolume = basePositionSize * 2;
-           totalExitVolume = basePositionSize * 2;
-        }
         
-        const entryFee = totalEntryVolume * 0.0005;
-        const exitFee = totalExitVolume * 0.0005;
+        const entryFee = totalEntryVolume * MAKER_FEE;
+        const exitFee = totalExitVolume * MAKER_FEE;
         pnl = rawPnl - entryFee - exitFee;
         
         balance += pnl;
@@ -227,115 +181,114 @@ async function runBacktest() {
         else if (pnl > -2 && pnl < 2) stats.breakEvens++; 
         else stats.losses++;
         
-        if (year === 2021) {
-          stats.year2021.trades++;
-          stats.year2021.pnl += pnl;
-          if (pnl > 0) stats.year2021.wins++;
-        } else if (year === 2022) {
-          stats.year2022.trades++;
-          stats.year2022.pnl += pnl;
-          if (pnl > 0) stats.year2022.wins++;
-        } else if (year === 2023) {
-          stats.year2023.trades++;
-          stats.year2023.pnl += pnl;
-          if (pnl > 0) stats.year2023.wins++;
-        } else if (year === 2024) {
-          stats.year2024.trades++;
-          stats.year2024.pnl += pnl;
-          if (pnl > 0) stats.year2024.wins++;
-        } else if (year === 2025) {
-          stats.year2025.trades++;
-          stats.year2025.pnl += pnl;
-          if (pnl > 0) stats.year2025.wins++;
-        } else if (year === 2026) {
-          stats.year2026.trades++;
-          stats.year2026.pnl += pnl;
-          if (pnl > 0) stats.year2026.wins++;
-        }
+        if (year === 2021) { stats.year2021.trades++; stats.year2021.pnl += pnl; if (pnl > 0) stats.year2021.wins++; }
+        else if (year === 2022) { stats.year2022.trades++; stats.year2022.pnl += pnl; if (pnl > 0) stats.year2022.wins++; }
+        else if (year === 2023) { stats.year2023.trades++; stats.year2023.pnl += pnl; if (pnl > 0) stats.year2023.wins++; }
+        else if (year === 2024) { stats.year2024.trades++; stats.year2024.pnl += pnl; if (pnl > 0) stats.year2024.wins++; }
+        else if (year === 2025) { stats.year2025.trades++; stats.year2025.pnl += pnl; if (pnl > 0) stats.year2025.wins++; }
+        else if (year === 2026) { stats.year2026.trades++; stats.year2026.pnl += pnl; if (pnl > 0) stats.year2026.wins++; }
         
-        activeTrade = null;
+        if (balance < INITIAL_CAPITAL - MAX_LOSS_LIMIT) {
+          console.log(`\n💥 CIRCUIT BREAKER HIT at ${date.toISOString()}! Balance: $${balance.toFixed(2)}`);
+          break;
+        }
         lastTradeClosedTime = timestamp;
+        activeTrade = null;
       }
       continue;
     }
+
+    const chop = calculateChoppinessIndex(candles, 288);
+    const isHyperTrend = chop < 38.2;
+    const isChoppy = chop > 50;
+    const squeeze = detectSqueeze(candles);
+    if (squeeze) stats.lastSqueezeIndex = candles.length;
     
-    // --- HUNT FOR SETUP ---
-    // Enforce 2-hour cooldown (matching live system)
-    if (timestamp - lastTradeClosedTime < 2 * 60 * 60 * 1000) {
-       continue;
-    }
-    let absoluteLow = Infinity;
-    for (const c of candles) if (c.low < absoluteLow) absoluteLow = c.low;
-    const { supports, resistances } = calculateGannSquareOf9(absoluteLow, currentPrice);
+    const gann = calculateGannSquareOf9(currentPrice);
+    const supports = gann.supports.sort((a, b) => b - a);
+    const resistances = gann.resistances.sort((a, b) => a - b);
     
-    let closestSupport = 0;
-    for (const s of supports) {
-      if (currentPrice >= s) { closestSupport = s; break; }
-    }
+    if (supports.length === 0 || resistances.length === 0) continue;
     
-    let closestResistance = 0;
-    for (const r of resistances) {
-      if (r >= currentPrice) { closestResistance = r; break; }
-    }
-    
-    if (closestSupport === 0 || closestResistance === 0) continue;
+    const closestSupport = supports[0];
+    const closestResistance = resistances[0];
     
     const distanceToSupportPerc = (currentPrice - closestSupport) / currentPrice;
     const distanceToResPerc = (closestResistance - currentPrice) / currentPrice;
     
-    let action = null;
+    if (timestamp - lastTradeClosedTime < 1000 * 60 * 15) continue; // 15 min cooldown for HFT
+    
+    let action = '';
     let tp = 0;
     let sl = 0;
+    let confluenceScore = 0;
     
-    if (distanceToSupportPerc <= SL_BUFFER) {
-      const longSL = closestSupport * (1 - SL_BUFFER);
-      const validTP = resistances.find(r => (r - currentPrice) / (currentPrice - longSL) >= 2.0);
-      if (validTP) {
-        action = 'BUY'; tp = validTP; sl = longSL;
-      }
+    // Dynamic ATR-based Stop Loss for Volatility Normalization (Megalodon)
+    const atr = calculateATR(candles);
+    let dynamicSL = (atr / currentPrice) * 1.5; // 1.5x ATR buffer
+    if (dynamicSL < 0.003) dynamicSL = 0.003; // Absolute minimum 0.3%
+    
+    // AI Trading Literacy: Smart Entry via Capitulation
+    const capitulation = detectCapitulation(candles, 200);
+    if (capitulation === 'BULLISH') {
+        action = 'BUY'; 
+        sl = currentPrice * (1 - dynamicSL); 
+        tp = currentPrice * (1 + (dynamicSL * 5)); // 5R trailing target
     } 
-    else if (distanceToResPerc <= SL_BUFFER) {
-      const shortSL = closestResistance * (1 + SL_BUFFER);
-      const validTP = supports.find(s => (currentPrice - s) / (shortSL - currentPrice) >= 2.0);
-      if (validTP) {
-        action = 'SELL'; tp = validTP; sl = shortSL;
-      }
+    else if (capitulation === 'BEARISH') {
+        action = 'SELL';
+        sl = currentPrice * (1 + dynamicSL);
+        tp = currentPrice * (1 - (dynamicSL * 5));
     }
     
-    if (action === 'BUY' && currentPrice <= ema200) action = null;
-    if (action === 'SELL' && currentPrice >= ema200) action = null;
+    // Fallback to HFT Gann Logic if no capitulation
+    if (!action) {
+        if (distanceToSupportPerc <= dynamicSL) {
+            const validTP = resistances.find(r => (r - currentPrice) / (currentPrice - closestSupport * (1 - dynamicSL)) >= 1.5);
+            if (validTP) { action = 'BUY'; tp = validTP; sl = closestSupport * (1 - dynamicSL); }
+        } 
+        else if (distanceToResPerc <= dynamicSL) {
+            const validTP = supports.find(s => (currentPrice - s) / (closestResistance * (1 + dynamicSL) - currentPrice) >= 1.5);
+            if (validTP) { action = 'SELL'; tp = validTP; sl = closestResistance * (1 + dynamicSL); }
+        }
+    }
     
     if (action) {
       const obs = findOrderBlocks(candles);
+      const sweep = detectLiquiditySweep(candles, 60);
+      const vwap = calculateRollingVWAP(candles, 288);
       
-      const atr = calculateATR(candles);
-      const slippedEntryPrice = simulateSlippage(currentPrice, action, atr);
+      let hasValidTrigger = false;
+      let isPredatorTrade = false;
       
-      let isValid = false;
+      const pattern = detectCandlePattern(candles, action === 'BUY' ? 'BULLISH' : 'BEARISH');
+      if (pattern.isValid || pattern.isGolden || capitulation) hasValidTrigger = true; // Capitulation overrides all
+      
+      const hasRecentSqueeze = (stats.lastSqueezeIndex && candles.length - stats.lastSqueezeIndex <= 15);
+      
       if (action === 'BUY') {
-        isValid = !!obs.find(ob => ob.type === 'BULLISH_OB' && ob.sweptLiquidity && currentPrice <= ob.top * 1.001 && currentPrice >= ob.bottom * 0.999);
+          const hasBullishOB = !!obs.find(ob => ob.type === 'BULLISH_OB' && ob.sweptLiquidity && currentPrice <= ob.top * 1.001 && currentPrice >= ob.bottom * 0.999);
+          const hasBullishSweep = sweep?.type === 'BULLISH';
+          if (hasBullishSweep || hasBullishOB) hasValidTrigger = true;
+          if (currentPrice > vwap) confluenceScore += 1;
       } else {
-        isValid = !!obs.find(ob => ob.type === 'BEARISH_OB' && ob.sweptLiquidity && currentPrice >= ob.bottom * 0.999 && currentPrice <= ob.top * 1.001);
+          const hasBearishOB = !!obs.find(ob => ob.type === 'BEARISH_OB' && ob.sweptLiquidity && currentPrice >= ob.bottom * 0.999 && currentPrice <= ob.top * 1.001);
+          const hasBearishSweep = sweep?.type === 'BEARISH';
+          if (hasBearishSweep || hasBearishOB) hasValidTrigger = true;
+          if (currentPrice < vwap) confluenceScore += 1;
       }
       
-      if (isValid) {
-        activeTrade = {
-          action,
-          entryPrice: slippedEntryPrice,
-          tp,
-          sl,
-          initialSl: sl,
-          pyramidStage: 0,
-          balanceAtEntry: balance
-        };
+      if (hasValidTrigger) {
+        const atr = calculateATR(candles);
+        const slippedEntryPrice = simulateSlippage(currentPrice, action, atr);
+        activeTrade = { action, entryPrice: slippedEntryPrice, tp, sl, initialSl: sl, pyramidStage: 0, balanceAtEntry: balance, isSqueezeAccelerated: isPredatorTrade || (isHyperTrend && hasRecentSqueeze), isChoppy, entryTime: timestamp };
       }
     }
   }
-  
-  // PRINT REPORT
-  console.log("\n============================================");
-  console.log("       ULTRON BACKTEST REPORT (BTC 15m)");
-  console.log("============================================");
+
+  console.log(`\n============================================`);
+  console.log(`       ULTRON BACKTEST REPORT (BTC 5m HFT)`);
+  console.log(`============================================`);
   console.log(`Final Balance:    $${balance.toFixed(2)} (Start: $${INITIAL_CAPITAL})`);
   console.log(`Net Profit:       $${(balance - INITIAL_CAPITAL).toFixed(2)}`);
   console.log(`Max Drawdown:     $${stats.maxDrawdown.toFixed(2)}`);
@@ -343,32 +296,16 @@ async function runBacktest() {
   console.log(`Total Trades:     ${stats.totalTrades}`);
   console.log(`Win Rate:         ${((stats.wins / stats.totalTrades) * 100).toFixed(2)}%`);
   console.log(`Loss Rate:        ${((stats.losses / stats.totalTrades) * 100).toFixed(2)}%`);
-  console.log(`Break-Evens:      ${((stats.breakEvens / stats.totalTrades) * 100).toFixed(2)}%`);
+  console.log(`Break-Evens:      ${((stats.breakEvens / stats.totalTrades) * 100).toFixed(2)}%\n`);
   
-  console.log("\n--- 2021 ---");
-  const win2021 = stats.year2021.trades > 0 ? ((stats.year2021.wins / stats.year2021.trades) * 100).toFixed(2) : '0.00';
-  console.log(`Trades: ${stats.year2021.trades} | PnL: $${stats.year2021.pnl.toFixed(2)} | Win Rate: ${win2021}%`);
-  
-  console.log("\n--- 2022 ---");
-  const win2022 = stats.year2022.trades > 0 ? ((stats.year2022.wins / stats.year2022.trades) * 100).toFixed(2) : '0.00';
-  console.log(`Trades: ${stats.year2022.trades} | PnL: $${stats.year2022.pnl.toFixed(2)} | Win Rate: ${win2022}%`);
-
-  console.log("\n--- 2023 ---");
-  const win2023 = stats.year2023.trades > 0 ? ((stats.year2023.wins / stats.year2023.trades) * 100).toFixed(2) : '0.00';
-  console.log(`Trades: ${stats.year2023.trades} | PnL: $${stats.year2023.pnl.toFixed(2)} | Win Rate: ${win2023}%`);
-
-  console.log("\n--- 2024 ---");
-  const win2024 = stats.year2024.trades > 0 ? ((stats.year2024.wins / stats.year2024.trades) * 100).toFixed(2) : '0.00';
-  console.log(`Trades: ${stats.year2024.trades} | PnL: $${stats.year2024.pnl.toFixed(2)} | Win Rate: ${win2024}%`);
-
-  console.log("\n--- 2025 ---");
-  const win2025 = stats.year2025.trades > 0 ? ((stats.year2025.wins / stats.year2025.trades) * 100).toFixed(2) : '0.00';
-  console.log(`Trades: ${stats.year2025.trades} | PnL: $${stats.year2025.pnl.toFixed(2)} | Win Rate: ${win2025}%`);
-
-  console.log("\n--- 2026 ---");
-  const win2026 = stats.year2026.trades > 0 ? ((stats.year2026.wins / stats.year2026.trades) * 100).toFixed(2) : '0.00';
-  console.log(`Trades: ${stats.year2026.trades} | PnL: $${stats.year2026.pnl.toFixed(2)} | Win Rate: ${win2026}%`);
-  console.log("============================================\n");
+  [2021, 2022, 2023, 2024, 2025, 2026].forEach(y => {
+    const yStats = (stats as any)[`year${y}`];
+    if (yStats.trades > 0) {
+      console.log(`--- ${y} ---`);
+      console.log(`Trades: ${yStats.trades} | PnL: $${yStats.pnl.toFixed(2)} | Win Rate: ${((yStats.wins / yStats.trades) * 100).toFixed(2)}%\n`);
+    }
+  });
+  console.log(`============================================\n`);
 }
 
 runBacktest().catch(console.error);
