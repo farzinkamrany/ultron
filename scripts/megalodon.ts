@@ -67,9 +67,16 @@ async function runMegalodon() {
     const dotData = await loadCSV('data/dot_15m_4years.csv', 'DOT');
     
     console.log("Merging and Synchronizing Timeline...");
-    const globalTimeline = [...btcData, ...ethData, ...solData, ...linkData, ...adaData, ...bnbData, ...xrpData, ...dogeData, ...avaxData, ...dotData].sort((a, b) => {
+    const START_TIMESTAMP = 1609459200000; // Jan 1, 2021
+    const globalTimeline = [...btcData, ...ethData, ...solData, ...linkData, ...adaData, ...bnbData, ...xrpData, ...dogeData, ...avaxData, ...dotData]
+    .filter(c => c.timestamp >= START_TIMESTAMP)
+    .sort((a, b) => {
         if (a.timestamp !== b.timestamp) return a.timestamp - b.timestamp;
-        return Math.random() - 0.5;
+        // Prioritize coins with historically better performance if timestamps match
+        const priority: Record<string, number> = { 'SOL': 1, 'ETH': 2, 'BTC': 3, 'LINK': 4, 'DOGE': 5 };
+        const pA = priority[a.symbol] || 99;
+        const pB = priority[b.symbol] || 99;
+        return pA - pB;
     });
     
     console.log(`Simulation starting with ${globalTimeline.length} total events.\n`);

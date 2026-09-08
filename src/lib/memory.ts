@@ -1,32 +1,34 @@
 import { supabase } from "./supabase";
 
+import { GoogleGenerativeAI } from "@google/generative-ai";
+
 export async function generateEmbedding(text: string): Promise<number[]> {
-  const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-  if (!apiKey) throw new Error("GOOGLE_GENERATIVE_AI_API_KEY not set");
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error("OPENAI_API_KEY not set");
 
-  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${apiKey}`;
-
+  const apiUrl = "https://api.openai.com/v1/embeddings";
   const payload = JSON.stringify({
-    model: "models/text-embedding-004",
-    content: {
-      parts: [{ text }]
-    },
-    outputDimensionality: 768
+    model: "text-embedding-3-small",
+    input: text,
+    dimensions: 768
   });
 
   try {
     const response = await fetch(apiUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: payload,
-      signal: AbortSignal.timeout(30000), // 30s timeout
+      headers: { 
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`
+      },
+      body: payload
     });
+    
     if (!response.ok) {
       const errData = await response.text();
-      throw new Error(`Embedding API Error ${response.status}: ${errData}`);
+      throw new Error(`OpenAI API Error ${response.status}: ${errData}`);
     }
     const json = await response.json();
-    const embedding = json.embedding?.values;
+    const embedding = json.data?.[0]?.embedding;
     if (!embedding) throw new Error("No embedding returned");
     return embedding;
   } catch (error: any) {
