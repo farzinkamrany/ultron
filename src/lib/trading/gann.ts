@@ -28,9 +28,11 @@ export function calculateGannSquareOf9(pivotPrice: number, currentPrice: number 
   // 45° (0.125), 90° (0.25), 120° (0.333), 144° (0.4), 180° (0.5), 270° (0.75), 360° (1.0)
   const increments = [0.125, 0.25, 0.333, 0.4, 0.5, 0.75, 1.0];
   
+  // Normalize price to a 3-digit number (100 - 999) for consistent Gann harmonic density
   let scale = 1;
-  if (pivotPrice > 1000) scale = 100;
-  else if (pivotPrice < 1) scale = 10000;
+  let normalized = pivotPrice;
+  while (normalized < 100) { normalized *= 10; scale /= 10; }
+  while (normalized >= 1000) { normalized /= 10; scale *= 10; }
   
   const scaledPivot = pivotPrice / scale;
   const scaledCurrent = currentPrice / scale;

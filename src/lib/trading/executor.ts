@@ -15,7 +15,9 @@ import { supabase } from "@/lib/supabase";
 import { sendTelegramMessage } from "@/lib/telegram";
 import { logError } from "@/lib/logger";
 import { calculateDynamicKelly } from "./risk";
-import { evaluateSetup, Candle, SetupSignal } from "./financial-intelligence";
+import { Candle } from "./financial-intelligence";
+import { evaluateSetup } from "./strategy";
+import { TradeSignal as SetupSignal } from "./gann";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 function buildHyperliquid() {
@@ -112,7 +114,7 @@ async function broadcastVipSignal(signal: SetupSignal, livePrice: number) {
     await sendTelegramMessage(vipChannelId, msg);
   } catch (err: any) {
     console.error("[VIP Signal] LLM/Broadcast failed, falling back to standard format:", err.message);
-    const type = signal.action === "LONG" ? "🟢 LONG" : "🔴 SHORT";
+    const type = signal.action === "BUY" ? "🟢 LONG" : "🔴 SHORT";
     const msg = `💎 **ULTRON VIP SIGNAL (QUANT)** 💎\n🔹 Asset: #${signal.symbol.replace(/[^a-zA-Z0-9]/g, '')}\n🔹 Action: ${type}\n🔹 Entry: $${livePrice.toFixed(4)}\n🎯 TP: $${signal.takeProfit.toFixed(4)}\n⛔️ SL: $${signal.stopLoss.toFixed(4)}`;
     await sendTelegramMessage(vipChannelId, msg);
   }
@@ -154,10 +156,10 @@ export async function runTradingCycle(symbol: string = "BTC/USDT"): Promise<void
   const livePrice = candles15m[candles15m.length - 1].close;
   
   // Engine Evaluation
-  const signal = evaluateSetup(symbol, candles15m, candles1h);
+  const signal = evaluateSetup(symbol, livePrice, candles15m, candles1h);
   console.log(`[Quant Engine] Setup evaluated: ${signal.action}. Reason: ${signal.reason || 'Valid setup'}`);
   
-  if (signal.action === "WAIT") return;
+  if (signal.action === "HOLD") return;
 
   // Cooldown Check: Prevent revenge trading the same signal (15m OB is valid for a long time)
   const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
@@ -177,10 +179,10 @@ export async function runTradingCycle(symbol: string = "BTC/USDT"): Promise<void
     // Check concurrent trades
     const { data: openTrades } = await supabase.from("paper_trades").select("*").eq("status", "OPEN");
     if (openTrades && openTrades.length > 0) {
-      const isLongOpen = openTrades.some(t => t.position_type === "LONG");
-      const isShortOpen = openTrades.some(t => t.position_type === "SHORT");
-      if (signal.action === "LONG" && isLongOpen) return;
-      if (signal.action === "SHORT" && isShortOpen) return;
+      const isLongOpen = openTrades.some(t => t.position_type === "BUY");
+      const isShortOpen = openTrades.some(t => t.position_type === "SELL");
+      if (signal.action === "BUY" && isLongOpen) return;
+      if (signal.action === "SELL" && isShortOpen) return;
     }
 
     // 1. (Simulated) Exchange Order
@@ -237,7 +239,7 @@ export async function runTradingCycle(symbol: string = "BTC/USDT"): Promise<void
       }
       
       const amount = targetPositionUsd / livePrice;
-      const side = signal.action === "LONG" ? "buy" : "sell";
+      const side = signal.action === "BUY" ? "buy" : "sell";
       
       await exchange.loadMarkets();
       const openOrders = await exchange.fetchOpenOrders(hlSymbol);
@@ -275,7 +277,7 @@ export async function runTradingCycle(symbol: string = "BTC/USDT"): Promise<void
   }
 }
 
-export async function closeMicroPosition(symbol: string, positionType: "LONG" | "SHORT"): Promise<void> {
+export async function closeMicroPosition(symbol: string, positionType: "BUY" | "SELL"): Promise<void> {
   const mode = process.env.TRADE_MODE || "PAPER";
   if (mode !== "MICRO") return;
   const exchange = buildHyperliquid();
@@ -285,7 +287,7 @@ export async function closeMicroPosition(symbol: string, positionType: "LONG" | 
     for (const order of openOrders) {
       if (order.id) await exchange.cancelOrder(order.id, hlSymbol);
     }
-    const side = positionType === "LONG" ? "sell" : "buy";
+    const side = positionType === "BUY" ? "sell" : "buy";
     const positions = await exchange.fetchPositions([hlSymbol]);
     const pos = positions.find((p: any) => p.symbol === hlSymbol);
     if (pos && parseFloat((pos.contracts || 0).toString()) > 0) {

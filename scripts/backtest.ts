@@ -2,7 +2,7 @@ import fs from 'fs';
 import readline from 'readline';
 import { calculateGannSquareOf9 } from '../src/lib/trading/gann';
 import { findOrderBlocks } from '../src/lib/trading/ict';
-import { detectSqueeze, calculateChoppinessIndex, detectLiquiditySweep, calculateRollingVWAP, calculateVolumeProfile, synthesizeDailyCandles, detectDailyTrend, detectCandlePattern, detectCapitulation, checkEarlyExit } from '../src/lib/trading/financial-intelligence';
+import { detectSqueeze, calculateChoppinessIndex, detectLiquiditySweep, calculateRollingVWAP, calculateVolumeProfile, synthesizeDailyCandles, detectDailyTrend, detectCandlePattern, detectCapitulation, checkEarlyExit, synthesizeHourlyCandles, calculateEMA, calculateADX } from '../src/lib/trading/financial-intelligence';
 
 // HFT Backtest Config
 const INITIAL_CAPITAL = 1000;
@@ -43,15 +43,12 @@ async function runBacktest() {
     losses: 0,
     breakEvens: 0,
     totalFeesPaid: 0,
+    grossProfit: 0,
+    grossLoss: 0,
     maxDrawdown: 0,
     peakBalance: INITIAL_CAPITAL,
     lastSqueezeIndex: 0,
-    year2021: { trades: 0, wins: 0, pnl: 0 },
-    year2022: { trades: 0, wins: 0, pnl: 0 },
-    year2023: { trades: 0, wins: 0, pnl: 0 },
-    year2024: { trades: 0, wins: 0, pnl: 0 },
-    year2025: { trades: 0, wins: 0, pnl: 0 },
-    year2026: { trades: 0, wins: 0, pnl: 0 }
+    periods: {} as Record<string, { trades: number, wins: number, pnl: number }>
   };
 
   let activeTrade: any = null;
@@ -115,8 +112,8 @@ async function runBacktest() {
            activeTrade.sl = entryPrice; // Ultra-aggressive break-even
         }
         
-        if (pyramidStage === 1) {
-          activeTrade.sl = Math.max(activeTrade.sl, ema150 * 0.995);
+        if (pyramidStage > 0) {
+          activeTrade.sl = Math.max(activeTrade.sl, ema150 * 0.995); // VWAP Trailing
           if (candle.low <= activeTrade.sl) { exitPrice = activeTrade.sl; closed = true; }
         }
       } else {
@@ -136,7 +133,7 @@ async function runBacktest() {
            activeTrade.sl = entryPrice; // Ultra-aggressive break-even
         }
         
-        if (pyramidStage === 1) {
+        if (pyramidStage > 0) {
           activeTrade.sl = Math.min(activeTrade.sl, ema150 * 1.005);
           if (candle.high >= activeTrade.sl) { exitPrice = activeTrade.sl; closed = true; }
         }
@@ -148,8 +145,24 @@ async function runBacktest() {
         let totalExitVolume = 0;
         
         let riskMultiplier = 0.0025; // 0.25% default risk
-        if (activeTrade.isSqueezeAccelerated) riskMultiplier = 0.005; // 0.5% max risk
-        else if (activeTrade.isChoppy) riskMultiplier = 0.001; // 0.1% chop risk
+        
+        // KELLY CRITERION SCALING
+        if (stats.totalTrades > 50) {
+           const W = stats.wins / stats.totalTrades;
+           const avgWin = stats.wins > 0 ? (stats.grossProfit / stats.wins) : 10;
+           const avgLoss = stats.losses > 0 ? (stats.grossLoss / stats.losses) : 1;
+           let R = avgWin / (avgLoss || 1);
+           if (R < 1) R = 1;
+           const kelly = W - ((1 - W) / R);
+           if (kelly > 0) {
+               // Quarter Kelly (Conservative Scaling)
+               const optimalRisk = Math.max(0.0025, Math.min(0.02, kelly * 0.25));
+               riskMultiplier = optimalRisk;
+           }
+        }
+        
+        if (activeTrade.isSqueezeAccelerated) riskMultiplier *= 1.5; 
+        else if (activeTrade.isChoppy) riskMultiplier *= 0.5;
         
         let basePositionSize = activeTrade.balanceAtEntry * riskMultiplier / (Math.abs(entryPrice - initialSl) / entryPrice);
         
@@ -177,16 +190,22 @@ async function runBacktest() {
         stats.totalFeesPaid += (entryFee + exitFee);
         stats.totalTrades++;
         
-        if (pnl > 0) stats.wins++;
+        if (pnl > 0) {
+           stats.wins++;
+           stats.grossProfit += pnl;
+        }
         else if (pnl > -2 && pnl < 2) stats.breakEvens++; 
-        else stats.losses++;
+        else {
+           stats.losses++;
+           stats.grossLoss += Math.abs(pnl);
+        }
         
-        if (year === 2021) { stats.year2021.trades++; stats.year2021.pnl += pnl; if (pnl > 0) stats.year2021.wins++; }
-        else if (year === 2022) { stats.year2022.trades++; stats.year2022.pnl += pnl; if (pnl > 0) stats.year2022.wins++; }
-        else if (year === 2023) { stats.year2023.trades++; stats.year2023.pnl += pnl; if (pnl > 0) stats.year2023.wins++; }
-        else if (year === 2024) { stats.year2024.trades++; stats.year2024.pnl += pnl; if (pnl > 0) stats.year2024.wins++; }
-        else if (year === 2025) { stats.year2025.trades++; stats.year2025.pnl += pnl; if (pnl > 0) stats.year2025.wins++; }
-        else if (year === 2026) { stats.year2026.trades++; stats.year2026.pnl += pnl; if (pnl > 0) stats.year2026.wins++; }
+        const half = date.getMonth() < 6 ? 'H1' : 'H2';
+        const period = `${year}-${half}`;
+        if (!stats.periods[period]) stats.periods[period] = { trades: 0, wins: 0, pnl: 0 };
+        stats.periods[period].trades++;
+        stats.periods[period].pnl += pnl;
+        if (pnl > 0) stats.periods[period].wins++;
         
         if (balance < INITIAL_CAPITAL - MAX_LOSS_LIMIT) {
           console.log(`\n💥 CIRCUIT BREAKER HIT at ${date.toISOString()}! Balance: $${balance.toFixed(2)}`);
@@ -287,7 +306,7 @@ async function runBacktest() {
   }
 
   console.log(`\n============================================`);
-  console.log(`       ULTRON BACKTEST REPORT (BTC 5m HFT)`);
+  console.log(`       ULTRON BACKTEST REPORT (HFT)`);
   console.log(`============================================`);
   console.log(`Final Balance:    $${balance.toFixed(2)} (Start: $${INITIAL_CAPITAL})`);
   console.log(`Net Profit:       $${(balance - INITIAL_CAPITAL).toFixed(2)}`);
@@ -298,13 +317,13 @@ async function runBacktest() {
   console.log(`Loss Rate:        ${((stats.losses / stats.totalTrades) * 100).toFixed(2)}%`);
   console.log(`Break-Evens:      ${((stats.breakEvens / stats.totalTrades) * 100).toFixed(2)}%\n`);
   
-  [2021, 2022, 2023, 2024, 2025, 2026].forEach(y => {
-    const yStats = (stats as any)[`year${y}`];
-    if (yStats.trades > 0) {
-      console.log(`--- ${y} ---`);
-      console.log(`Trades: ${yStats.trades} | PnL: $${yStats.pnl.toFixed(2)} | Win Rate: ${((yStats.wins / yStats.trades) * 100).toFixed(2)}%\n`);
-    }
-  });
+  // Sort and print periods
+  const sortedPeriods = Object.keys(stats.periods).sort();
+  for (const period of sortedPeriods) {
+      const pStats = stats.periods[period];
+      console.log(`--- ${period} ---`);
+      console.log(`Trades: ${pStats.trades} | PnL: $${pStats.pnl.toFixed(2)} | Win Rate: ${((pStats.wins / pStats.trades) * 100).toFixed(2)}%\n`);
+  }
   console.log(`============================================\n`);
 }
 

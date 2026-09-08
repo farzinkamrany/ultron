@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
       let pnl = 0;
 
       // Check LONG positions
-      if (trade.position_type === 'LONG') {
+      if (trade.position_type === 'BUY') {
         if (currentPrice >= trade.take_profit) {
           newStatus = 'WON';
         } else if (currentPrice <= trade.stop_loss) {
@@ -61,7 +61,7 @@ export async function POST(req: NextRequest) {
         }
       } 
       // Check SHORT positions
-      else if (trade.position_type === 'SHORT') {
+      else if (trade.position_type === 'SELL') {
         if (currentPrice <= trade.take_profit) {
           newStatus = 'WON';
         } else if (currentPrice >= trade.stop_loss) {
@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
         const exitPrice = currentPrice;
         
         let percentageChange = 0;
-        if (trade.position_type === 'LONG') {
+        if (trade.position_type === 'BUY') {
           percentageChange = (exitPrice - entryPrice) / entryPrice;
         } else {
           percentageChange = (entryPrice - exitPrice) / entryPrice;
@@ -93,7 +93,7 @@ export async function POST(req: NextRequest) {
 
         // If in MICRO mode, also close the actual position on the exchange
         if (process.env.TRADE_MODE === "MICRO") {
-          await closeMicroPosition(trade.symbol, trade.position_type as "LONG" | "SHORT");
+          await closeMicroPosition(trade.symbol, trade.position_type as "BUY" | "SELL");
         }
 
         resolvedCount++;

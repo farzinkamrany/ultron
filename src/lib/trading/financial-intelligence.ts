@@ -324,3 +324,95 @@ export function checkEarlyExit(trade: any, candles: Candle[]): boolean {
   
   return false;
 }
+
+export function synthesizeHourlyCandles(candles: Candle[]): Candle[] {
+    const hourly: Candle[] = [];
+    let currentHour = -1;
+    let currentCandle: any = null;
+    
+    for (const c of candles) {
+        const hourId = Math.floor(c.timestamp / (1000 * 60 * 60));
+        if (hourId !== currentHour) {
+            if (currentCandle) hourly.push(currentCandle);
+            currentHour = hourId;
+            currentCandle = { ...c };
+        } else {
+            currentCandle.high = Math.max(currentCandle.high, c.high);
+            currentCandle.low = Math.min(currentCandle.low, c.low);
+            currentCandle.close = c.close;
+            currentCandle.volume += c.volume;
+        }
+    }
+    if (currentCandle) hourly.push(currentCandle);
+    return hourly;
+}
+
+export function calculateEMA(candles: Candle[], period: number): number {
+    if (candles.length < period) return candles[candles.length - 1]?.close || 0;
+    const k = 2 / (period + 1);
+    let ema = candles[0].close;
+    for (let i = 1; i < candles.length; i++) {
+        ema = (candles[i].close - ema) * k + ema;
+    }
+    return ema;
+}
+
+export function calculateADX(candles: Candle[], period: number = 14): number {
+    if (candles.length <= period * 2) return 0;
+    
+    let tr = 0, plusDM = 0, minusDM = 0;
+    for (let i = 1; i <= period; i++) {
+        const c = candles[i];
+        const p = candles[i-1];
+        
+        const trueRange = Math.max(c.high - c.low, Math.abs(c.high - p.close), Math.abs(c.low - p.close));
+        const upMove = c.high - p.high;
+        const downMove = p.low - c.low;
+        
+        let pDM = 0, mDM = 0;
+        if (upMove > downMove && upMove > 0) pDM = upMove;
+        if (downMove > upMove && downMove > 0) mDM = downMove;
+        
+        tr += trueRange;
+        plusDM += pDM;
+        minusDM += mDM;
+    }
+    
+    let smoothedTR = tr, smoothedPlusDM = plusDM, smoothedMinusDM = minusDM;
+    let adxSum = 0, adxCount = 0, prevAdx = 0;
+    
+    for (let i = period + 1; i < candles.length; i++) {
+        const c = candles[i];
+        const p = candles[i-1];
+        
+        const trueRange = Math.max(c.high - c.low, Math.abs(c.high - p.close), Math.abs(c.low - p.close));
+        const upMove = c.high - p.high;
+        const downMove = p.low - c.low;
+        
+        let pDM = 0, mDM = 0;
+        if (upMove > downMove && upMove > 0) pDM = upMove;
+        if (downMove > upMove && downMove > 0) mDM = downMove;
+        
+        smoothedTR = smoothedTR - (smoothedTR / period) + trueRange;
+        smoothedPlusDM = smoothedPlusDM - (smoothedPlusDM / period) + pDM;
+        smoothedMinusDM = smoothedMinusDM - (smoothedMinusDM / period) + mDM;
+        
+        if (smoothedTR === 0) continue;
+        
+        const plusDI = 100 * (smoothedPlusDM / smoothedTR);
+        const minusDI = 100 * (smoothedMinusDM / smoothedTR);
+        const dx = 100 * Math.abs(plusDI - minusDI) / (plusDI + minusDI || 1);
+        
+        if (adxCount === 0) {
+            adxSum += dx;
+            if (i >= period * 2) {
+                prevAdx = adxSum / period;
+                adxCount++;
+            }
+        } else {
+            prevAdx = ((prevAdx * (period - 1)) + dx) / period;
+        }
+    }
+    
+    return prevAdx;
+}
