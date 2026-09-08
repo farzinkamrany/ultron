@@ -60,9 +60,14 @@ async function runMegalodon() {
     const solData = await loadCSV('data/sol_15m_3years.csv', 'SOL');
     const linkData = await loadCSV('data/link_15m_4years.csv', 'LINK');
     const adaData = await loadCSV('data/ada_15m_4years.csv', 'ADA');
+    const bnbData = await loadCSV('data/bnb_15m_4years.csv', 'BNB');
+    const xrpData = await loadCSV('data/xrp_15m_4years.csv', 'XRP');
+    const dogeData = await loadCSV('data/doge_15m_4years.csv', 'DOGE');
+    const avaxData = await loadCSV('data/avax_15m_4years.csv', 'AVAX');
+    const dotData = await loadCSV('data/dot_15m_4years.csv', 'DOT');
     
     console.log("Merging and Synchronizing Timeline...");
-    const globalTimeline = [...btcData, ...ethData, ...solData, ...linkData, ...adaData].sort((a, b) => {
+    const globalTimeline = [...btcData, ...ethData, ...solData, ...linkData, ...adaData, ...bnbData, ...xrpData, ...dogeData, ...avaxData, ...dotData].sort((a, b) => {
         if (a.timestamp !== b.timestamp) return a.timestamp - b.timestamp;
         return Math.random() - 0.5;
     });
@@ -88,11 +93,8 @@ async function runMegalodon() {
     let lastTradeClosedTime = 0;
     
     const buffers: Record<string, MultiCandle[]> = {
-        'BTC': [],
-        'ETH': [],
-        'SOL': [],
-        'LINK': [],
-        'ADA': []
+        'BTC': [], 'ETH': [], 'SOL': [], 'LINK': [], 'ADA': [],
+        'BNB': [], 'XRP': [], 'DOGE': [], 'AVAX': [], 'DOT': []
     };
     
     for (let i = 0; i < globalTimeline.length; i++) {
@@ -323,7 +325,7 @@ async function runMegalodon() {
     }
     
     console.log(`\n============================================`);
-    console.log(`   MEGALODON CROSS-MARGIN BACKTEST (5 COINS)`);
+    console.log(`   MEGALODON CROSS-MARGIN BACKTEST (10 COINS)`);
     console.log(`============================================`);
     console.log(`Final Balance:    $${balance.toFixed(2)} (Start: $${INITIAL_CAPITAL})`);
     console.log(`Net Profit:       $${(balance - INITIAL_CAPITAL).toFixed(2)}`);
