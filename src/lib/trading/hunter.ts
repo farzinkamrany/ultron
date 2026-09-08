@@ -33,7 +33,7 @@ export interface HuntTrade {
  * Scans the top altcoins to find one that can hit the target profit percentage.
  * Performs a "Fast Pass" checking Gann Supports/Resistances to avoid rate limits.
  */
-export async function huntForSetup(fallbackTargetProfitPerc: number): Promise<HuntTrade | null> {
+export async function huntForSetup(fallbackTargetProfitPerc: number, openSymbols: string[] = []): Promise<HuntTrade | null> {
   const exchange = new ccxt.bybit({ enableRateLimit: true });
 
   // 1. Fetch CTO Config
@@ -54,7 +54,7 @@ export async function huntForSetup(fallbackTargetProfitPerc: number): Promise<Hu
     // === AUTONOMOUS REGIME DETECTION ===
     // We check the macro regime on BTC to decide the market mood.
     const regime = await detectMarketRegime('BTC/USDT');
-    const activeAssets = regime === 'CALM' ? BEAST_MODE_SYMBOLS : SHIELD_MODE_SYMBOLS;
+    const activeAssets = (regime === 'CALM' ? BEAST_MODE_SYMBOLS : SHIELD_MODE_SYMBOLS).filter(sym => !openSymbols.includes(sym));
     const targetTF = regime === 'CALM' ? BEAST_MODE_TF : SHIELD_MODE_TF;
 
     // === FAST PASS: GANN & R:R FILTER ===
@@ -96,9 +96,9 @@ export async function huntForSetup(fallbackTargetProfitPerc: number): Promise<Hu
       const distanceToResPerc = (closestResistance - currentPrice) / currentPrice;
 
       if (longRR >= 2.0 && distanceToSupportPerc <= slBuffer) {
-        candidates.push({ asset, action: 'BUY', currentPrice, tp: longTP, sl: longSL, rr: longRR });
+        candidates.push({ asset, action: 'BUY', currentPrice, tp: longTP, sl: longSL, rr: longRR, closestSupport, closestResistance });
       } else if (shortRR >= 2.0 && distanceToResPerc <= slBuffer) {
-        candidates.push({ asset, action: 'SELL', currentPrice, tp: shortTP, sl: shortSL, rr: shortRR });
+        candidates.push({ asset, action: 'SELL', currentPrice, tp: shortTP, sl: shortSL, rr: shortRR, closestSupport, closestResistance });
       }
     }
 
@@ -150,16 +150,38 @@ export async function huntForSetup(fallbackTargetProfitPerc: number): Promise<Hu
           volume: c[5] as number
         }));
 
+        let trSum = 0;
+        for (let i = Math.max(1, candles.length - 14); i < candles.length; i++) {
+          const c = candles[i];
+          const prevC = candles[i - 1];
+          const tr = Math.max(c.high - c.low, Math.abs(c.high - prevC.close), Math.abs(c.low - prevC.close));
+          trSum += tr;
+        }
+        const atr = trSum / Math.min(14, candles.length - 1);
+        const atrPadding = atr * 1.5;
+
         const { findOrderBlocks } = await import('./ict');
         const obs = findOrderBlocks(candles);
 
         if (candidate.action === 'BUY') {
+          if (isReversalWindow) {
+             console.log(`[Hunter] Rejected ${candidate.asset} BUY: TIME REVERSAL ACTIVE.`);
+             continue;
+          }
           if (downwardAngles.position.includes('BELOW 2x1')) {
             console.log(`[Hunter] Rejected ${candidate.asset} BUY: Freefall downward angle.`);
             continue;
           }
+
+          const finalSL = candidate.closestSupport - atrPadding;
+          const finalRR = (candidate.tp - candidate.currentPrice) / (candidate.currentPrice - finalSL);
+
+          if (finalRR < 1.5) {
+             console.log(`[Hunter] Rejected ${candidate.asset} BUY: R:R dropped to ${finalRR.toFixed(2)} after ATR padding.`);
+             continue;
+          }
+
           if (upwardAngles.position.includes('ABOVE')) gannContext += ' | Upward Gann Angle';
-          if (isReversalWindow) gannContext += ' | TIME REVERSAL';
           if (cosmos.planetaryAspect) gannContext += ` | ${cosmos.planetaryAspect}`;
 
           const validOB = obs.find(ob => ob.type === 'BULLISH_OB' && ob.sweptLiquidity && candidate.currentPrice <= ob.top * 1.001 && candidate.currentPrice >= ob.bottom * 0.999);
@@ -169,18 +191,30 @@ export async function huntForSetup(fallbackTargetProfitPerc: number): Promise<Hu
               action: 'BUY',
               entryPrice: candidate.currentPrice,
               targetPrice: candidate.tp,
-              stopLoss: candidate.sl,
-              execution_context: `R:R=${candidate.rr.toFixed(2)} | SMC_OB_Swept_Mitigated${gannContext}`
+              stopLoss: finalSL,
+              execution_context: `R:R=${finalRR.toFixed(2)} | SMC_OB_Swept_Mitigated${gannContext}`
             };
             break; // Found the best trade, stop checking
           }
         } else {
+          if (isReversalWindow) {
+             console.log(`[Hunter] Rejected ${candidate.asset} SELL: TIME REVERSAL ACTIVE.`);
+             continue;
+          }
           if (upwardAngles.position.includes('ABOVE 2x1')) {
             console.log(`[Hunter] Rejected ${candidate.asset} SELL: Extreme Bullish upward angle.`);
             continue;
           }
+
+          const finalSL = candidate.closestResistance + atrPadding;
+          const finalRR = (candidate.currentPrice - candidate.tp) / (finalSL - candidate.currentPrice);
+
+          if (finalRR < 1.5) {
+             console.log(`[Hunter] Rejected ${candidate.asset} SELL: R:R dropped to ${finalRR.toFixed(2)} after ATR padding.`);
+             continue;
+          }
+
           if (downwardAngles.position.includes('BELOW')) gannContext += ' | Downward Gann Angle';
-          if (isReversalWindow) gannContext += ' | TIME REVERSAL';
           if (cosmos.planetaryAspect) gannContext += ` | ${cosmos.planetaryAspect}`;
 
           const validOB = obs.find(ob => ob.type === 'BEARISH_OB' && ob.sweptLiquidity && candidate.currentPrice >= ob.bottom * 0.999 && candidate.currentPrice <= ob.top * 1.001);
@@ -190,8 +224,8 @@ export async function huntForSetup(fallbackTargetProfitPerc: number): Promise<Hu
               action: 'SELL',
               entryPrice: candidate.currentPrice,
               targetPrice: candidate.tp,
-              stopLoss: candidate.sl,
-              execution_context: `R:R=${candidate.rr.toFixed(2)} | SMC_OB_Swept_Mitigated${gannContext}`
+              stopLoss: finalSL,
+              execution_context: `R:R=${finalRR.toFixed(2)} | SMC_OB_Swept_Mitigated${gannContext}`
             };
             break; // Found the best trade, stop checking
           }

@@ -47,14 +47,29 @@ export async function POST(request: NextRequest) {
     }
 
     // 1.2 CORRELATION FILTER (Max 3 Open Trades)
-    const { count: openTradesCount, error: countError } = await supabase
+    const { data: openTrades, error: countError } = await supabase
       .from('paper_trades')
-      .select('*', { count: 'exact', head: true })
+      .select('symbol, status')
       .eq('status', 'OPEN');
       
-    if (openTradesCount && openTradesCount >= 3) {
+    if (openTrades && openTrades.length >= 3) {
       console.log("[SHIELD PROTOCOL] Correlation Filter Active: Already have 3 open trades. Skipping hunt.");
       return NextResponse.json({ message: 'SHIELD PROTOCOL: CORRELATION FILTER ACTIVE - MAX TRADES REACHED' });
+    }
+
+    const openSymbols = openTrades ? openTrades.map(t => t.symbol) : [];
+
+    // 1.3 CIRCUIT BREAKER (3 Consecutive Losses)
+    const { data: recentTrades } = await supabase
+      .from('paper_trades')
+      .select('status')
+      .in('status', ['WON', 'LOST'])
+      .order('created_at', { ascending: false })
+      .limit(3);
+
+    if (recentTrades && recentTrades.length >= 3 && recentTrades.every(t => t.status === 'LOST')) {
+      console.error("[SHIELD PROTOCOL] 3 Consecutive Losses hit. Halting trading for cool down.");
+      return NextResponse.json({ message: 'SHIELD PROTOCOL: 3 CONSECUTIVE LOSSES - TRADING HALTED' });
     }
 
     // 1.5 LIQUIDITY CEILING DETECTOR (Protocol V13.0)
@@ -67,7 +82,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 2. Hunt for a setup with at least 3% profit potential
-    const tradeSetup = await huntForSetup(3.0);
+    const tradeSetup = await huntForSetup(3.0, openSymbols);
     const chatId = process.env.TELEGRAM_CHAT_ID;
 
     if (!chatId) {
