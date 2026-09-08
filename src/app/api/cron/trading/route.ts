@@ -13,17 +13,22 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const symbol = "BTC/USDT";
+    const symbols = ["BTC/USDT", "ETH/USDT", "SOL/USDT", "LINK/USDT", "ADA/USDT", "BNB/USDT", "XRP/USDT", "DOGE/USDT", "AVAX/USDT", "DOT/USDT"];
     
-    console.log(`[Trading Engine] Initiating Pure Quant cycle for ${symbol}...`);
+    console.log(`[Trading Engine] Sweeping 10-coin pool...`);
     
-    // The executor now handles fetching data, evaluating SMC+Gann, and synchronous execution
-    await runTradingCycle(symbol);
+    for (const sym of symbols) {
+       console.log(`[Trading Engine] Checking ${sym}...`);
+       try {
+         await runTradingCycle(sym);
+       } catch (err: any) {
+         console.error(`[Trading Engine] Error on ${sym}: ${err.message}`);
+       }
+    }
 
     return NextResponse.json({ 
       ok: true, 
-      symbol, 
-      message: "Trading cycle completed."
+      message: "10-Coin sweep completed."
     });
   } catch (error: any) {
     await logError("API_TRADING", error, {}, true);
