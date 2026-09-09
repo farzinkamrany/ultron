@@ -56,19 +56,19 @@ async function loadCSV(filePath: string, symbol: string): Promise<MultiCandle[]>
 
 async function runMegalodon() {
     console.log("Loading Multiple Assets...");
-    const btcData = await loadCSV('data/btc_15m_2022.csv', 'BTC');
-    const ethData = await loadCSV('data/eth_15m_2022.csv', 'ETH');
-    const solData = await loadCSV('data/sol_15m_2022.csv', 'SOL');
-    const linkData = await loadCSV('data/link_15m_2022.csv', 'LINK');
-    const adaData = await loadCSV('data/ada_15m_2022.csv', 'ADA');
-    const bnbData = await loadCSV('data/bnb_15m_2022.csv', 'BNB');
-    const xrpData = await loadCSV('data/xrp_15m_2022.csv', 'XRP');
-    const dogeData = await loadCSV('data/doge_15m_2022.csv', 'DOGE');
-    const avaxData = await loadCSV('data/avax_15m_2022.csv', 'AVAX');
-    const dotData = await loadCSV('data/dot_15m_2022.csv', 'DOT');
+    const btcData = await loadCSV('data/btc_15m_history.csv', 'BTC');
+    const ethData = await loadCSV('data/eth_15m_history.csv', 'ETH');
+    const solData = await loadCSV('data/sol_15m_history.csv', 'SOL');
+    const linkData = await loadCSV('data/link_15m_history.csv', 'LINK');
+    const adaData = await loadCSV('data/ada_15m_history.csv', 'ADA');
+    const bnbData = await loadCSV('data/bnb_15m_history.csv', 'BNB');
+    const xrpData = await loadCSV('data/xrp_15m_history.csv', 'XRP');
+    const dogeData = await loadCSV('data/doge_15m_history.csv', 'DOGE');
+    const avaxData = await loadCSV('data/avax_15m_history.csv', 'AVAX');
+    const dotData = await loadCSV('data/dot_15m_history.csv', 'DOT');
     
     console.log("Merging and Synchronizing Timeline...");
-    const START_TIMESTAMP = 1640995200000; // Jan 1, 2022
+    const START_TIMESTAMP = 1704067200000; // Jan 1, 2024
     const globalTimeline = [...btcData, ...ethData, ...solData, ...linkData, ...adaData, ...bnbData, ...xrpData, ...dogeData, ...avaxData, ...dotData]
     .filter(c => c.timestamp >= START_TIMESTAMP)
     .sort((a, b) => {
@@ -191,7 +191,7 @@ async function runMegalodon() {
                 let totalExitVolume = 0;
                 
                 let baseRisk = 0.01;
-                let maxKellyRisk = 0.05;
+                let maxKellyRisk = 0.02; // Reduced from 0.05
                 let leverage = 15;
                 
                 if (activeTrade.balanceAtEntry >= 400000) {
@@ -280,7 +280,7 @@ async function runMegalodon() {
         }
         
         // TRIGGER LOGIC
-        if (Object.keys(activeTrades).length >= 5) continue; // Max 5 concurrent trades
+        if (Object.keys(activeTrades).length >= 3) continue; // Max 3 concurrent trades for lower drawdown
         const lastClose = lastTradeClosedTime[symbol] || 0;
         if (timestamp - lastClose < 1000 * 60 * 15) continue; // Cooldown
         
