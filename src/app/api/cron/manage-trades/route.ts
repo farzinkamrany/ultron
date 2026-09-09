@@ -55,13 +55,11 @@ export async function GET(req: NextRequest) {
     
     await exchange.loadMarkets();
     
-    // Convert symbols to Hyperliquid format
     const symbols = [...new Set(openTrades.map(t => t.symbol))];
-    const hlSymbols = symbols.map(s => s.includes('/USDT') ? s.replace('/USDT', '/USDC:USDC') : s);
     
     let tickers: any = {};
     try {
-        tickers = await exchange.fetchTickers(hlSymbols);
+        tickers = await exchange.fetchTickers(symbols);
     } catch (err: any) {
         console.warn(`[Manage Trades] Failed to fetch tickers in bulk: ${err.message}. Falling back to fetchAll.`);
         tickers = await exchange.fetchTickers();
@@ -78,9 +76,9 @@ export async function GET(req: NextRequest) {
     
     // Fetch 15m candles for ATR 14 Trailing Stop
     const atrCache: Record<string, number> = {};
-    for (const hlSymbol of hlSymbols) {
+    for (const symbol of symbols) {
        try {
-          const ohlcv = await exchange.fetchOHLCV(hlSymbol, '15m', undefined, 15);
+          const ohlcv = await exchange.fetchOHLCV(symbol, '15m', undefined, 15);
           if (ohlcv.length >= 15) {
             let trSum = 0;
             for (let i = 1; i < ohlcv.length; i++) {
@@ -91,10 +89,10 @@ export async function GET(req: NextRequest) {
                const tr = Math.max(cHigh - cLow, Math.abs(cHigh - pClose), Math.abs(cLow - pClose));
                trSum += tr;
             }
-            atrCache[hlSymbol] = trSum / 14;
+            atrCache[symbol] = trSum / 14;
           }
        } catch (err) {
-          console.error(`[Manage Trades] Failed to fetch OHLCV for ${hlSymbol}:`, err);
+          console.error(`[Manage Trades] Failed to fetch OHLCV for ${symbol}:`, err);
        }
     }
 
@@ -103,8 +101,8 @@ export async function GET(req: NextRequest) {
     const newTradesToInsert: any[] = [];
 
     for (const trade of openTrades) {
-      const hlSymbol = trade.symbol.includes('/USDT') ? trade.symbol.replace('/USDT', '/USDC:USDC') : trade.symbol;
-      const ticker = tickers[hlSymbol];
+      const symbol = trade.symbol;
+      const ticker = tickers[symbol];
       if (!ticker || !ticker.last) continue;
 
       const currentPrice = ticker.last;
@@ -121,29 +119,30 @@ export async function GET(req: NextRequest) {
       let contracts = 1000 / trade.entry_price; // Default virtual size for PAPER
 
       if (tradeMode === 'MICRO') {
-        // MICRO MODE: Verify if position still exists on exchange
-        const pos = livePositions.find(p => p.symbol === hlSymbol);
-        const actualContracts = pos ? parseFloat((pos.contracts || 0).toString()) : 0;
-        
-        if (actualContracts === 0) {
-          // Position closed by exchange hitting Stop Loss
-          newStatus = 'CLOSED';
-          closedAt = new Date().toISOString();
+        if (livePositions.length > 0) {
+          const pos = livePositions.find(p => p.symbol === symbol);
+          const actualContracts = pos ? parseFloat((pos.contracts || 0).toString()) : 0;
           
-          const distToSL = Math.abs(currentPrice - trade.stop_loss);
-          const distToTP = Math.abs(currentPrice - trade.take_profit);
+          if (actualContracts === 0) {
+            // Position closed by exchange hitting Stop Loss
+            newStatus = 'CLOSED';
+            closedAt = new Date().toISOString();
+            
+            const distToSL = Math.abs(currentPrice - trade.stop_loss);
+            const distToTP = Math.abs(currentPrice - trade.take_profit);
 
-          if (distToTP < distToSL) {
-            newStatus = 'WON';
-            pnl = trade.position_type === 'BUY' ? (trade.take_profit - trade.entry_price) * contracts : (trade.entry_price - trade.take_profit) * contracts;
+            if (distToTP < distToSL) {
+              newStatus = 'WON';
+              pnl = trade.position_type === 'BUY' ? (trade.take_profit - trade.entry_price) * contracts : (trade.entry_price - trade.take_profit) * contracts;
+            } else {
+              newStatus = 'LOST';
+              pnl = trade.position_type === 'BUY' ? (trade.stop_loss - trade.entry_price) * contracts : (trade.entry_price - trade.stop_loss) * contracts;
+            }
+            console.log(`[Manage Trades] MICRO trade ${trade.symbol} closed on exchange. Marked as ${newStatus}. PnL: ${pnl}`);
           } else {
-            newStatus = 'LOST';
-            pnl = trade.position_type === 'BUY' ? (trade.stop_loss - trade.entry_price) * contracts : (trade.entry_price - trade.stop_loss) * contracts;
+            // Position is open, assign real size for logic
+            contracts = Math.abs(actualContracts);
           }
-          console.log(`[Manage Trades] MICRO trade ${trade.symbol} closed on exchange. Marked as ${newStatus}. PnL: ${pnl}`);
-        } else {
-          // Position is open, assign real size for logic
-          contracts = Math.abs(actualContracts);
         }
       }
 
@@ -158,9 +157,9 @@ export async function GET(req: NextRequest) {
           } else {
             const distanceToTp = trade.take_profit - trade.entry_price;
             // Stage 3: 100% Mark (TP Extension & ATR Trailing)
-            if (currentPrice >= trade.take_profit) {
+            if (currentPrice > trade.entry_price * 1.005) { // 0.5% in profit
               if (defconLevel === 0) {
-                const atr = atrCache[hlSymbol];
+                const atr = atrCache[symbol];
                 if (atr) {
                   const chandelierLong = currentPrice - (atr * 2);
                   newStopLoss = Math.max(trade.stop_loss, chandelierLong);
@@ -188,9 +187,9 @@ export async function GET(req: NextRequest) {
           } else {
             const distanceToTp = trade.entry_price - trade.take_profit;
             // Stage 3: 100% Mark (TP Extension & ATR Trailing)
-            if (currentPrice <= trade.take_profit) {
+            if (currentPrice < trade.entry_price * 0.995) { // 0.5% in profit
               if (defconLevel === 0) {
-                const atr = atrCache[hlSymbol];
+                const atr = atrCache[symbol];
                 if (atr) {
                   const chandelierShort = currentPrice + (atr * 2);
                   newStopLoss = Math.min(trade.stop_loss, chandelierShort);
@@ -219,14 +218,14 @@ export async function GET(req: NextRequest) {
         if (tradeMode === 'MICRO' && newStopLoss !== trade.stop_loss && newStatus === trade.status) {
           try {
             // Cancel old stop-loss
-            const openOrders = await exchange.fetchOpenOrders(hlSymbol);
+            const openOrders = await exchange.fetchOpenOrders(symbol);
             for (const o of openOrders) {
-               if (o.id) await exchange.cancelOrder(o.id, hlSymbol);
+               if (o.id) await exchange.cancelOrder(o.id, symbol);
             }
             // Create new trailing stop-loss
             const side = (trade.position_type === 'BUY' || trade.position_type === 'LONG') ? 'sell' : 'buy';
-            await exchange.createOrder(hlSymbol, 'market', side, contracts, undefined, { triggerPrice: newStopLoss, reduceOnly: true });
-            console.log(`[Manage Trades] Trailed Hyperliquid Stop Loss for ${trade.symbol} to ${newStopLoss}`);
+            await exchange.createOrder(symbol, 'market', side, contracts, undefined, { triggerPrice: newStopLoss, reduceOnly: true });
+            console.log(`[Manage Trades] Trailed Stop Loss for ${trade.symbol} to ${newStopLoss}`);
           } catch (err) {
             console.error(`[Manage Trades] Failed to trail Hyperliquid order for ${trade.symbol}`, err);
           }
