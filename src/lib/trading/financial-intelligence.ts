@@ -283,8 +283,8 @@ export async function detectCapitulation(candles: Candle[], symbol: string, look
           const exchange = new ccxt.kucoin();
           const trades = await exchange.fetchTrades(symbol, undefined, 500); // last 500 trades
           for (const t of trades) {
-              if (t.side === 'buy') cvd += (t.amount * t.price);
-              if (t.side === 'sell') cvd -= (t.amount * t.price);
+              if (t.side === 'buy') cvd += ((t.amount || 0) * (t.price || 0));
+              if (t.side === 'sell') cvd -= ((t.amount || 0) * (t.price || 0));
           }
       } catch (e) {
           console.warn(`[Tape Reading] Failed to fetch trades for ${symbol}. Bypassing CVD check.`);

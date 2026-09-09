@@ -32,7 +32,7 @@ export async function getTopVolatileSymbols(): Promise<string[]> {
             .sort((a, b) => Math.abs(b.percentage || 0) - Math.abs(a.percentage || 0))
             .slice(0, 10);
 
-        const symbols = volatileTickers.map(t => t.symbol);
+        const symbols = volatileTickers.map(t => t.symbol as string);
         
         // Always ensure BTC and ETH are included for stability
         if (!symbols.includes('BTC/USDT')) symbols[9] = 'BTC/USDT';

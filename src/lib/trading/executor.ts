@@ -20,7 +20,7 @@ import { evaluateSetup } from "./strategy";
 import { TradeSignal as SetupSignal } from "./gann";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-function buildHyperliquid() {
+export function buildHyperliquid() {
   const exchange = new ccxt.hyperliquid({
     walletAddress: process.env.HYPERLIQUID_WALLET_ADDRESS || "",
     privateKey: process.env.HYPERLIQUID_PRIVATE_KEY || "",

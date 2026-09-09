@@ -53,10 +53,19 @@ export async function GET(req: NextRequest) {
     });
     exchange.setSandboxMode(true); // Testnet
     
+    await exchange.loadMarkets();
+    
     // Convert symbols to Hyperliquid format
     const symbols = [...new Set(openTrades.map(t => t.symbol))];
     const hlSymbols = symbols.map(s => s.includes('/USDT') ? s.replace('/USDT', '/USDC:USDC') : s);
-    const tickers = await exchange.fetchTickers(hlSymbols);
+    
+    let tickers: any = {};
+    try {
+        tickers = await exchange.fetchTickers(hlSymbols);
+    } catch (err: any) {
+        console.warn(`[Manage Trades] Failed to fetch tickers in bulk: ${err.message}. Falling back to fetchAll.`);
+        tickers = await exchange.fetchTickers();
+    }
 
     let livePositions: any[] = [];
     if (tradeMode === 'MICRO') {
@@ -111,10 +120,10 @@ export async function GET(req: NextRequest) {
       const MAX_TRADE_HOURS = 16; // 16 hours max holding time for better liquidity flow
       
       if (tradeAgeHours >= MAX_TRADE_HOURS) {
-        newStatus = trade.position_type === 'LONG' 
+        newStatus = trade.position_type === 'BUY' 
             ? (currentPrice > trade.entry_price ? 'WON' : 'LOST')
             : (currentPrice < trade.entry_price ? 'WON' : 'LOST');
-        pnl = trade.position_type === 'LONG' ? (currentPrice - trade.entry_price) : (trade.entry_price - currentPrice);
+        pnl = trade.position_type === 'BUY' ? (currentPrice - trade.entry_price) : (trade.entry_price - currentPrice);
         newRationale = newRationale + ` | TIMEOUT (Forced close after ${MAX_TRADE_HOURS}h)`;
         closedAt = new Date().toISOString();
         console.log(`[Manage Trades] Trade ${trade.symbol} timed out after ${MAX_TRADE_HOURS}h. Forced closed at ${currentPrice}`);
@@ -133,7 +142,7 @@ export async function GET(req: NextRequest) {
           const distToTP = Math.abs(currentPrice - trade.take_profit);
           if (distToTP < distToSL) {
             newStatus = 'WON';
-            pnl = trade.position_type === 'LONG' ? (trade.take_profit - trade.entry_price) : (trade.entry_price - trade.take_profit);
+            pnl = trade.position_type === 'BUY' ? (trade.take_profit - trade.entry_price) : (trade.entry_price - trade.take_profit);
           } else {
             newStatus = 'LOST';
             pnl = -Math.abs(trade.entry_price - trade.stop_loss);
@@ -146,7 +155,7 @@ export async function GET(req: NextRequest) {
         }
       } else {
         // PAPER MODE: Simulate exact hits and pyramiding
-        if (trade.position_type === 'LONG') {
+        if (trade.position_type === 'BUY') {
           if (currentPrice <= trade.stop_loss) {
             newStatus = trade.stop_loss > trade.entry_price ? 'WON' : 'LOST';
             pnl = trade.stop_loss > trade.entry_price 
@@ -164,11 +173,11 @@ export async function GET(req: NextRequest) {
               if (defconLevel === 0 && !newRationale.includes('T1')) {
                 newRationale += ' | Asymmetric Pyramid T1';
                 newTradesToInsert.push({
-                  symbol: trade.symbol, position_type: 'LONG', entry_price: currentPrice,
+                  symbol: trade.symbol, position_type: 'BUY', entry_price: currentPrice,
                   take_profit: trade.take_profit, stop_loss: newStopLoss, status: 'OPEN', rationale: 'Pyramid T1 Asymmetric Scale-In (Risking Unrealized PnL)', pnl: 0
                 });
                 newTradesToInsert.push({
-                  symbol: trade.symbol, position_type: 'LONG', entry_price: currentPrice,
+                  symbol: trade.symbol, position_type: 'BUY', entry_price: currentPrice,
                   take_profit: trade.take_profit, stop_loss: newStopLoss, status: 'OPEN', rationale: 'Pyramid T1 Asymmetric Scale-In 2x (Aggressive Trend)', pnl: 0
                 });
               }
@@ -179,11 +188,11 @@ export async function GET(req: NextRequest) {
               if (defconLevel === 0 && !newRationale.includes('T2')) {
                 newRationale += ' | Asymmetric Pyramid T2';
                 newTradesToInsert.push({
-                  symbol: trade.symbol, position_type: 'LONG', entry_price: currentPrice,
+                  symbol: trade.symbol, position_type: 'BUY', entry_price: currentPrice,
                   take_profit: trade.take_profit, stop_loss: newStopLoss, status: 'OPEN', rationale: 'Pyramid T2 Asymmetric Scale-In (Risking Unrealized PnL)', pnl: 0
                 });
                 newTradesToInsert.push({
-                  symbol: trade.symbol, position_type: 'LONG', entry_price: currentPrice,
+                  symbol: trade.symbol, position_type: 'BUY', entry_price: currentPrice,
                   take_profit: trade.take_profit, stop_loss: newStopLoss, status: 'OPEN', rationale: 'Pyramid T2 Asymmetric Scale-In 2x (Aggressive Trend)', pnl: 0
                 });
               }
@@ -232,11 +241,11 @@ export async function GET(req: NextRequest) {
               if (defconLevel === 0 && !newRationale.includes('T1')) {
                 newRationale += ' | Asymmetric Pyramid T1';
                 newTradesToInsert.push({
-                  symbol: trade.symbol, position_type: 'SHORT', entry_price: currentPrice,
+                  symbol: trade.symbol, position_type: 'SELL', entry_price: currentPrice,
                   take_profit: trade.take_profit, stop_loss: newStopLoss, status: 'OPEN', rationale: 'Pyramid T1 Asymmetric Scale-In (Risking Unrealized PnL)', pnl: 0
                 });
                 newTradesToInsert.push({
-                  symbol: trade.symbol, position_type: 'SHORT', entry_price: currentPrice,
+                  symbol: trade.symbol, position_type: 'SELL', entry_price: currentPrice,
                   take_profit: trade.take_profit, stop_loss: newStopLoss, status: 'OPEN', rationale: 'Pyramid T1 Asymmetric Scale-In 2x (Aggressive Trend)', pnl: 0
                 });
               }
@@ -247,11 +256,11 @@ export async function GET(req: NextRequest) {
               if (defconLevel === 0 && !newRationale.includes('T2')) {
                 newRationale += ' | Asymmetric Pyramid T2';
                 newTradesToInsert.push({
-                  symbol: trade.symbol, position_type: 'SHORT', entry_price: currentPrice,
+                  symbol: trade.symbol, position_type: 'SELL', entry_price: currentPrice,
                   take_profit: trade.take_profit, stop_loss: newStopLoss, status: 'OPEN', rationale: 'Pyramid T2 Asymmetric Scale-In (Risking Unrealized PnL)', pnl: 0
                 });
                 newTradesToInsert.push({
-                  symbol: trade.symbol, position_type: 'SHORT', entry_price: currentPrice,
+                  symbol: trade.symbol, position_type: 'SELL', entry_price: currentPrice,
                   take_profit: trade.take_profit, stop_loss: newStopLoss, status: 'OPEN', rationale: 'Pyramid T2 Asymmetric Scale-In 2x (Aggressive Trend)', pnl: 0
                 });
               }
