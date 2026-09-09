@@ -67,18 +67,22 @@ export async function GET(req: NextRequest) {
       }
     }
     
-    // Fetch 15m candles for EMA 50 Trailing Stop
-    const ema50Cache: Record<string, number> = {};
+    // Fetch 15m candles for ATR 14 Trailing Stop
+    const atrCache: Record<string, number> = {};
     for (const hlSymbol of hlSymbols) {
        try {
-          const ohlcv = await exchange.fetchOHLCV(hlSymbol, '15m', undefined, 50);
-          if (ohlcv.length >= 50) {
-            const k = 2 / (50 + 1);
-            let ema = ohlcv[0][4] as number;
+          const ohlcv = await exchange.fetchOHLCV(hlSymbol, '15m', undefined, 15);
+          if (ohlcv.length >= 15) {
+            let trSum = 0;
             for (let i = 1; i < ohlcv.length; i++) {
-               ema = ((ohlcv[i][4] as number) * k) + (ema * (1 - k));
+               const cHigh = ohlcv[i][2] as number;
+               const cLow = ohlcv[i][3] as number;
+               const cClose = ohlcv[i][4] as number;
+               const pClose = ohlcv[i-1][4] as number;
+               const tr = Math.max(cHigh - cLow, Math.abs(cHigh - pClose), Math.abs(cLow - pClose));
+               trSum += tr;
             }
-            ema50Cache[hlSymbol] = ema;
+            atrCache[hlSymbol] = trSum / 14;
           }
        } catch (err) {
           console.error(`[Manage Trades] Failed to fetch OHLCV for ${hlSymbol}:`, err);
@@ -187,13 +191,14 @@ export async function GET(req: NextRequest) {
             // Stage 3: 100% Mark (TP Extension & EMA Trailing)
             else if (currentPrice >= trade.take_profit) {
               if (defconLevel === 0) {
-                const ema50 = ema50Cache[hlSymbol];
-                if (ema50) {
-                  // Advanced Trailing Stop using EMA 50 (Lazy Trailing at 0.99 to breathe)
-                  newStopLoss = Math.max(trade.stop_loss, ema50 * 0.99);
+                const atr = atrCache[hlSymbol];
+                if (atr) {
+                  // Advanced Trailing Stop using Chandelier Exit (ATR * 2)
+                  const chandelierLong = currentPrice - (atr * 2);
+                  newStopLoss = Math.max(trade.stop_loss, chandelierLong);
                   newTakeProfit = currentPrice * 1.5; // Push TP way up
-                  if (!newRationale.includes('EMA_TRAIL')) {
-                     newRationale += ' | EMA_TRAIL (Riding the trend)';
+                  if (!newRationale.includes('ATR_TRAIL')) {
+                     newRationale += ' | ATR_TRAIL (Riding the trend)';
                      // We don't insert a new trade, we just ride this one to the moon
                   }
                 } else {
@@ -254,13 +259,14 @@ export async function GET(req: NextRequest) {
             // Stage 3: 100% Mark (TP Extension & EMA Trailing)
             else if (currentPrice <= trade.take_profit) {
               if (defconLevel === 0) {
-                const ema50 = ema50Cache[hlSymbol];
-                if (ema50) {
-                  // Advanced Trailing Stop using EMA 50 (Lazy Trailing at 1.01 to breathe)
-                  newStopLoss = Math.min(trade.stop_loss, ema50 * 1.01);
+                const atr = atrCache[hlSymbol];
+                if (atr) {
+                  // Advanced Trailing Stop using Chandelier Exit (ATR * 2)
+                  const chandelierShort = currentPrice + (atr * 2);
+                  newStopLoss = Math.min(trade.stop_loss, chandelierShort);
                   newTakeProfit = currentPrice * 0.5; // Push TP way down
-                  if (!newRationale.includes('EMA_TRAIL')) {
-                     newRationale += ' | EMA_TRAIL (Riding the trend)';
+                  if (!newRationale.includes('ATR_TRAIL')) {
+                     newRationale += ' | ATR_TRAIL (Riding the trend)';
                   }
                 } else {
                   newStopLoss = trade.take_profit + (distanceToTp * 0.2);

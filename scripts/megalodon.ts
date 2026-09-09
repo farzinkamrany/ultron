@@ -17,6 +17,7 @@ interface MultiCandle {
 const INITIAL_CAPITAL = 1000;
 const MAX_LOSS_LIMIT = 900;
 const MAKER_FEE = 0.0001;
+const HARD_POSITION_CAP = 1000000; // $1 Million liquidity cap
 
 function calculateATR(candles: any[], period: number = 14): number {
     if (candles.length < period + 1) return 0;
@@ -55,19 +56,19 @@ async function loadCSV(filePath: string, symbol: string): Promise<MultiCandle[]>
 
 async function runMegalodon() {
     console.log("Loading Multiple Assets...");
-    const btcData = await loadCSV('data/btc_15m_4years.csv', 'BTC');
-    const ethData = await loadCSV('data/eth_15m_4years.csv', 'ETH');
-    const solData = await loadCSV('data/sol_15m_3years.csv', 'SOL');
-    const linkData = await loadCSV('data/link_15m_4years.csv', 'LINK');
-    const adaData = await loadCSV('data/ada_15m_4years.csv', 'ADA');
-    const bnbData = await loadCSV('data/bnb_15m_4years.csv', 'BNB');
-    const xrpData = await loadCSV('data/xrp_15m_4years.csv', 'XRP');
-    const dogeData = await loadCSV('data/doge_15m_4years.csv', 'DOGE');
-    const avaxData = await loadCSV('data/avax_15m_4years.csv', 'AVAX');
-    const dotData = await loadCSV('data/dot_15m_4years.csv', 'DOT');
+    const btcData = await loadCSV('data/btc_15m_2022.csv', 'BTC');
+    const ethData = await loadCSV('data/eth_15m_2022.csv', 'ETH');
+    const solData = await loadCSV('data/sol_15m_2022.csv', 'SOL');
+    const linkData = await loadCSV('data/link_15m_2022.csv', 'LINK');
+    const adaData = await loadCSV('data/ada_15m_2022.csv', 'ADA');
+    const bnbData = await loadCSV('data/bnb_15m_2022.csv', 'BNB');
+    const xrpData = await loadCSV('data/xrp_15m_2022.csv', 'XRP');
+    const dogeData = await loadCSV('data/doge_15m_2022.csv', 'DOGE');
+    const avaxData = await loadCSV('data/avax_15m_2022.csv', 'AVAX');
+    const dotData = await loadCSV('data/dot_15m_2022.csv', 'DOT');
     
     console.log("Merging and Synchronizing Timeline...");
-    const START_TIMESTAMP = 1609459200000; // Jan 1, 2021
+    const START_TIMESTAMP = 1640995200000; // Jan 1, 2022
     const globalTimeline = [...btcData, ...ethData, ...solData, ...linkData, ...adaData, ...bnbData, ...xrpData, ...dogeData, ...avaxData, ...dotData]
     .filter(c => c.timestamp >= START_TIMESTAMP)
     .sort((a, b) => {
@@ -91,6 +92,7 @@ async function runMegalodon() {
         grossProfit: 0,
         grossLoss: 0,
         maxDrawdown: 0,
+        maxDrawdownPercent: 0,
         peakBalance: INITIAL_CAPITAL,
         periods: {} as Record<string, { trades: number, wins: number, pnl: number }>,
         symbolStats: {} as Record<string, { trades: number, pnl: number }>
@@ -124,17 +126,24 @@ async function runMegalodon() {
             if (balance > stats.peakBalance) stats.peakBalance = balance;
             const drawdown = stats.peakBalance - balance;
             if (drawdown > stats.maxDrawdown) stats.maxDrawdown = drawdown;
+            const drawdownPercent = (drawdown / stats.peakBalance) * 100;
+            if (drawdownPercent > stats.maxDrawdownPercent) stats.maxDrawdownPercent = drawdownPercent;
             
             let closed = false;
             let pnl = 0;
             let exitPrice = 0;
             
-            const { entryPrice, tp, action, pyramidStage, initialSl } = activeTrade;
-            const ema150 = calculateRollingVWAP(candles, 150); 
+            const { entryPrice, tp, action, pyramidStage, initialSl, entryTime } = activeTrade;
+            const atr = calculateATR(candles, 14);
+            const chandelierLong = currentPrice - (atr * 2);
+            const chandelierShort = currentPrice + (atr * 2);
+            
+            const hoursInTrade = (timestamp - entryTime) / (1000 * 60 * 60);
+            const isStale = (hoursInTrade > 48 && pyramidStage === 0);
             
             if (action === 'BUY') {
                 const isEarlyExit = checkEarlyExit(activeTrade, candles);
-                if (isEarlyExit) {
+                if (isStale || isEarlyExit) {
                    exitPrice = currentPrice;
                    closed = true;
                 }
@@ -150,12 +159,12 @@ async function runMegalodon() {
                 }
                 
                 if (pyramidStage > 0) {
-                  activeTrade.sl = Math.max(activeTrade.sl, ema150 * 0.995); 
+                  activeTrade.sl = Math.max(activeTrade.sl, chandelierLong); 
                   if (candle.low <= activeTrade.sl) { exitPrice = activeTrade.sl; closed = true; }
                 }
             } else {
                 const isEarlyExit = checkEarlyExit(activeTrade, candles);
-                if (isEarlyExit) {
+                if (isStale || isEarlyExit) {
                    exitPrice = currentPrice;
                    closed = true;
                 }
@@ -171,7 +180,7 @@ async function runMegalodon() {
                 }
                 
                 if (pyramidStage > 0) {
-                  activeTrade.sl = Math.min(activeTrade.sl, ema150 * 1.005);
+                  activeTrade.sl = Math.min(activeTrade.sl, chandelierShort);
                   if (candle.high >= activeTrade.sl) { exitPrice = activeTrade.sl; closed = true; }
                 }
             }
@@ -216,6 +225,7 @@ async function runMegalodon() {
                 let basePositionSize = activeTrade.balanceAtEntry * riskMultiplier / (Math.abs(entryPrice - initialSl) / entryPrice);
                 const maxPositionSize = activeTrade.balanceAtEntry * leverage; 
                 if (basePositionSize > maxPositionSize) basePositionSize = maxPositionSize;
+                if (basePositionSize > HARD_POSITION_CAP) basePositionSize = HARD_POSITION_CAP;
                 
                 if (activeTrade.pyramidStage === 0) {
                    const movePerc = action === 'BUY' ? (exitPrice - entryPrice) / entryPrice : (entryPrice - exitPrice) / entryPrice;
@@ -338,7 +348,7 @@ async function runMegalodon() {
     console.log(`============================================`);
     console.log(`Final Balance:    $${balance.toFixed(2)} (Start: $${INITIAL_CAPITAL})`);
     console.log(`Net Profit:       $${(balance - INITIAL_CAPITAL).toFixed(2)}`);
-    console.log(`Max Drawdown:     $${stats.maxDrawdown.toFixed(2)}`);
+    console.log(`Max Drawdown:     $${stats.maxDrawdown.toFixed(2)} (${stats.maxDrawdownPercent.toFixed(2)}%)`);
     console.log(`Total Fees Paid:  $${stats.totalFeesPaid.toFixed(2)}`);
     console.log(`Total Trades:     ${stats.totalTrades}`);
     console.log(`Win Rate:         ${((stats.wins / stats.totalTrades) * 100).toFixed(2)}%`);
