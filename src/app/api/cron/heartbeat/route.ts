@@ -34,6 +34,7 @@ export async function GET(req: NextRequest) {
     // 2. Check Hyperliquid Data Staleness
     try {
       const exchange = new ccxt.hyperliquid({ enableRateLimit: true, options: { defaultType: 'swap' } });
+      exchange.setSandboxMode(true); // Must match Testnet like the rest of the app
       // Timeout specifically for the API call to avoid hanging
       const fetchPromise = exchange.fetchOHLCV('BTC/USDC:USDC', '5m', undefined, 1);
       const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Exchange API Timeout")), 10000));
