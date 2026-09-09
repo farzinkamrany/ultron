@@ -14,6 +14,18 @@ export function calculateATR(candles: any[], period: number = 14): number {
     return trSum / actualPeriod;
 }
 
+export function calculateEMA(candles: any[], period: number): number {
+    if (candles.length < period) return candles[candles.length - 1].close;
+    const k = 2 / (period + 1);
+    let sum = 0;
+    for (let i = 0; i < period; i++) sum += candles[i].close;
+    let ema = sum / period;
+    for (let i = period; i < candles.length; i++) {
+        ema = (candles[i].close - ema) * k + ema;
+    }
+    return ema;
+}
+
 export async function evaluateSetup(symbol: string, currentPrice: number, candles: any[], macroCandles: any[], regime: string = 'NORMAL'): Promise<TradeSignal> {
     const gann = calculateGannSquareOf9(currentPrice);
     const supports = gann.supports.sort((a, b) => b - a);
@@ -100,6 +112,21 @@ export async function evaluateSetup(symbol: string, currentPrice: number, candle
                     executionType = 'LIMIT';
                 }
             }
+        }
+    }
+    
+    // MACRO TREND ALIGNMENT FILTER (MTF)
+    // Filter out setups that fight the 1H macro trend (EMA 50)
+    if (action !== 'HOLD' && macroCandles && macroCandles.length >= 50) {
+        const macroEma50 = calculateEMA(macroCandles, 50);
+        if (action === 'BUY' && currentPrice < macroEma50) {
+            action = 'HOLD';
+            rationale = 'Rejected: Fighting Macro Downtrend (Price < 1H EMA50)';
+        } else if (action === 'SELL' && currentPrice > macroEma50) {
+            action = 'HOLD';
+            rationale = 'Rejected: Fighting Macro Uptrend (Price > 1H EMA50)';
+        } else {
+            rationale += ' | Macro Trend Aligned';
         }
     }
     

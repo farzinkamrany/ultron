@@ -1,5 +1,5 @@
-import fs from 'fs';
-import readline from 'readline';
+import * as fs from 'fs';
+import * as readline from 'readline';
 import { calculateGannSquareOf9 } from '../src/lib/trading/gann';
 import { findOrderBlocks } from '../src/lib/trading/ict';
 import { detectSqueeze, calculateChoppinessIndex, detectLiquiditySweep, calculateRollingVWAP, calculateVolumeProfile, synthesizeDailyCandles, detectDailyTrend, detectCandlePattern, detectCapitulation, checkEarlyExit, detectRegime } from '../src/lib/trading/financial-intelligence';
@@ -19,16 +19,29 @@ const MAX_LOSS_LIMIT = 900;
 const MAKER_FEE = 0.0004; // Taker fee + Slippage simulation
 const HARD_POSITION_CAP = 50000; // Realistic orderbook liquidity limit for altcoins
 
-function calculateATR(candles: any[], period: number = 14): number {
-    if (candles.length < period + 1) return 0;
+function calculateATR(candles: MultiCandle[], period: number = 14): number {
+    if (candles.length < 2) return 0;
+    const actualPeriod = Math.min(period, candles.length - 1);
     let trSum = 0;
-    for (let i = candles.length - period; i < candles.length; i++) {
-        const c = candles[i];
-        const p = candles[i - 1];
-        const tr = Math.max(c.high - c.low, Math.abs(c.high - p.close), Math.abs(c.low - p.close));
-        trSum += tr;
+    for (let i = candles.length - actualPeriod; i < candles.length; i++) {
+        const high = candles[i].high;
+        const low = candles[i].low;
+        const prevClose = candles[i-1].close;
+        trSum += Math.max(high - low, Math.abs(high - prevClose), Math.abs(low - prevClose));
     }
-    return trSum / period;
+    return trSum / actualPeriod;
+}
+
+function calculateEMA(candles: MultiCandle[], period: number): number {
+    if (candles.length < period) return candles[candles.length - 1].close;
+    const k = 2 / (period + 1);
+    let sum = 0;
+    for (let i = 0; i < period; i++) sum += candles[i].close;
+    let ema = sum / period;
+    for (let i = period; i < candles.length; i++) {
+        ema = (candles[i].close - ema) * k + ema;
+    }
+    return ema;
 }
 
 async function loadCSV(filePath: string, symbol: string): Promise<MultiCandle[]> {
@@ -327,6 +340,13 @@ async function runMegalodon() {
                     if (validTP) { action = 'SELL'; tp = validTP; sl = closestResistance * (1 + dynamicSL); }
                 }
             }
+        }
+        
+        // MACRO TREND ALIGNMENT FILTER (MTF) - 200 EMA on 15m (equivalent to 50 EMA on 1H)
+        if (action && candles.length >= 200) {
+            const macroEma = calculateEMA(candles, 200);
+            if (action === 'BUY' && currentPrice < macroEma) action = '';
+            if (action === 'SELL' && currentPrice > macroEma) action = '';
         }
         
         if (action) {
