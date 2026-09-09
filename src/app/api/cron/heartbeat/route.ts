@@ -9,11 +9,11 @@ export const maxDuration = 30; // 30s timeout
 
 export async function GET(req: NextRequest) {
   const isDev = process.env.NODE_ENV === 'development';
-  
+
   if (!isDev) {
     const isQStash = !!req.headers.get('upstash-signature');
     const isVercelCron = req.headers.get('authorization') === `Bearer ${process.env.CRON_SECRET}`;
-    
+
     if (isQStash) {
       const isValid = await verifyQStashSignature(req);
       if (!isValid) return new NextResponse('Unauthorized', { status: 401 });
@@ -33,14 +33,13 @@ export async function GET(req: NextRequest) {
 
     // 2. Check Hyperliquid Data Staleness
     try {
-      const exchange = new ccxt.hyperliquid({ enableRateLimit: true, options: { defaultType: 'swap' } });
-      exchange.setSandboxMode(true); // Must match Testnet like the rest of the app
+      const exchange = new ccxt.bybit({ enableRateLimit: true, options: { defaultType: 'swap' } });
       // Timeout specifically for the API call to avoid hanging
-      const fetchPromise = exchange.fetchOHLCV('BTC/USDC:USDC', '5m', undefined, 1);
+      const fetchPromise = exchange.fetchOHLCV('BTC/USDT', '5m', undefined, 1);
       const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Exchange API Timeout")), 10000));
-      
+
       const ohlcv = await Promise.race([fetchPromise, timeoutPromise]) as any[];
-      
+
       if (!ohlcv || ohlcv.length === 0) {
         errors.push(`❌ **Exchange Error:** No data received from Hyperliquid.`);
       } else {
@@ -64,7 +63,7 @@ export async function GET(req: NextRequest) {
           `سگ نگهبانِ اولتران یک قطعیِ حیاتی در شریان‌های سیستم پیدا کرده است:\n\n` +
           `${errors.join('\n\n')}\n\n` +
           `⚠️ لطفاً فوراً داشبورد Vercel و لاگ‌های سرور را بررسی کنید! سیستم تا زمان رفع مشکل ممکن است کور باشد.`;
-        
+
         await sendTelegramMessage(chatId, alertMsg);
       }
       return NextResponse.json({ status: 'error', details: errors }, { status: 500 });

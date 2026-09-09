@@ -24,15 +24,12 @@ export interface MarketState {
 
 export async function analyzeMarketData(asset: string, timeHorizonDays: number, includeLiquidation: boolean = false): Promise<MarketState> {
   try {
-    const exchange = new ccxt.hyperliquid({
-      walletAddress: process.env.HYPERLIQUID_WALLET_ADDRESS || "",
-      privateKey: process.env.HYPERLIQUID_PRIVATE_KEY || "",
+    const exchange = new ccxt.bybit({
+      apiKey: process.env.BYBIT_API_KEY || "",
+      secret: process.env.BYBIT_SECRET || "",
       enableRateLimit: true,
-      options: {
-        defaultType: 'swap' // Hyperliquid primarily uses swap for perpetuals, spot is also supported but testnet is mostly used for swap
-      }
+      options: { defaultType: 'swap' }
     });
-    exchange.setSandboxMode(true); // ENABLE TESTNET
 
     let liveBalance = 1000; // Fallback‍
     try {
@@ -121,10 +118,10 @@ export async function analyzeMarketData(asset: string, timeHorizonDays: number, 
     let tapeData: MarketState['tape'] = null;
     try {
       // HFT UPGRADE: Use WebSockets for Live Tape & Orderbook (Bypassing REST delay)
-      const wsExchange = new ccxt.pro.hyperliquid({
-        walletAddress: process.env.HYPERLIQUID_WALLET_ADDRESS || "",
-        privateKey: process.env.HYPERLIQUID_PRIVATE_KEY || "",
-        enableRateLimit: false,
+      const wsExchange = new ccxt.pro.bybit({
+        apiKey: process.env.BYBIT_API_KEY || "",
+        secret: process.env.BYBIT_SECRET || "",
+        enableRateLimit: true,
         options: { defaultType: 'swap' }
       });
       wsExchange.setSandboxMode(true); // ENABLE TESTNET (Change to false to go live)

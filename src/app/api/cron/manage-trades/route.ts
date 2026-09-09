@@ -45,9 +45,9 @@ export async function GET(req: NextRequest) {
     }
 
     const tradeMode = process.env.TRADE_MODE || 'PAPER';
-    const exchange = new ccxt.hyperliquid({
-      walletAddress: process.env.HYPERLIQUID_WALLET_ADDRESS || "",
-      privateKey: process.env.HYPERLIQUID_PRIVATE_KEY || "",
+    const exchange = new ccxt.bybit({
+      apiKey: process.env.BYBIT_API_KEY || "",
+      secret: process.env.BYBIT_SECRET || "",
       enableRateLimit: true,
       options: { defaultType: 'swap' }
     });

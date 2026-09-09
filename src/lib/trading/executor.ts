@@ -20,16 +20,15 @@ import { evaluateSetup } from "./strategy";
 import { TradeSignal as SetupSignal } from "./gann";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-export function buildHyperliquid() {
-  const exchange = new ccxt.hyperliquid({
-    walletAddress: process.env.HYPERLIQUID_WALLET_ADDRESS || "",
-    privateKey: process.env.HYPERLIQUID_PRIVATE_KEY || "",
+export function buildExchange() {
+  const exchange = new ccxt.bybit({
+    apiKey: process.env.BYBIT_API_KEY || "",
+    secret: process.env.BYBIT_SECRET || "",
     enableRateLimit: true,
     options: {
       defaultType: 'swap',
     }
   });
-  exchange.setSandboxMode(true);
   return exchange;
 }
 
@@ -62,7 +61,7 @@ export async function triggerPanicClose(): Promise<void> {
     if (adminChatId) await sendTelegramMessage(adminChatId, "🚨 Paper trades panic closed.");
     return;
   }
-  const exchange = buildHyperliquid();
+  const exchange = buildExchange();
   await emergencyCloseAll(exchange, "MANUAL PANIC BUTTON PRESSED BY ADMIN");
 }
 
@@ -228,7 +227,7 @@ export async function runTradingCycle(symbol: string = "BTC/USDT"): Promise<void
   }
 
   if (mode === "MICRO") {
-    const exchange = buildHyperliquid();
+    const exchange = buildExchange();
     try {
       const balanceInfo = await exchange.fetchBalance();
       const liveBalance = balanceInfo['USDC']?.free || balanceInfo['USDT']?.free || 1000;
@@ -252,7 +251,7 @@ export async function runTradingCycle(symbol: string = "BTC/USDT"): Promise<void
         console.warn(`[Margin] Skipping ${signal.symbol} - Max concurrent trades (${maxConcurrentTrades}) reached on exchange.`);
         return;
       }
-      if (activePositions.some(p => p.symbol === hlSymbol)) {
+      if (activePositions.some((p: any) => p.symbol === hlSymbol)) {
         console.warn(`[Margin] Skipping ${signal.symbol} - Already holding position for this symbol.`);
         return;
       }
@@ -315,7 +314,7 @@ export async function runTradingCycle(symbol: string = "BTC/USDT"): Promise<void
 export async function closeMicroPosition(symbol: string, positionType: "BUY" | "SELL"): Promise<void> {
   const mode = process.env.TRADE_MODE || "PAPER";
   if (mode !== "MICRO") return;
-  const exchange = buildHyperliquid();
+  const exchange = buildExchange();
   try {
     const hlSymbol = symbol.includes('/USDT') ? symbol.replace('/USDT', '/USDC:USDC') : symbol;
     const openOrders = await exchange.fetchOpenOrders(hlSymbol);
