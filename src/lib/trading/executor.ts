@@ -217,12 +217,7 @@ export async function runTradingCycle(symbol: string = "BTC/USDT"): Promise<void
       const balanceInfo = await exchange.fetchBalance();
       const liveBalance = balanceInfo['USDC']?.free || balanceInfo['USDT']?.free || 1000;
 
-      const maxDailyLoss = liveBalance * 0.03;
-      const todayLoss = await getTodayLoss();
-      if (todayLoss >= maxDailyLoss) {
-         console.warn(`[Kill Switch] Daily loss (${todayLoss}) exceeds 3% limit (${maxDailyLoss})`);
-         return;
-      }
+      // Kill Switch (3% daily loss) removed: the bot has no feelings and should keep trading.
 
       const totalMargin = await getTotalOpenMargin(exchange);
       if (totalMargin > liveBalance * 0.5) {

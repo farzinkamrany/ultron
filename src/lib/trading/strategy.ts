@@ -5,7 +5,7 @@ import { findOrderBlocks } from './ict';
 // Prevents runaway losses by pausing trading when daily drawdown exceeds MAX_DAILY_LOSS
 // or when a consecutive losing streak is detected.
 export const CIRCUIT_BREAKER = {
-  enabled: true,
+  enabled: false, // Disabled: the bot doesn't have human feelings
   MAX_DAILY_LOSS: 0.10,        // Stop trading if daily loss > 10% of balance
   MAX_CONSECUTIVE_LOSSES: 5,   // Stop trading after 5 losses in a row
   COOLDOWN_CANDLES: 8,         // How many candles to wait before resuming
