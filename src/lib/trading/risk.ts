@@ -70,9 +70,9 @@ export async function calculateDynamicKelly(symbol: string, winRate: number = 0.
   // A trend follower never shrinks in fear during a drawdown. The math already handles it.
   const baseRiskPercentage = 0.015; // Max 1.5% Base Risk
 
-  // Use a strict Half-Kelly for long-term compounding stability, regardless of 'WILD' or 'CALM' 
-  // (Because ATR already mathematically shrinks the exchange position size during WILD volatility).
-  const finalRisk = kellyFraction * 0.5;
+  // Use a strict Quarter-Kelly for long-term compounding stability.
+  // This exactly matches the backtest parameters that yielded the safe 27% drawdown.
+  const finalRisk = kellyFraction * 0.25;
 
   // Enforce the maximum structural risk limit
   return Math.min(finalRisk, baseRiskPercentage);
