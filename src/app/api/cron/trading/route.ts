@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { logError } from "@/lib/logger";
 import { runTradingCycle } from "@/lib/trading/executor";
 import { verifyQStashSignature } from "@/lib/qstash";
+import { getTopVolatileSymbols } from "@/lib/trading/screener";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60; // External API calls may take time
@@ -13,7 +14,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const symbols = ["BTC/USDT", "ETH/USDT", "SOL/USDT", "LINK/USDT", "ADA/USDT", "BNB/USDT", "XRP/USDT", "DOGE/USDT", "AVAX/USDT", "DOT/USDT"];
+    const symbols = await getTopVolatileSymbols();
     
     console.log(`[Trading Engine] Sweeping 10-coin pool...`);
     

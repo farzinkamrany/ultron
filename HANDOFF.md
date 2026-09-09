@@ -195,6 +195,11 @@ Ultron is a rapidly evolving entity. Below is the historical and operational log
 - **Concurrency & Margin Caps:** To prevent weaker assets (like ADA/BNB) from locking up the margin during synchronized candle closures, the engine enforces a strict **Max 5 Concurrent Trades** global limit, and **Max 1 Trade per Symbol**. This guarantees that the top-performing volatile assets (SOL/ETH/BTC) always have free margin to execute their exponential compounding setups.
 - **OpenAI Embedding Pivot:** The memory engine (`memory.ts`) was completely refactored to use OpenAI's `text-embedding-3-small` (forcing 768 dimensions for Supabase pgvector compatibility) to bypass Iranian proxy blocks on Google's Generative AI embedding endpoints.
 
+**✅ Protocol V16.0: The Megalodon Apex Predator (Live Sync)**
+- **Total SMC Eradication:** The live trading engine (`strategy.ts`) completely abandoned ICT Smart Money Concepts (Order Blocks) after they resulted in a 0% win-rate during ranging markets (31 consecutive losses).
+- **Gann + Capitulation Synthesis:** The live engine is now an exact 1:1 replica of the $79M backtest script (`megalodon.ts`). It enters trades *exclusively* upon mathematically pure Gann Support/Resistance bounces or violent Volume Capitulations. 
+- **QStash Efficiency:** Cron jobs optimized (Trading: 15m, Checker: 3m) to stay strictly under the 1000/day free-tier limit while maintaining real-time awareness.
+
 ---
 
 ## 7. The Definitive $1000 Playbook (Operator's Bible)

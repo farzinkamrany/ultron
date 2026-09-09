@@ -14,7 +14,7 @@ export function calculateATR(candles: any[], period: number = 14): number {
     return trSum / actualPeriod;
 }
 
-export function evaluateSetup(symbol: string, currentPrice: number, candles: any[], macroCandles: any[]): TradeSignal {
+export async function evaluateSetup(symbol: string, currentPrice: number, candles: any[], macroCandles: any[]): Promise<TradeSignal> {
     const gann = calculateGannSquareOf9(currentPrice);
     const supports = gann.supports.sort((a, b) => b - a);
     const resistances = gann.resistances.sort((a, b) => a - b);
@@ -32,23 +32,26 @@ export function evaluateSetup(symbol: string, currentPrice: number, candles: any
     let tp = 0;
     let sl = 0;
     let rationale = '';
+    let executionType: 'MARKET' | 'LIMIT' = 'MARKET';
     
     const atr = calculateATR(candles);
     let dynamicSL = (atr / currentPrice) * 1.5; 
     if (dynamicSL < 0.003) dynamicSL = 0.003; 
     
-    const capitulation = detectCapitulation(candles, 200);
+    const capitulation = await detectCapitulation(candles, symbol, 200);
     if (capitulation === 'BULLISH') {
         action = 'BUY'; 
         sl = currentPrice * (1 - dynamicSL); 
         tp = currentPrice * (1 + (dynamicSL * 5)); 
         rationale = 'Volume Capitulation (BULLISH)';
+        executionType = 'MARKET';
     } 
     else if (capitulation === 'BEARISH') {
         action = 'SELL';
         sl = currentPrice * (1 + dynamicSL);
         tp = currentPrice * (1 - (dynamicSL * 5));
         rationale = 'Volume Capitulation (BEARISH)';
+        executionType = 'MARKET';
     }
     
     if (action === 'HOLD') {
@@ -60,6 +63,7 @@ export function evaluateSetup(symbol: string, currentPrice: number, candles: any
                 sl = closestSupport * (1 - dynamicSL); 
                 const rr = (validTP - currentPrice) / (currentPrice - sl);
                 rationale = `Gann Support Bounce (R:R ${rr.toFixed(2)})`;
+                executionType = 'LIMIT';
             }
         } 
         else if (distanceToResPerc <= dynamicSL) {
@@ -70,6 +74,7 @@ export function evaluateSetup(symbol: string, currentPrice: number, candles: any
                 sl = closestResistance * (1 + dynamicSL); 
                 const rr = (currentPrice - validTP) / (sl - currentPrice);
                 rationale = `Gann Resistance Rejection (R:R ${rr.toFixed(2)})`;
+                executionType = 'LIMIT';
             }
         }
     }
@@ -81,7 +86,8 @@ export function evaluateSetup(symbol: string, currentPrice: number, candles: any
             entryPrice: currentPrice,
             takeProfit: tp,
             stopLoss: sl,
-            reason: rationale
+            reason: rationale,
+            executionType
         };
     }
     

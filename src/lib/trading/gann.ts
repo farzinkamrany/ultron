@@ -18,6 +18,7 @@ export interface TradeSignal {
   stopLoss: number;
   takeProfit: number;
   reason: string;
+  executionType?: "MARKET" | "LIMIT";
 }
 
 /**

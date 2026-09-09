@@ -15,7 +15,7 @@ import { supabase } from "@/lib/supabase";
 import { sendTelegramMessage } from "@/lib/telegram";
 import { logError } from "@/lib/logger";
 import { calculateDynamicKelly } from "./risk";
-import { Candle } from "./financial-intelligence";
+import { Candle, detectRegime } from "./financial-intelligence";
 import { evaluateSetup } from "./strategy";
 import { TradeSignal as SetupSignal } from "./gann";
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -156,10 +156,15 @@ export async function runTradingCycle(symbol: string = "BTC/USDT"): Promise<void
   const livePrice = candles15m[candles15m.length - 1].close;
   
   // Engine Evaluation
-  const signal = evaluateSetup(symbol, livePrice, candles15m, candles1h);
+  const signal = await evaluateSetup(symbol, livePrice, candles15m, candles1h);
   console.log(`[Quant Engine] Setup evaluated: ${signal.action}. Reason: ${signal.reason || 'Valid setup'}`);
   
   if (signal.action === "HOLD") return;
+
+  // Regime-Based Concurrency
+  const regime = detectRegime(candles1h);
+  const maxConcurrentTrades = regime === 'TRENDING' ? 8 : 3;
+  console.log(`[Regime] Current Market Regime: ${regime}. Max Concurrency set to ${maxConcurrentTrades}.`);
 
   // Cooldown Check: Prevent revenge trading the same signal (15m OB is valid for a long time)
   const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
@@ -179,8 +184,8 @@ export async function runTradingCycle(symbol: string = "BTC/USDT"): Promise<void
     // Check concurrent trades
     const { data: openTrades } = await supabase.from("paper_trades").select("*").eq("status", "OPEN");
     if (openTrades) {
-      if (openTrades.length >= 5) {
-        console.log(`[Margin] Skipping ${signal.symbol} - MAX_CONCURRENT_TRADES (5) reached.`);
+      if (openTrades.length >= maxConcurrentTrades) {
+        console.log(`[Margin] Skipping ${signal.symbol} - MAX_CONCURRENT_TRADES (${maxConcurrentTrades}) reached.`);
         return;
       }
       if (openTrades.some(t => t.symbol === signal.symbol)) {
@@ -230,10 +235,10 @@ export async function runTradingCycle(symbol: string = "BTC/USDT"): Promise<void
       
       // Margin Allocation Limit Check
       const positions = await exchange.fetchPositions();
-      const activePositions = positions.filter(p => Math.abs(p.contracts || 0) > 0);
+      const activePositions = positions.filter((p: any) => Math.abs(p.contracts || 0) > 0);
       
-      if (activePositions.length >= 5) {
-        console.warn(`[Margin] Skipping ${signal.symbol} - Max concurrent trades (5) reached on exchange.`);
+      if (activePositions.length >= maxConcurrentTrades) {
+        console.warn(`[Margin] Skipping ${signal.symbol} - Max concurrent trades (${maxConcurrentTrades}) reached on exchange.`);
         return;
       }
       if (activePositions.some(p => p.symbol === hlSymbol)) {
@@ -261,7 +266,12 @@ export async function runTradingCycle(symbol: string = "BTC/USDT"): Promise<void
       }
       
       // 1. EXCHANGE EXECUTION
-      await exchange.createMarketOrder(hlSymbol, side, amount);
+      if (signal.executionType === 'LIMIT') {
+          await exchange.createLimitOrder(hlSymbol, side, amount, signal.entryPrice);
+      } else {
+          await exchange.createMarketOrder(hlSymbol, side, amount);
+      }
+      
       const oppositeSide = side === "buy" ? "sell" : "buy";
       await exchange.createOrder(hlSymbol, 'market', oppositeSide, amount, undefined, { triggerPrice: signal.stopLoss, reduceOnly: true });
       await exchange.createOrder(hlSymbol, 'market', oppositeSide, amount, undefined, { triggerPrice: signal.takeProfit, reduceOnly: true });

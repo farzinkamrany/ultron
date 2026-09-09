@@ -4,7 +4,7 @@ import ccxt from "ccxt";
 import { sendTelegramMessage } from "@/lib/telegram";
 import { logError } from "@/lib/logger";
 import { verifyQStashSignature } from "@/lib/qstash";
-import { closeMicroPosition } from "@/lib/trading/executor";
+import { closeMicroPosition, buildHyperliquid } from "@/lib/trading/executor";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -111,6 +111,25 @@ export async function POST(req: NextRequest) {
           await sendTelegramMessage(chatId, msg);
         }
       }
+    }
+
+    // 3. Cleanup Stale Limit Orders (Hyperliquid MICRO Mode)
+    if (process.env.TRADE_MODE === "MICRO") {
+        try {
+            const hl = buildHyperliquid();
+            await hl.loadMarkets();
+            const allOrders = await hl.fetchOpenOrders();
+            const now = Date.now();
+            for (const order of allOrders) {
+                // If it's a normal entry limit order (not a trigger/stop order) and older than 15 mins
+                if (order.type === 'limit' && order.timestamp && (now - order.timestamp > 15 * 60 * 1000)) {
+                    await hl.cancelOrder(order.id, order.symbol);
+                    console.log(`[Limit Cleanup] Cancelled stale limit order ${order.id} for ${order.symbol}`);
+                }
+            }
+        } catch (e: any) {
+            console.error(`[Limit Cleanup Error] ${e.message}`);
+        }
     }
 
     return NextResponse.json({ 

@@ -16,8 +16,8 @@ interface MultiCandle {
 
 const INITIAL_CAPITAL = 1000;
 const MAX_LOSS_LIMIT = 900;
-const MAKER_FEE = 0.0001;
-const HARD_POSITION_CAP = 1000000; // $1 Million liquidity cap
+const MAKER_FEE = 0.0004; // Taker fee + Slippage simulation
+const HARD_POSITION_CAP = 50000; // Realistic orderbook liquidity limit for altcoins
 
 function calculateATR(candles: any[], period: number = 14): number {
     if (candles.length < period + 1) return 0;
@@ -190,18 +190,18 @@ async function runMegalodon() {
                 let totalEntryVolume = 0;
                 let totalExitVolume = 0;
                 
-                let baseRisk = 0.01;
-                let maxKellyRisk = 0.02; // Reduced from 0.05
-                let leverage = 15;
+                let baseRisk = 0.005;
+                let maxKellyRisk = 0.01; // Max 1% risk per trade
+                let leverage = 10;
                 
-                if (activeTrade.balanceAtEntry >= 400000) {
-                    baseRisk = 0.0025;
-                    maxKellyRisk = 0.01;
+                if (activeTrade.balanceAtEntry >= 100000) {
+                    baseRisk = 0.002;
+                    maxKellyRisk = 0.005;
                     leverage = 3;
                 } else if (activeTrade.balanceAtEntry >= 20000) {
-                    baseRisk = 0.005;
-                    maxKellyRisk = 0.025;
-                    leverage = 8;
+                    baseRisk = 0.003;
+                    maxKellyRisk = 0.008;
+                    leverage = 5;
                 }
                 
                 let riskMultiplier = baseRisk; 
@@ -302,7 +302,7 @@ async function runMegalodon() {
         let dynamicSL = (atr / currentPrice) * 1.5; 
         if (dynamicSL < 0.003) dynamicSL = 0.003; 
         
-        const capitulation = detectCapitulation(candles, 200);
+        const capitulation = await detectCapitulation(candles, symbol, 200);
         if (capitulation === 'BULLISH') {
             action = 'BUY'; 
             sl = currentPrice * (1 - dynamicSL); 

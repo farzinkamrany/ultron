@@ -250,7 +250,9 @@ export function detectCandlePattern(candles: Candle[], type: 'BULLISH' | 'BEARIS
   return { isValid: false, isGolden: false };
 }
 
-export function detectCapitulation(candles: Candle[], lookback: number = 200): 'BULLISH' | 'BEARISH' | null {
+import ccxt from "ccxt";
+
+export async function detectCapitulation(candles: Candle[], symbol: string, lookback: number = 200): Promise<'BULLISH' | 'BEARISH' | null> {
   if (candles.length < lookback) return null;
   const current = candles[candles.length - 1];
   
@@ -269,14 +271,34 @@ export function detectCapitulation(candles: Candle[], lookback: number = 200): '
   const lowerWick = Math.min(current.open, current.close) - current.low;
   const upperWick = current.high - Math.max(current.open, current.close);
   
-  // Bullish Capitulation: Long lower wick, heavy volume (Liquidation Sweep)
-  if (lowerWick >= currRange * 0.4 && current.close > current.open) {
-      return 'BULLISH';
+  let isBullishStructure = (lowerWick >= currRange * 0.4 && current.close > current.open);
+  let isBearishStructure = (upperWick >= currRange * 0.4 && current.close < current.open);
+  
+  if (!isBullishStructure && !isBearishStructure) return null;
+
+  // TAPE READING (CVD Confirmation) - ONLY IN MICRO MODE
+  let cvd = 0;
+  if (process.env.TRADE_MODE === "MICRO") {
+      try {
+          const exchange = new ccxt.kucoin();
+          const trades = await exchange.fetchTrades(symbol, undefined, 500); // last 500 trades
+          for (const t of trades) {
+              if (t.side === 'buy') cvd += (t.amount * t.price);
+              if (t.side === 'sell') cvd -= (t.amount * t.price);
+          }
+      } catch (e) {
+          console.warn(`[Tape Reading] Failed to fetch trades for ${symbol}. Bypassing CVD check.`);
+      }
+  }
+
+  // Bullish Capitulation: Long lower wick, heavy volume + Retail Panic Selling (Negative CVD)
+  if (isBullishStructure) {
+      if (cvd < 0 || cvd === 0) return 'BULLISH'; // Negative CVD means heavy market sells into limit buy walls
   }
   
-  // Bearish Capitulation: Long upper wick, heavy volume
-  if (upperWick >= currRange * 0.4 && current.close < current.open) {
-      return 'BEARISH';
+  // Bearish Capitulation: Long upper wick, heavy volume + Retail Euphoria Buying (Positive CVD)
+  if (isBearishStructure) {
+      if (cvd > 0 || cvd === 0) return 'BEARISH';
   }
   
   return null;
