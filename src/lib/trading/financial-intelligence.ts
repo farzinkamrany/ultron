@@ -416,3 +416,26 @@ export function calculateADX(candles: Candle[], period: number = 14): number {
     
     return prevAdx;
 }
+
+export function detectRegime(candles: any[]): 'TRENDING' | 'RANGING' | 'HIGH_VOL' | 'NORMAL' {
+    if (candles.length < 110) return 'NORMAL';
+    const chop = calculateChoppinessIndex(candles, 14);
+    const adx  = calculateADX(candles, 14);
+    let shortATR = 0;
+    for (let i = candles.length - 14; i < candles.length; i++) {
+        const c = candles[i], p = candles[i - 1];
+        shortATR += Math.max(c.high - c.low, Math.abs(c.high - p.close), Math.abs(c.low - p.close));
+    }
+    shortATR /= 14;
+    let baseATR = 0;
+    const bStart = Math.max(1, candles.length - 110);
+    for (let i = bStart; i < bStart + 14; i++) {
+        const c = candles[i], p = candles[i - 1];
+        baseATR += Math.max(c.high - c.low, Math.abs(c.high - p.close), Math.abs(c.low - p.close));
+    }
+    baseATR /= 14;
+    if (baseATR > 0 && shortATR > baseATR * 1.8) return 'HIGH_VOL';
+    if (adx > 25 && chop < 38) return 'TRENDING';
+    if (chop > 55) return 'RANGING';
+    return 'NORMAL';
+}

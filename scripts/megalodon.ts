@@ -280,7 +280,7 @@ async function runMegalodon() {
         }
         
         // TRIGGER LOGIC
-        if (Object.keys(activeTrades).length >= 3) continue; // Max 3 concurrent trades for lower drawdown
+        if (Object.keys(activeTrades).length >= 3) continue;
         const lastClose = lastTradeClosedTime[symbol] || 0;
         if (timestamp - lastClose < 1000 * 60 * 15) continue; // Cooldown
         
@@ -336,7 +336,7 @@ async function runMegalodon() {
                 initialSl: sl,
                 tp,
                 pyramidStage: 0,
-                balanceAtEntry: balance, // Cross margin is magically supported!
+                balanceAtEntry: balance,
                 isChoppy: chop > 50,
                 isSqueezeAccelerated: detectSqueeze(candles)
             };
