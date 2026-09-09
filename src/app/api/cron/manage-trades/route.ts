@@ -123,7 +123,10 @@ export async function GET(req: NextRequest) {
         newStatus = trade.position_type === 'BUY' 
             ? (currentPrice > trade.entry_price ? 'WON' : 'LOST')
             : (currentPrice < trade.entry_price ? 'WON' : 'LOST');
-        pnl = trade.position_type === 'BUY' ? (currentPrice - trade.entry_price) : (trade.entry_price - currentPrice);
+        
+        const contracts = 1000 / trade.entry_price;
+        pnl = trade.position_type === 'BUY' ? (currentPrice - trade.entry_price) * contracts : (trade.entry_price - currentPrice) * contracts;
+        
         newRationale = newRationale + ` | TIMEOUT (Forced close after ${MAX_TRADE_HOURS}h)`;
         closedAt = new Date().toISOString();
         console.log(`[Manage Trades] Trade ${trade.symbol} timed out after ${MAX_TRADE_HOURS}h. Forced closed at ${currentPrice}`);
@@ -140,27 +143,29 @@ export async function GET(req: NextRequest) {
           // Estimate win/loss based on current price proximity to TP/SL (rough estimation since we don't fetch exact fill)
           const distToSL = Math.abs(currentPrice - trade.stop_loss);
           const distToTP = Math.abs(currentPrice - trade.take_profit);
+          const virtualContracts = 1000 / trade.entry_price;
+
           if (distToTP < distToSL) {
             newStatus = 'WON';
-            pnl = trade.position_type === 'BUY' ? (trade.take_profit - trade.entry_price) : (trade.entry_price - trade.take_profit);
+            pnl = trade.position_type === 'BUY' ? (trade.take_profit - trade.entry_price) * virtualContracts : (trade.entry_price - trade.take_profit) * virtualContracts;
           } else {
             newStatus = 'LOST';
-            pnl = -Math.abs(trade.entry_price - trade.stop_loss);
+            pnl = trade.position_type === 'BUY' ? (trade.stop_loss - trade.entry_price) * virtualContracts : (trade.entry_price - trade.stop_loss) * virtualContracts;
           }
           
-          console.log(`[Manage Trades] MICRO trade ${trade.symbol} closed on exchange. Marked as ${newStatus}.`);
+          console.log(`[Manage Trades] MICRO trade ${trade.symbol} closed on exchange. Marked as ${newStatus}. PnL: ${pnl}`);
         } else {
           // Position is still open on exchange. Let it be.
           continue; 
         }
       } else {
         // PAPER MODE: Simulate exact hits and pyramiding
-        if (trade.position_type === 'BUY') {
+        if (trade.position_type === 'BUY' || trade.position_type === 'LONG') {
+          const contracts = 1000 / trade.entry_price;
+          
           if (currentPrice <= trade.stop_loss) {
-            newStatus = trade.stop_loss > trade.entry_price ? 'WON' : 'LOST';
-            pnl = trade.stop_loss > trade.entry_price 
-                  ? currentPrice - trade.entry_price 
-                  : -Math.abs(trade.entry_price - trade.stop_loss);
+            newStatus = 'LOST';
+            pnl = (trade.stop_loss - trade.entry_price) * contracts;
             closedAt = new Date().toISOString();
           } else {
             const distanceToTp = trade.take_profit - trade.entry_price;
@@ -217,18 +222,19 @@ export async function GET(req: NextRequest) {
                 }
               } else {
                 newStatus = 'WON';
-                pnl = currentPrice - trade.entry_price;
+                const contracts = 1000 / trade.entry_price;
+                pnl = (currentPrice - trade.entry_price) * contracts;
                 closedAt = new Date().toISOString();
               }
             }
           }
-        } else {
+        } else if (trade.position_type === 'SELL' || trade.position_type === 'SHORT') {
           // SHORT Logic
+          const contracts = 1000 / trade.entry_price;
+
           if (currentPrice >= trade.stop_loss) {
-            newStatus = trade.stop_loss < trade.entry_price ? 'WON' : 'LOST';
-            pnl = trade.stop_loss < trade.entry_price
-                  ? trade.entry_price - currentPrice
-                  : -Math.abs(trade.stop_loss - trade.entry_price);
+            newStatus = 'LOST';
+            pnl = (trade.entry_price - trade.stop_loss) * contracts;
             closedAt = new Date().toISOString();
           } else {
             const distanceToTp = trade.entry_price - trade.take_profit;
