@@ -66,24 +66,14 @@ export async function calculateDynamicKelly(symbol: string, winRate: number = 0.
 
   if (kellyFraction <= 0) return 0; // Negative expectancy, don't trade
 
-  // --- THE SHIELD PROTOCOL: Dynamic Drawdown Scaling (V14.0) ---
-  // Base Risk Cap is 1.5%
-  let riskPercentage = 0.015;
-  
-  if (drawdownPerc >= 0.20) {
-    riskPercentage = 0.0035; // 20% in drawdown -> Risk capped at 0.35%
-  } else if (drawdownPerc >= 0.10) {
-    riskPercentage = 0.0075; // 10% in drawdown -> Risk capped at 0.75%
-  }
+  // --- THE PURE QUANT PROTOCOL: Unwavering Mathematical Conviction ---
+  // A trend follower never shrinks in fear during a drawdown. The math already handles it.
+  const baseRiskPercentage = 0.015; // Max 1.5% Base Risk
 
-  // Calculate Kelly but never exceed the riskPercentage cap
-  let finalRisk = 0;
-  if (regime === 'CALM') {
-    finalRisk = kellyFraction * 0.5; // Half-Kelly
-  } else {
-    finalRisk = kellyFraction * 0.25; // Quarter-Kelly
-  }
+  // Use a strict Half-Kelly for long-term compounding stability, regardless of 'WILD' or 'CALM' 
+  // (Because ATR already mathematically shrinks the exchange position size during WILD volatility).
+  const finalRisk = kellyFraction * 0.5;
 
-  // Enforce V14.0 Base Risk Limits
-  return Math.min(finalRisk, riskPercentage);
+  // Enforce the maximum structural risk limit
+  return Math.min(finalRisk, baseRiskPercentage);
 }
