@@ -118,98 +118,80 @@ export async function GET(req: NextRequest) {
       // EMOTIONAL FEATURES (Timeout & Breakevens) HAVE BEEN SURGICALLY REMOVED
       // This allows fat tail trends to mature without premature abortion.
       
+      let contracts = 1000 / trade.entry_price; // Default virtual size for PAPER
+
       if (tradeMode === 'MICRO') {
-        // MICRO MODE: Trust the exchange. If position is missing or 0, it hit TP/SL on the exchange.
+        // MICRO MODE: Verify if position still exists on exchange
         const pos = livePositions.find(p => p.symbol === hlSymbol);
-        const contracts = pos ? parseFloat((pos.contracts || 0).toString()) : 0;
+        const actualContracts = pos ? parseFloat((pos.contracts || 0).toString()) : 0;
         
-        if (contracts === 0) {
-          // Position closed by exchange
+        if (actualContracts === 0) {
+          // Position closed by exchange hitting Stop Loss
           newStatus = 'CLOSED';
           closedAt = new Date().toISOString();
           
-          // Estimate win/loss based on current price proximity to TP/SL (rough estimation since we don't fetch exact fill)
           const distToSL = Math.abs(currentPrice - trade.stop_loss);
           const distToTP = Math.abs(currentPrice - trade.take_profit);
-          const virtualContracts = 1000 / trade.entry_price;
 
           if (distToTP < distToSL) {
             newStatus = 'WON';
-            pnl = trade.position_type === 'BUY' ? (trade.take_profit - trade.entry_price) * virtualContracts : (trade.entry_price - trade.take_profit) * virtualContracts;
+            pnl = trade.position_type === 'BUY' ? (trade.take_profit - trade.entry_price) * contracts : (trade.entry_price - trade.take_profit) * contracts;
           } else {
             newStatus = 'LOST';
-            pnl = trade.position_type === 'BUY' ? (trade.stop_loss - trade.entry_price) * virtualContracts : (trade.entry_price - trade.stop_loss) * virtualContracts;
+            pnl = trade.position_type === 'BUY' ? (trade.stop_loss - trade.entry_price) * contracts : (trade.entry_price - trade.stop_loss) * contracts;
           }
-          
           console.log(`[Manage Trades] MICRO trade ${trade.symbol} closed on exchange. Marked as ${newStatus}. PnL: ${pnl}`);
         } else {
-          // Position is still open on exchange. Let it be.
-          continue; 
+          // Position is open, assign real size for logic
+          contracts = Math.abs(actualContracts);
         }
-      } else {
-        // PAPER MODE: Simulate exact hits and pyramiding
+      }
+
+      // === THE QUANT BRAIN: Trailing Stop Logic (Applies to BOTH Paper & Micro) ===
+      if (newStatus === trade.status) { // Only run if position isn't already closed
         if (trade.position_type === 'BUY' || trade.position_type === 'LONG') {
-          const contracts = 1000 / trade.entry_price;
           
-          if (currentPrice <= trade.stop_loss) {
+          if (tradeMode === 'PAPER' && currentPrice <= trade.stop_loss) {
             newStatus = 'LOST';
             pnl = (trade.stop_loss - trade.entry_price) * contracts;
             closedAt = new Date().toISOString();
           } else {
             const distanceToTp = trade.take_profit - trade.entry_price;
-            const currentProfit = currentPrice - trade.entry_price;
-            const profitPerc = currentProfit / distanceToTp;
-            // Advanced Trailing Stop using Chandelier Exit (ATR * 2) will trigger when TP is reached.
-            // Pyramiding (Scale-in) is kept, but moving stop loss to entry (breakeven) prematurely has been removed to avoid liquidity sweeps.
-            
-            // Stage 1 & 2 logic has been removed.
-            
-            // Stage 3: 100% Mark (TP Extension & EMA Trailing)
+            // Stage 3: 100% Mark (TP Extension & ATR Trailing)
             if (currentPrice >= trade.take_profit) {
               if (defconLevel === 0) {
                 const atr = atrCache[hlSymbol];
                 if (atr) {
-                  // Advanced Trailing Stop using Chandelier Exit (ATR * 2)
                   const chandelierLong = currentPrice - (atr * 2);
                   newStopLoss = Math.max(trade.stop_loss, chandelierLong);
                   newTakeProfit = currentPrice * 1.5; // Push TP way up
                   if (!newRationale.includes('ATR_TRAIL')) {
                      newRationale += ' | ATR_TRAIL (Riding the trend)';
-                     // We don't insert a new trade, we just ride this one to the moon
                   }
                 } else {
-                  // Fallback trailing
                   newStopLoss = trade.take_profit - (distanceToTp * 0.2);
                   newTakeProfit = trade.take_profit + distanceToTp;
                 }
               } else {
                 newStatus = 'WON';
-                const contracts = 1000 / trade.entry_price;
                 pnl = (currentPrice - trade.entry_price) * contracts;
                 closedAt = new Date().toISOString();
               }
             }
           }
         } else if (trade.position_type === 'SELL' || trade.position_type === 'SHORT') {
-          // SHORT Logic
-          const contracts = 1000 / trade.entry_price;
-
-          if (currentPrice >= trade.stop_loss) {
+          
+          if (tradeMode === 'PAPER' && currentPrice >= trade.stop_loss) {
             newStatus = 'LOST';
             pnl = (trade.entry_price - trade.stop_loss) * contracts;
             closedAt = new Date().toISOString();
           } else {
             const distanceToTp = trade.entry_price - trade.take_profit;
-            const currentProfit = trade.entry_price - currentPrice;
-            const profitPerc = currentProfit / distanceToTp;
-            // Stage 1 & 2 Breakevens removed to prevent liquidity sweeps.
-            
-            // Stage 3: 100% Mark (TP Extension & EMA Trailing)
+            // Stage 3: 100% Mark (TP Extension & ATR Trailing)
             if (currentPrice <= trade.take_profit) {
               if (defconLevel === 0) {
                 const atr = atrCache[hlSymbol];
                 if (atr) {
-                  // Advanced Trailing Stop using Chandelier Exit (ATR * 2)
                   const chandelierShort = currentPrice + (atr * 2);
                   newStopLoss = Math.min(trade.stop_loss, chandelierShort);
                   newTakeProfit = currentPrice * 0.5; // Push TP way down
@@ -222,7 +204,7 @@ export async function GET(req: NextRequest) {
                 }
               } else {
                 newStatus = 'WON';
-                pnl = trade.entry_price - currentPrice;
+                pnl = (trade.entry_price - currentPrice) * contracts;
                 closedAt = new Date().toISOString();
               }
             }
@@ -230,8 +212,26 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      // 4. Update the DB
+      // 4. Update the DB & Exchange
       if (newStatus !== trade.status || newStopLoss !== trade.stop_loss || newTakeProfit !== trade.take_profit || newRationale !== trade.rationale) {
+        
+        // ❌ FIX: Live Exchange Trailing Stop Execution
+        if (tradeMode === 'MICRO' && newStopLoss !== trade.stop_loss && newStatus === trade.status) {
+          try {
+            // Cancel old stop-loss
+            const openOrders = await exchange.fetchOpenOrders(hlSymbol);
+            for (const o of openOrders) {
+               if (o.id) await exchange.cancelOrder(o.id, hlSymbol);
+            }
+            // Create new trailing stop-loss
+            const side = (trade.position_type === 'BUY' || trade.position_type === 'LONG') ? 'sell' : 'buy';
+            await exchange.createOrder(hlSymbol, 'market', side, contracts, undefined, { triggerPrice: newStopLoss, reduceOnly: true });
+            console.log(`[Manage Trades] Trailed Hyperliquid Stop Loss for ${trade.symbol} to ${newStopLoss}`);
+          } catch (err) {
+            console.error(`[Manage Trades] Failed to trail Hyperliquid order for ${trade.symbol}`, err);
+          }
+        }
+
         updates.push(
           supabase
             .from('paper_trades')

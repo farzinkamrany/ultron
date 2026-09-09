@@ -5,13 +5,9 @@ import { CTOConfig } from '../ai';
 
 import { detectMarketRegime } from './risk';
 
-// ============ PHASE 1: SNOWBALL (15m) - ETH Only (Best Risk/Reward) ============
-const BEAST_MODE_SYMBOLS = ['ETH/USDT'];
+// ============ PHASE 1: SNOWBALL (15m) - Maximum Volatility (Best Risk/Reward) ============
+const BEAST_MODE_SYMBOLS = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'LINK/USDT', 'ADA/USDT', 'BNB/USDT', 'XRP/USDT', 'DOGE/USDT', 'AVAX/USDT', 'DOT/USDT'];
 const BEAST_MODE_TF = '15m';
-
-// ============ PHASE 2: SNIPER (1h) - Multi-asset ============
-const SHIELD_MODE_SYMBOLS = ['BTC/USDT', 'ETH/USDT'];
-const SHIELD_MODE_TF = '1h';
 
 export interface HuntResult {
   symbol: string;
@@ -45,17 +41,17 @@ export async function huntForSetup(fallbackTargetProfitPerc: number, openSymbols
     console.error("Redis fetch failed, using fallback config.");
   }
 
-  const slBuffer = ctoConfig?.gann_tolerance_pct || 0.003; // Dynamic Stop-Loss buffer
+  const slBuffer = ctoConfig?.gann_tolerance_pct || 0.015; // Widen initial tolerance to 1.5% for volatile altcoins
   const smcLookback = ctoConfig?.smc_lookback_candles || 5;
 
   let bestTrade: HuntTrade | null = null;
 
   try {
-    // === AUTONOMOUS REGIME DETECTION ===
-    // We check the macro regime on BTC to decide the market mood.
+    // We check the macro regime strictly for database context, but NEVER retreat. 
+    // The Backtest proved 15m fat-tail trailing stops thrive in WILD markets.
     const regime = await detectMarketRegime('BTC/USDT');
-    const activeAssets = (regime === 'CALM' ? BEAST_MODE_SYMBOLS : SHIELD_MODE_SYMBOLS).filter(sym => !openSymbols.includes(sym));
-    const targetTF = regime === 'CALM' ? BEAST_MODE_TF : SHIELD_MODE_TF;
+    const activeAssets = BEAST_MODE_SYMBOLS.filter(sym => !openSymbols.includes(sym));
+    const targetTF = BEAST_MODE_TF;
 
     // === FAST PASS: GANN & R:R FILTER ===
     const tickers = await exchange.fetchTickers(activeAssets);
@@ -200,17 +196,18 @@ export async function huntForSetup(fallbackTargetProfitPerc: number, openSymbols
           if (cosmos.planetaryAspect) gannContext += ` | ${cosmos.planetaryAspect}`;
 
           const validOB = obs.find(ob => ob.type === 'BULLISH_OB' && ob.sweptLiquidity && !ob.mitigated && candidate.currentPrice <= ob.top * 1.001 && candidate.currentPrice >= ob.bottom * 0.999);
-          if (validOB) {
-            bestTrade = {
-              symbol: candidate.asset,
-              action: 'BUY',
-              entryPrice: candidate.currentPrice,
-              targetPrice: candidate.tp,
-              stopLoss: finalSL,
-              execution_context: `R:R=${finalRR.toFixed(2)} | SMC_OB_Swept_Mitigated${gannContext}`
-            };
-            break; // Found the best trade, stop checking
-          }
+          if (validOB) gannContext += ' | SMC_OB_Swept_Mitigated';
+          
+          // Execute based on mathematical Gann edge (Matching the Backtest)
+          bestTrade = {
+            symbol: candidate.asset,
+            action: 'BUY',
+            entryPrice: candidate.currentPrice,
+            targetPrice: candidate.tp,
+            stopLoss: finalSL,
+            execution_context: `R:R=${finalRR.toFixed(2)}${gannContext}`
+          };
+          break; // Found the best trade, stop checking
         } else {
           if (trend === 'UP') {
              console.log(`[Hunter] Rejected ${candidate.asset} SELL: Counter-trend (Price above EMA 200).`);
@@ -237,17 +234,18 @@ export async function huntForSetup(fallbackTargetProfitPerc: number, openSymbols
           if (cosmos.planetaryAspect) gannContext += ` | ${cosmos.planetaryAspect}`;
 
           const validOB = obs.find(ob => ob.type === 'BEARISH_OB' && ob.sweptLiquidity && !ob.mitigated && candidate.currentPrice >= ob.bottom * 0.999 && candidate.currentPrice <= ob.top * 1.001);
-          if (validOB) {
-            bestTrade = {
-              symbol: candidate.asset,
-              action: 'SELL',
-              entryPrice: candidate.currentPrice,
-              targetPrice: candidate.tp,
-              stopLoss: finalSL,
-              execution_context: `R:R=${finalRR.toFixed(2)} | SMC_OB_Swept_Mitigated${gannContext}`
-            };
-            break; // Found the best trade, stop checking
-          }
+          if (validOB) gannContext += ' | SMC_OB_Swept_Mitigated';
+
+          // Execute based on mathematical Gann edge (Matching the Backtest)
+          bestTrade = {
+            symbol: candidate.asset,
+            action: 'SELL',
+            entryPrice: candidate.currentPrice,
+            targetPrice: candidate.tp,
+            stopLoss: finalSL,
+            execution_context: `R:R=${finalRR.toFixed(2)}${gannContext}`
+          };
+          break; // Found the best trade, stop checking
         }
       } catch (err) {
         console.error(`SMC fetch failed for ${candidate.asset}`, err);

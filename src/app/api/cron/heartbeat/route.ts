@@ -31,28 +31,28 @@ export async function GET(req: NextRequest) {
       errors.push(`❌ **Supabase Database Error:**\n${dbError.message}`);
     }
 
-    // 2. Check Kucoin/CCXT Data Staleness
+    // 2. Check Hyperliquid Data Staleness
     try {
-      const exchange = new ccxt.kucoin({ enableRateLimit: true });
+      const exchange = new ccxt.hyperliquid({ enableRateLimit: true, options: { defaultType: 'swap' } });
       // Timeout specifically for the API call to avoid hanging
-      const fetchPromise = exchange.fetchOHLCV('BTC/USDT', '5m', undefined, 1);
+      const fetchPromise = exchange.fetchOHLCV('BTC/USDC:USDC', '5m', undefined, 1);
       const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Exchange API Timeout")), 10000));
       
       const ohlcv = await Promise.race([fetchPromise, timeoutPromise]) as any[];
       
       if (!ohlcv || ohlcv.length === 0) {
-        errors.push(`❌ **Exchange Error:** No data received from Kucoin.`);
+        errors.push(`❌ **Exchange Error:** No data received from Hyperliquid.`);
       } else {
         const lastCandleTime = ohlcv[0][0];
         const currentTime = Date.now();
         const diffMinutes = (currentTime - lastCandleTime) / (1000 * 60);
 
         if (diffMinutes > 15) {
-          errors.push(`❌ **Data Staleness Warning:**\nKucoin API is returning old data! Last candle is ${Math.round(diffMinutes)} minutes old (Threshold: 15m).`);
+          errors.push(`❌ **Data Staleness Warning:**\nHyperliquid API is returning old data! Last candle is ${Math.round(diffMinutes)} minutes old (Threshold: 15m).`);
         }
       }
     } catch (e: any) {
-      errors.push(`❌ **Exchange Connection Error:**\n${e.message || 'Failed to connect to Kucoin'}`);
+      errors.push(`❌ **Exchange Connection Error:**\n${e.message || 'Failed to connect to Hyperliquid'}`);
     }
 
     // 3. Trigger Alert if any errors found

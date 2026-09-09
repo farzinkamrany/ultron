@@ -178,15 +178,15 @@ export async function runTradingCycle(symbol: string = "BTC/USDT"): Promise<void
     return;
   }
 
-  const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+  const cooldownLimit = new Date(Date.now() - 15 * 60 * 1000).toISOString(); // 15-minute cooldown (Machine speed, no human fear)
   const { data: recentTrades } = await supabase
     .from("paper_trades")
     .select("*")
     .eq("symbol", signal.symbol)
-    .gte("created_at", twoHoursAgo);
+    .gte("created_at", cooldownLimit);
 
   if (recentTrades && recentTrades.length > 0) {
-    console.log(`[Cooldown] Skipping ${signal.symbol} - a trade was placed in the last 2 hours.`);
+    console.log(`[Cooldown] Skipping ${signal.symbol} - a trade was placed in the last 15 minutes.`);
     return;
   }
 
@@ -285,7 +285,8 @@ export async function runTradingCycle(symbol: string = "BTC/USDT"): Promise<void
       
       const oppositeSide = side === "buy" ? "sell" : "buy";
       await exchange.createOrder(hlSymbol, 'market', oppositeSide, amount, undefined, { triggerPrice: signal.stopLoss, reduceOnly: true });
-      await exchange.createOrder(hlSymbol, 'market', oppositeSide, amount, undefined, { triggerPrice: signal.takeProfit, reduceOnly: true });
+      // ❌ HUMAN EMOTION REMOVED: No Hard Take-Profit order. 
+      // A machine doesn't say "I'm satisfied with this profit." It trails the Stop-Loss until the trend dies.
       
       // 2. SUPABASE LOGGING
       const { error } = await supabase.from("paper_trades").insert({
