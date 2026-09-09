@@ -305,45 +305,8 @@ export async function detectCapitulation(candles: Candle[], symbol: string, look
 }
 
 export function checkEarlyExit(trade: any, candles: Candle[]): boolean {
-  if (!trade || trade.pyramidStage !== 0) return false;
-  
-  const entryIndex = candles.findIndex(c => c.timestamp === trade.entryTime);
-  if (entryIndex === -1) return false; // Safety
-  
-  // THE EXPLOSION FACTOR (Hold onto the rocket)
-  const isSqueezing = detectSqueeze(candles);
-  const chop = calculateChoppinessIndex(candles, 288);
-  const isTrending = chop < 42; 
-  
-  // If the market is winding up for an explosion (Squeeze) or is currently in a strong trend, DO NOT EXIT EARLY.
-  if (isSqueezing || isTrending) return false;
-  
-  const candlesSinceEntry = candles.length - 1 - entryIndex;
-  
-  // 1. Time-Based Exit (Dead Momentum)
-  if (candlesSinceEntry >= 5) {
-      const currentPrice = candles[candles.length - 1].close;
-      const isLosing = trade.action === 'BUY' ? currentPrice < trade.entryPrice : currentPrice > trade.entryPrice;
-      if (isLosing) return true; // Cut the dead trade
-  }
-  
-  // 2. Volume Absorption (Immediate Reversal)
-  if (candlesSinceEntry >= 1 && candlesSinceEntry <= 3) {
-      const current = candles[candles.length - 1];
-      const prev = candles[candles.length - 2];
-      
-      if (trade.action === 'BUY' && current.close < current.open) {
-          if (current.volume > prev.volume * 2 && current.close < trade.entryPrice) {
-              return true; // Bail out!
-          }
-      }
-      if (trade.action === 'SELL' && current.close > current.open) {
-          if (current.volume > prev.volume * 2 && current.close > trade.entryPrice) {
-              return true; // Bail out!
-          }
-      }
-  }
-  
+  // All emotional 'fear-based' early exits (impatience, single red candle panic) 
+  // have been removed. Let the fat-tail math work.
   return false;
 }
 

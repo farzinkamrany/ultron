@@ -52,8 +52,8 @@ export async function POST(request: NextRequest) {
       .select('symbol, status')
       .eq('status', 'OPEN');
       
-    if (openTrades && openTrades.length >= 3) {
-      console.log("[SHIELD PROTOCOL] Correlation Filter Active: Already have 3 open trades. Skipping hunt.");
+    if (openTrades && openTrades.length >= 8) {
+      console.log("[SHIELD PROTOCOL] Correlation Filter Active: Already have 8 open trades. Skipping hunt.");
       return NextResponse.json({ message: 'SHIELD PROTOCOL: CORRELATION FILTER ACTIVE - MAX TRADES REACHED' });
     }
 
