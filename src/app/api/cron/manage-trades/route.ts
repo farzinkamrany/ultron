@@ -54,7 +54,14 @@ export async function GET(req: NextRequest) {
     
     await exchange.loadMarkets();
     
-    const symbols = [...new Set(openTrades.map(t => t.symbol))];
+    const allSymbols = [...new Set(openTrades.map(t => t.symbol))];
+    // Filter out symbols that don't exist on this exchange
+    const exchangeMarkets = exchange.markets || {};
+    const symbols = allSymbols.filter(s => !!exchangeMarkets[s]);
+    const skippedSymbols = allSymbols.filter(s => !exchangeMarkets[s]);
+    if (skippedSymbols.length > 0) {
+      console.warn(`[Manage Trades] Skipping unsupported symbols on this exchange: ${skippedSymbols.join(', ')}`);
+    }
     
     let tickers: any = {};
     try {
