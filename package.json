@@ -8,6 +8,7 @@
     "start": "next start",
     "fetch-history": "node --max-old-space-size=8192 node_modules/tsx/dist/cli.mjs scripts/fetch-history.ts",
     "backtest": "node --max-old-space-size=8192 node_modules/tsx/dist/cli.mjs scripts/backtest.ts",
+    "backtest:pool": "node --max-old-space-size=8192 node_modules/tsx/dist/cli.mjs scripts/portfolio-backtest.ts",
     "paper": "node --max-old-space-size=8192 node_modules/tsx/dist/cli.mjs scripts/paper-trade.ts"
   },
   "dependencies": {

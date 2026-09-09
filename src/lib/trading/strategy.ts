@@ -1,56 +1,6 @@
 import { calculateGannSquareOf9, calculateTimeCycles, calculateGannAngles, calculateDownwardGannAngles, calculateCosmicAlignment, TradeSignal } from './gann';
 import { findOrderBlocks } from './ict';
 
-// ─── CIRCUIT BREAKER ─────────────────────────────────────────────────────────
-// Prevents runaway losses by pausing trading when daily drawdown exceeds MAX_DAILY_LOSS
-// or when a consecutive losing streak is detected.
-export const CIRCUIT_BREAKER = {
-  enabled: false, // Disabled: the bot doesn't have human feelings
-  MAX_DAILY_LOSS: 0.10,        // Stop trading if daily loss > 10% of balance
-  MAX_CONSECUTIVE_LOSSES: 5,   // Stop trading after 5 losses in a row
-  COOLDOWN_CANDLES: 8,         // How many candles to wait before resuming
-  // Runtime state (reset at start of each backtest/session)
-  consecutiveLosses: 0,
-  coolingDownUntil: 0,         // timestamp or candle index
-  dailyPeakBalance: 0,
-  lastResetDay: -1,
-};
-
-export function resetCircuitBreaker(balance: number) {
-  CIRCUIT_BREAKER.consecutiveLosses = 0;
-  CIRCUIT_BREAKER.coolingDownUntil = 0;
-  CIRCUIT_BREAKER.dailyPeakBalance = balance;
-  CIRCUIT_BREAKER.lastResetDay = -1;
-}
-
-export function updateCircuitBreaker(won: boolean, balance: number, candleIndex: number, timestamp: number) {
-  // Reset daily peak at start of new day
-  const currentDay = Math.floor(timestamp / (1000 * 60 * 60 * 24));
-  if (currentDay !== CIRCUIT_BREAKER.lastResetDay) {
-    CIRCUIT_BREAKER.dailyPeakBalance = Math.max(CIRCUIT_BREAKER.dailyPeakBalance, balance);
-    CIRCUIT_BREAKER.lastResetDay = currentDay;
-  }
-
-  if (won) {
-    CIRCUIT_BREAKER.consecutiveLosses = 0;
-  } else {
-    CIRCUIT_BREAKER.consecutiveLosses++;
-    // Trigger cooldown if streak exceeded
-    if (CIRCUIT_BREAKER.consecutiveLosses >= CIRCUIT_BREAKER.MAX_CONSECUTIVE_LOSSES) {
-      CIRCUIT_BREAKER.coolingDownUntil = candleIndex + CIRCUIT_BREAKER.COOLDOWN_CANDLES;
-    }
-    // Trigger cooldown if daily loss exceeded
-    const dailyLoss = (CIRCUIT_BREAKER.dailyPeakBalance - balance) / CIRCUIT_BREAKER.dailyPeakBalance;
-    if (dailyLoss >= CIRCUIT_BREAKER.MAX_DAILY_LOSS) {
-      CIRCUIT_BREAKER.coolingDownUntil = candleIndex + CIRCUIT_BREAKER.COOLDOWN_CANDLES;
-    }
-  }
-}
-
-export function isCircuitBreakerActive(candleIndex: number): boolean {
-  if (!CIRCUIT_BREAKER.enabled) return false;
-  return candleIndex < CIRCUIT_BREAKER.coolingDownUntil;
-}
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function evaluateSetup(symbol: string, currentPrice: number, candles: any[], macroCandles: any[]): TradeSignal {

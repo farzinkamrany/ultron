@@ -104,7 +104,7 @@ export async function GET(req: NextRequest) {
 
       // STALE TRADE PROTECTOR (Time-based Kill Switch)
       const tradeAgeHours = trade.created_at ? (Date.now() - new Date(trade.created_at).getTime()) / (1000 * 60 * 60) : 0;
-      const MAX_TRADE_HOURS = 72; // 3 days max holding time
+      const MAX_TRADE_HOURS = 16; // 16 hours max holding time for better liquidity flow
       
       if (tradeAgeHours >= MAX_TRADE_HOURS) {
         newStatus = trade.position_type === 'LONG' 
@@ -163,6 +163,10 @@ export async function GET(req: NextRequest) {
                   symbol: trade.symbol, position_type: 'LONG', entry_price: currentPrice,
                   take_profit: trade.take_profit, stop_loss: newStopLoss, status: 'OPEN', rationale: 'Pyramid T1 Asymmetric Scale-In (Risking Unrealized PnL)', pnl: 0
                 });
+                newTradesToInsert.push({
+                  symbol: trade.symbol, position_type: 'LONG', entry_price: currentPrice,
+                  take_profit: trade.take_profit, stop_loss: newStopLoss, status: 'OPEN', rationale: 'Pyramid T1 Asymmetric Scale-In 2x (Aggressive Trend)', pnl: 0
+                });
               }
             }
             // Stage 2: 75% Mark
@@ -174,6 +178,10 @@ export async function GET(req: NextRequest) {
                   symbol: trade.symbol, position_type: 'LONG', entry_price: currentPrice,
                   take_profit: trade.take_profit, stop_loss: newStopLoss, status: 'OPEN', rationale: 'Pyramid T2 Asymmetric Scale-In (Risking Unrealized PnL)', pnl: 0
                 });
+                newTradesToInsert.push({
+                  symbol: trade.symbol, position_type: 'LONG', entry_price: currentPrice,
+                  take_profit: trade.take_profit, stop_loss: newStopLoss, status: 'OPEN', rationale: 'Pyramid T2 Asymmetric Scale-In 2x (Aggressive Trend)', pnl: 0
+                });
               }
             }
             // Stage 3: 100% Mark (TP Extension & EMA Trailing)
@@ -181,8 +189,8 @@ export async function GET(req: NextRequest) {
               if (defconLevel === 0) {
                 const ema50 = ema50Cache[hlSymbol];
                 if (ema50) {
-                  // Advanced Trailing Stop using EMA 50
-                  newStopLoss = Math.max(trade.stop_loss, ema50 * 0.995);
+                  // Advanced Trailing Stop using EMA 50 (Lazy Trailing at 0.99 to breathe)
+                  newStopLoss = Math.max(trade.stop_loss, ema50 * 0.99);
                   newTakeProfit = currentPrice * 1.5; // Push TP way up
                   if (!newRationale.includes('EMA_TRAIL')) {
                      newRationale += ' | EMA_TRAIL (Riding the trend)';
@@ -222,6 +230,10 @@ export async function GET(req: NextRequest) {
                   symbol: trade.symbol, position_type: 'SHORT', entry_price: currentPrice,
                   take_profit: trade.take_profit, stop_loss: newStopLoss, status: 'OPEN', rationale: 'Pyramid T1 Asymmetric Scale-In (Risking Unrealized PnL)', pnl: 0
                 });
+                newTradesToInsert.push({
+                  symbol: trade.symbol, position_type: 'SHORT', entry_price: currentPrice,
+                  take_profit: trade.take_profit, stop_loss: newStopLoss, status: 'OPEN', rationale: 'Pyramid T1 Asymmetric Scale-In 2x (Aggressive Trend)', pnl: 0
+                });
               }
             }
             // Stage 2: 75% Mark
@@ -233,6 +245,10 @@ export async function GET(req: NextRequest) {
                   symbol: trade.symbol, position_type: 'SHORT', entry_price: currentPrice,
                   take_profit: trade.take_profit, stop_loss: newStopLoss, status: 'OPEN', rationale: 'Pyramid T2 Asymmetric Scale-In (Risking Unrealized PnL)', pnl: 0
                 });
+                newTradesToInsert.push({
+                  symbol: trade.symbol, position_type: 'SHORT', entry_price: currentPrice,
+                  take_profit: trade.take_profit, stop_loss: newStopLoss, status: 'OPEN', rationale: 'Pyramid T2 Asymmetric Scale-In 2x (Aggressive Trend)', pnl: 0
+                });
               }
             }
             // Stage 3: 100% Mark (TP Extension & EMA Trailing)
@@ -240,8 +256,8 @@ export async function GET(req: NextRequest) {
               if (defconLevel === 0) {
                 const ema50 = ema50Cache[hlSymbol];
                 if (ema50) {
-                  // Advanced Trailing Stop using EMA 50
-                  newStopLoss = Math.min(trade.stop_loss, ema50 * 1.005);
+                  // Advanced Trailing Stop using EMA 50 (Lazy Trailing at 1.01 to breathe)
+                  newStopLoss = Math.min(trade.stop_loss, ema50 * 1.01);
                   newTakeProfit = currentPrice * 0.5; // Push TP way down
                   if (!newRationale.includes('EMA_TRAIL')) {
                      newRationale += ' | EMA_TRAIL (Riding the trend)';

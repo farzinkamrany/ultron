@@ -46,14 +46,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: 'SHIELD PROTOCOL: 25% TRAILING DRAWDOWN ACTIVE - TRADING HALTED' });
     }
 
-    // 1.2 CORRELATION FILTER (Max 3 Open Trades)
+    // 1.2 CORRELATION FILTER (Max 5 Open Trades - Porsche Engine)
     const { data: openTrades, error: countError } = await supabase
       .from('paper_trades')
       .select('symbol, status')
       .eq('status', 'OPEN');
       
-    if (openTrades && openTrades.length >= 3) {
-      console.log("[SHIELD PROTOCOL] Correlation Filter Active: Already have 3 open trades. Skipping hunt.");
+    if (openTrades && openTrades.length >= 5) {
+      console.log("[SHIELD PROTOCOL] Correlation Filter Active: Already have 5 open trades. Skipping hunt.");
       return NextResponse.json({ message: 'SHIELD PROTOCOL: CORRELATION FILTER ACTIVE - MAX TRADES REACHED' });
     }
 
