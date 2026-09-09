@@ -31,9 +31,9 @@ export async function GET(req: NextRequest) {
       errors.push(`❌ **Supabase Database Error:**\n${dbError.message}`);
     }
 
-    // 2. Check Binance/CCXT Data Staleness
+    // 2. Check Kucoin/CCXT Data Staleness
     try {
-      const exchange = new ccxt.binance({ enableRateLimit: true, options: { defaultType: 'spot' } });
+      const exchange = new ccxt.kucoin({ enableRateLimit: true });
       // Timeout specifically for the API call to avoid hanging
       const fetchPromise = exchange.fetchOHLCV('BTC/USDT', '5m', undefined, 1);
       const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Exchange API Timeout")), 10000));
@@ -41,18 +41,18 @@ export async function GET(req: NextRequest) {
       const ohlcv = await Promise.race([fetchPromise, timeoutPromise]) as any[];
       
       if (!ohlcv || ohlcv.length === 0) {
-        errors.push(`❌ **Exchange Error:** No data received from Binance.`);
+        errors.push(`❌ **Exchange Error:** No data received from Kucoin.`);
       } else {
         const lastCandleTime = ohlcv[0][0];
         const currentTime = Date.now();
         const diffMinutes = (currentTime - lastCandleTime) / (1000 * 60);
 
         if (diffMinutes > 15) {
-          errors.push(`❌ **Data Staleness Warning:**\nBinance API is returning old data! Last candle is ${Math.round(diffMinutes)} minutes old (Threshold: 15m).`);
+          errors.push(`❌ **Data Staleness Warning:**\nKucoin API is returning old data! Last candle is ${Math.round(diffMinutes)} minutes old (Threshold: 15m).`);
         }
       }
     } catch (e: any) {
-      errors.push(`❌ **Exchange Connection Error:**\n${e.message || 'Failed to connect to Binance'}`);
+      errors.push(`❌ **Exchange Connection Error:**\n${e.message || 'Failed to connect to Kucoin'}`);
     }
 
     // 3. Trigger Alert if any errors found

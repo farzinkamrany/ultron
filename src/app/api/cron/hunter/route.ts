@@ -59,18 +59,7 @@ export async function POST(request: NextRequest) {
 
     const openSymbols = openTrades ? openTrades.map(t => t.symbol) : [];
 
-    // 1.3 CIRCUIT BREAKER (3 Consecutive Losses)
-    const { data: recentTrades } = await supabase
-      .from('paper_trades')
-      .select('status')
-      .in('status', ['WON', 'LOST'])
-      .order('created_at', { ascending: false })
-      .limit(3);
-
-    if (recentTrades && recentTrades.length >= 3 && recentTrades.every(t => t.status === 'LOST')) {
-      console.error("[SHIELD PROTOCOL] 3 Consecutive Losses hit. Halting trading for cool down.");
-      return NextResponse.json({ message: 'SHIELD PROTOCOL: 3 CONSECUTIVE LOSSES - TRADING HALTED' });
-    }
+    // 1.3 CIRCUIT BREAKER (3 Consecutive Losses) - Removed by user request (bot has no feelings)
 
     // 1.5 LIQUIDITY CEILING DETECTOR (Protocol V13.0)
     if (currentBalance >= 1000000) {
