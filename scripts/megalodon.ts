@@ -2,7 +2,7 @@ import fs from 'fs';
 import readline from 'readline';
 import { calculateGannSquareOf9 } from '../src/lib/trading/gann';
 import { findOrderBlocks } from '../src/lib/trading/ict';
-import { detectSqueeze, calculateChoppinessIndex, detectLiquiditySweep, calculateRollingVWAP, calculateVolumeProfile, synthesizeDailyCandles, detectDailyTrend, detectCandlePattern, detectCapitulation, checkEarlyExit } from '../src/lib/trading/financial-intelligence';
+import { detectSqueeze, calculateChoppinessIndex, detectLiquiditySweep, calculateRollingVWAP, calculateVolumeProfile, synthesizeDailyCandles, detectDailyTrend, detectCandlePattern, detectCapitulation, checkEarlyExit, detectRegime } from '../src/lib/trading/financial-intelligence';
 
 interface MultiCandle {
     symbol: string;
@@ -315,13 +315,26 @@ async function runMegalodon() {
         }
         
         if (!action) {
-            if (distanceToSupportPerc <= dynamicSL) {
-                const validTP = resistances.find(r => (r - currentPrice) / (currentPrice - closestSupport * (1 - dynamicSL)) >= 1.5);
-                if (validTP) { action = 'BUY'; tp = validTP; sl = closestSupport * (1 - dynamicSL); }
-            } 
-            else if (distanceToResPerc <= dynamicSL) {
-                const validTP = supports.find(s => (currentPrice - s) / (closestResistance * (1 + dynamicSL) - currentPrice) >= 1.5);
-                if (validTP) { action = 'SELL'; tp = validTP; sl = closestResistance * (1 + dynamicSL); }
+            const regime = detectRegime(candles);
+            
+            if (regime === 'RANGING') {
+                if (distanceToSupportPerc <= dynamicSL) {
+                    const validTP = resistances.find(r => r > currentPrice);
+                    if (validTP && (validTP - currentPrice) / (currentPrice - closestSupport * (1 - dynamicSL)) >= 1.0) { action = 'BUY'; tp = validTP; sl = closestSupport * (1 - dynamicSL); }
+                } 
+                else if (distanceToResPerc <= dynamicSL) {
+                    const validTP = supports.find(s => s < currentPrice);
+                    if (validTP && (currentPrice - validTP) / (closestResistance * (1 + dynamicSL) - currentPrice) >= 1.0) { action = 'SELL'; tp = validTP; sl = closestResistance * (1 + dynamicSL); }
+                }
+            } else {
+                if (distanceToSupportPerc <= dynamicSL) {
+                    const validTP = resistances.find(r => (r - currentPrice) / (currentPrice - closestSupport * (1 - dynamicSL)) >= 1.5);
+                    if (validTP) { action = 'BUY'; tp = validTP; sl = closestSupport * (1 - dynamicSL); }
+                } 
+                else if (distanceToResPerc <= dynamicSL) {
+                    const validTP = supports.find(s => (currentPrice - s) / (closestResistance * (1 + dynamicSL) - currentPrice) >= 1.5);
+                    if (validTP) { action = 'SELL'; tp = validTP; sl = closestResistance * (1 + dynamicSL); }
+                }
             }
         }
         

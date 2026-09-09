@@ -155,16 +155,16 @@ export async function runTradingCycle(symbol: string = "BTC/USDT"): Promise<void
   
   const livePrice = candles15m[candles15m.length - 1].close;
   
-  // Engine Evaluation
-  const signal = await evaluateSetup(symbol, livePrice, candles15m, candles1h);
-  console.log(`[Quant Engine] Setup evaluated: ${signal.action}. Reason: ${signal.reason || 'Valid setup'}`);
-  
-  if (signal.action === "HOLD") return;
-
   // Regime-Based Concurrency
   const regime = detectRegime(candles1h);
   const maxConcurrentTrades = regime === 'TRENDING' ? 8 : 3;
   console.log(`[Regime] Current Market Regime: ${regime}. Max Concurrency set to ${maxConcurrentTrades}.`);
+
+  // Engine Evaluation
+  const signal = await evaluateSetup(symbol, livePrice, candles15m, candles1h, regime);
+  console.log(`[Quant Engine] Setup evaluated: ${signal.action}. Reason: ${signal.reason || 'Valid setup'}`);
+  
+  if (signal.action === "HOLD") return;
 
   // Cooldown Check: Prevent revenge trading the same signal (15m OB is valid for a long time)
   const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();

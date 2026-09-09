@@ -6,7 +6,7 @@ import ccxt from "ccxt";
  */
 export async function getTopVolatileSymbols(): Promise<string[]> {
     try {
-        const exchange = new ccxt.kucoin({ enableRateLimit: true });
+        const exchange = new ccxt.binance({ enableRateLimit: true });
         
         // Fetch all tickers in 1 API call
         const tickers = await exchange.fetchTickers();

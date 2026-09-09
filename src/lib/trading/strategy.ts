@@ -14,7 +14,7 @@ export function calculateATR(candles: any[], period: number = 14): number {
     return trSum / actualPeriod;
 }
 
-export async function evaluateSetup(symbol: string, currentPrice: number, candles: any[], macroCandles: any[]): Promise<TradeSignal> {
+export async function evaluateSetup(symbol: string, currentPrice: number, candles: any[], macroCandles: any[], regime: string = 'NORMAL'): Promise<TradeSignal> {
     const gann = calculateGannSquareOf9(currentPrice);
     const supports = gann.supports.sort((a, b) => b - a);
     const resistances = gann.resistances.sort((a, b) => a - b);
@@ -55,26 +55,50 @@ export async function evaluateSetup(symbol: string, currentPrice: number, candle
     }
     
     if (action === 'HOLD') {
-        if (distanceToSupportPerc <= dynamicSL) {
-            const validTP = resistances.find(r => (r - currentPrice) / (currentPrice - closestSupport * (1 - dynamicSL)) >= 1.5);
-            if (validTP) { 
-                action = 'BUY'; 
-                tp = validTP; 
-                sl = closestSupport * (1 - dynamicSL); 
-                const rr = (validTP - currentPrice) / (currentPrice - sl);
-                rationale = `Gann Support Bounce (R:R ${rr.toFixed(2)})`;
-                executionType = 'LIMIT';
+        if (regime === 'RANGING') {
+            if (distanceToSupportPerc <= dynamicSL) {
+                const validTP = resistances.find(r => r > currentPrice);
+                if (validTP && (validTP - currentPrice) / (currentPrice - closestSupport * (1 - dynamicSL)) >= 1.0) {
+                    action = 'BUY'; 
+                    tp = validTP; 
+                    sl = closestSupport * (1 - dynamicSL); 
+                    const rr = (validTP - currentPrice) / (currentPrice - sl);
+                    rationale = `Mean Reversion Support Bounce (R:R ${rr.toFixed(2)})`;
+                    executionType = 'LIMIT';
+                }
+            } else if (distanceToResPerc <= dynamicSL) {
+                const validTP = supports.find(s => s < currentPrice);
+                if (validTP && (currentPrice - validTP) / (closestResistance * (1 + dynamicSL) - currentPrice) >= 1.0) {
+                    action = 'SELL'; 
+                    tp = validTP; 
+                    sl = closestResistance * (1 + dynamicSL); 
+                    const rr = (currentPrice - validTP) / (sl - currentPrice);
+                    rationale = `Mean Reversion Res Rejection (R:R ${rr.toFixed(2)})`;
+                    executionType = 'LIMIT';
+                }
             }
-        } 
-        else if (distanceToResPerc <= dynamicSL) {
-            const validTP = supports.find(s => (currentPrice - s) / (closestResistance * (1 + dynamicSL) - currentPrice) >= 1.5);
-            if (validTP) { 
-                action = 'SELL'; 
-                tp = validTP; 
-                sl = closestResistance * (1 + dynamicSL); 
-                const rr = (currentPrice - validTP) / (sl - currentPrice);
-                rationale = `Gann Resistance Rejection (R:R ${rr.toFixed(2)})`;
-                executionType = 'LIMIT';
+        } else {
+            if (distanceToSupportPerc <= dynamicSL) {
+                const validTP = resistances.find(r => (r - currentPrice) / (currentPrice - closestSupport * (1 - dynamicSL)) >= 1.5);
+                if (validTP) { 
+                    action = 'BUY'; 
+                    tp = validTP; 
+                    sl = closestSupport * (1 - dynamicSL); 
+                    const rr = (validTP - currentPrice) / (currentPrice - sl);
+                    rationale = `Gann Support Bounce (R:R ${rr.toFixed(2)})`;
+                    executionType = 'LIMIT';
+                }
+            } 
+            else if (distanceToResPerc <= dynamicSL) {
+                const validTP = supports.find(s => (currentPrice - s) / (closestResistance * (1 + dynamicSL) - currentPrice) >= 1.5);
+                if (validTP) { 
+                    action = 'SELL'; 
+                    tp = validTP; 
+                    sl = closestResistance * (1 + dynamicSL); 
+                    const rr = (currentPrice - validTP) / (sl - currentPrice);
+                    rationale = `Gann Resistance Rejection (R:R ${rr.toFixed(2)})`;
+                    executionType = 'LIMIT';
+                }
             }
         }
     }
