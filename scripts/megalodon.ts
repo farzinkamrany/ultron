@@ -138,12 +138,9 @@ async function runMegalodon() {
             const chandelierLong = currentPrice - (atr * 2);
             const chandelierShort = currentPrice + (atr * 2);
             
-            const hoursInTrade = (timestamp - entryTime) / (1000 * 60 * 60);
-            const isStale = (hoursInTrade > 48 && pyramidStage === 0);
-            
             if (action === 'BUY') {
                 const isEarlyExit = checkEarlyExit(activeTrade, candles);
-                if (isStale || isEarlyExit) {
+                if (isEarlyExit) {
                    exitPrice = currentPrice;
                    closed = true;
                 }
@@ -154,9 +151,6 @@ async function runMegalodon() {
                 else if (pyramidStage === 0 && candle.high >= tp) {
                   activeTrade.pyramidStage = 1;
                 }
-                else if (pyramidStage === 0 && candle.high > entryPrice * 1.004) {
-                   activeTrade.sl = entryPrice; 
-                }
                 
                 if (pyramidStage > 0) {
                   activeTrade.sl = Math.max(activeTrade.sl, chandelierLong); 
@@ -164,7 +158,7 @@ async function runMegalodon() {
                 }
             } else {
                 const isEarlyExit = checkEarlyExit(activeTrade, candles);
-                if (isStale || isEarlyExit) {
+                if (isEarlyExit) {
                    exitPrice = currentPrice;
                    closed = true;
                 }
@@ -174,9 +168,6 @@ async function runMegalodon() {
                 } 
                 else if (pyramidStage === 0 && candle.low <= tp) {
                   activeTrade.pyramidStage = 1;
-                }
-                else if (pyramidStage === 0 && candle.low < entryPrice * 0.996) {
-                   activeTrade.sl = entryPrice; 
                 }
                 
                 if (pyramidStage > 0) {

@@ -115,22 +115,10 @@ export async function GET(req: NextRequest) {
       let pnl = 0;
       let closedAt = null;
 
-      // STALE TRADE PROTECTOR (Time-based Kill Switch)
-      const tradeAgeHours = trade.created_at ? (Date.now() - new Date(trade.created_at).getTime()) / (1000 * 60 * 60) : 0;
-      const MAX_TRADE_HOURS = 16; // 16 hours max holding time for better liquidity flow
+      // EMOTIONAL FEATURES (Timeout & Breakevens) HAVE BEEN SURGICALLY REMOVED
+      // This allows fat tail trends to mature without premature abortion.
       
-      if (tradeAgeHours >= MAX_TRADE_HOURS) {
-        newStatus = trade.position_type === 'BUY' 
-            ? (currentPrice > trade.entry_price ? 'WON' : 'LOST')
-            : (currentPrice < trade.entry_price ? 'WON' : 'LOST');
-        
-        const contracts = 1000 / trade.entry_price;
-        pnl = trade.position_type === 'BUY' ? (currentPrice - trade.entry_price) * contracts : (trade.entry_price - currentPrice) * contracts;
-        
-        newRationale = newRationale + ` | TIMEOUT (Forced close after ${MAX_TRADE_HOURS}h)`;
-        closedAt = new Date().toISOString();
-        console.log(`[Manage Trades] Trade ${trade.symbol} timed out after ${MAX_TRADE_HOURS}h. Forced closed at ${currentPrice}`);
-      } else if (tradeMode === 'MICRO') {
+      if (tradeMode === 'MICRO') {
         // MICRO MODE: Trust the exchange. If position is missing or 0, it hit TP/SL on the exchange.
         const pos = livePositions.find(p => p.symbol === hlSymbol);
         const contracts = pos ? parseFloat((pos.contracts || 0).toString()) : 0;
@@ -171,39 +159,13 @@ export async function GET(req: NextRequest) {
             const distanceToTp = trade.take_profit - trade.entry_price;
             const currentProfit = currentPrice - trade.entry_price;
             const profitPerc = currentProfit / distanceToTp;
+            // Advanced Trailing Stop using Chandelier Exit (ATR * 2) will trigger when TP is reached.
+            // Pyramiding (Scale-in) is kept, but moving stop loss to entry (breakeven) prematurely has been removed to avoid liquidity sweeps.
             
-            // Stage 1: 50% Mark
-            if (profitPerc >= 0.5 && profitPerc < 0.75 && trade.stop_loss < trade.entry_price) {
-              newStopLoss = trade.entry_price * (1 + FEE_RATE);
-              if (defconLevel === 0 && !newRationale.includes('T1')) {
-                newRationale += ' | Asymmetric Pyramid T1';
-                newTradesToInsert.push({
-                  symbol: trade.symbol, position_type: 'BUY', entry_price: currentPrice,
-                  take_profit: trade.take_profit, stop_loss: newStopLoss, status: 'OPEN', rationale: 'Pyramid T1 Asymmetric Scale-In (Risking Unrealized PnL)', pnl: 0
-                });
-                newTradesToInsert.push({
-                  symbol: trade.symbol, position_type: 'BUY', entry_price: currentPrice,
-                  take_profit: trade.take_profit, stop_loss: newStopLoss, status: 'OPEN', rationale: 'Pyramid T1 Asymmetric Scale-In 2x (Aggressive Trend)', pnl: 0
-                });
-              }
-            }
-            // Stage 2: 75% Mark
-            else if (profitPerc >= 0.75 && profitPerc < 1.0 && trade.stop_loss < trade.entry_price + (distanceToTp * 0.5)) {
-              newStopLoss = trade.entry_price + (distanceToTp * 0.5);
-              if (defconLevel === 0 && !newRationale.includes('T2')) {
-                newRationale += ' | Asymmetric Pyramid T2';
-                newTradesToInsert.push({
-                  symbol: trade.symbol, position_type: 'BUY', entry_price: currentPrice,
-                  take_profit: trade.take_profit, stop_loss: newStopLoss, status: 'OPEN', rationale: 'Pyramid T2 Asymmetric Scale-In (Risking Unrealized PnL)', pnl: 0
-                });
-                newTradesToInsert.push({
-                  symbol: trade.symbol, position_type: 'BUY', entry_price: currentPrice,
-                  take_profit: trade.take_profit, stop_loss: newStopLoss, status: 'OPEN', rationale: 'Pyramid T2 Asymmetric Scale-In 2x (Aggressive Trend)', pnl: 0
-                });
-              }
-            }
+            // Stage 1 & 2 logic has been removed.
+            
             // Stage 3: 100% Mark (TP Extension & EMA Trailing)
-            else if (currentPrice >= trade.take_profit) {
+            if (currentPrice >= trade.take_profit) {
               if (defconLevel === 0) {
                 const atr = atrCache[hlSymbol];
                 if (atr) {
@@ -240,39 +202,10 @@ export async function GET(req: NextRequest) {
             const distanceToTp = trade.entry_price - trade.take_profit;
             const currentProfit = trade.entry_price - currentPrice;
             const profitPerc = currentProfit / distanceToTp;
-
-            // Stage 1: 50% Mark
-            if (profitPerc >= 0.5 && profitPerc < 0.75 && trade.stop_loss > trade.entry_price) {
-              newStopLoss = trade.entry_price * (1 - FEE_RATE);
-              if (defconLevel === 0 && !newRationale.includes('T1')) {
-                newRationale += ' | Asymmetric Pyramid T1';
-                newTradesToInsert.push({
-                  symbol: trade.symbol, position_type: 'SELL', entry_price: currentPrice,
-                  take_profit: trade.take_profit, stop_loss: newStopLoss, status: 'OPEN', rationale: 'Pyramid T1 Asymmetric Scale-In (Risking Unrealized PnL)', pnl: 0
-                });
-                newTradesToInsert.push({
-                  symbol: trade.symbol, position_type: 'SELL', entry_price: currentPrice,
-                  take_profit: trade.take_profit, stop_loss: newStopLoss, status: 'OPEN', rationale: 'Pyramid T1 Asymmetric Scale-In 2x (Aggressive Trend)', pnl: 0
-                });
-              }
-            }
-            // Stage 2: 75% Mark
-            else if (profitPerc >= 0.75 && profitPerc < 1.0 && trade.stop_loss > trade.entry_price - (distanceToTp * 0.5)) {
-              newStopLoss = trade.entry_price - (distanceToTp * 0.5);
-              if (defconLevel === 0 && !newRationale.includes('T2')) {
-                newRationale += ' | Asymmetric Pyramid T2';
-                newTradesToInsert.push({
-                  symbol: trade.symbol, position_type: 'SELL', entry_price: currentPrice,
-                  take_profit: trade.take_profit, stop_loss: newStopLoss, status: 'OPEN', rationale: 'Pyramid T2 Asymmetric Scale-In (Risking Unrealized PnL)', pnl: 0
-                });
-                newTradesToInsert.push({
-                  symbol: trade.symbol, position_type: 'SELL', entry_price: currentPrice,
-                  take_profit: trade.take_profit, stop_loss: newStopLoss, status: 'OPEN', rationale: 'Pyramid T2 Asymmetric Scale-In 2x (Aggressive Trend)', pnl: 0
-                });
-              }
-            }
+            // Stage 1 & 2 Breakevens removed to prevent liquidity sweeps.
+            
             // Stage 3: 100% Mark (TP Extension & EMA Trailing)
-            else if (currentPrice <= trade.take_profit) {
+            if (currentPrice <= trade.take_profit) {
               if (defconLevel === 0) {
                 const atr = atrCache[hlSymbol];
                 if (atr) {
