@@ -68,7 +68,7 @@ async function runMegalodon() {
     const dotData = await loadCSV('data/dot_15m_history.csv', 'DOT');
     
     console.log("Merging and Synchronizing Timeline...");
-    const START_TIMESTAMP = 1704067200000; // Jan 1, 2024
+    const START_TIMESTAMP = 1609459200000; // Jan 1, 2021
     const globalTimeline = [...btcData, ...ethData, ...solData, ...linkData, ...adaData, ...bnbData, ...xrpData, ...dogeData, ...avaxData, ...dotData]
     .filter(c => c.timestamp >= START_TIMESTAMP)
     .sort((a, b) => {
