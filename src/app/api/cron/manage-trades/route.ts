@@ -51,7 +51,6 @@ export async function GET(req: NextRequest) {
       enableRateLimit: true,
       options: { defaultType: 'swap' }
     });
-    exchange.setSandboxMode(true); // Testnet
     
     await exchange.loadMarkets();
     

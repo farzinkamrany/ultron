@@ -124,7 +124,6 @@ export async function analyzeMarketData(asset: string, timeHorizonDays: number, 
         enableRateLimit: true,
         options: { defaultType: 'swap' }
       });
-      wsExchange.setSandboxMode(true); // ENABLE TESTNET (Change to false to go live)
 
       const rawOrderBook = await wsExchange.watchOrderBook(asset, 100);
       const obData: OrderBookData = {

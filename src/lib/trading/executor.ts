@@ -240,7 +240,6 @@ export async function runTradingCycle(symbol: string = "BTC/USDT"): Promise<void
          return; 
       }
 
-      const hlSymbol = signal.symbol.includes('/USDT') ? signal.symbol.replace('/USDT', '/USDC:USDC') : signal.symbol;
       await exchange.loadMarkets();
       
       // Margin Allocation Limit Check
@@ -251,7 +250,7 @@ export async function runTradingCycle(symbol: string = "BTC/USDT"): Promise<void
         console.warn(`[Margin] Skipping ${signal.symbol} - Max concurrent trades (${maxConcurrentTrades}) reached on exchange.`);
         return;
       }
-      if (activePositions.some((p: any) => p.symbol === hlSymbol)) {
+      if (activePositions.some((p: any) => p.symbol === signal.symbol)) {
         console.warn(`[Margin] Skipping ${signal.symbol} - Already holding position for this symbol.`);
         return;
       }
@@ -270,20 +269,20 @@ export async function runTradingCycle(symbol: string = "BTC/USDT"): Promise<void
       const side = signal.action === "BUY" ? "buy" : "sell";
       
       await exchange.loadMarkets();
-      const openOrders = await exchange.fetchOpenOrders(hlSymbol);
+      const openOrders = await exchange.fetchOpenOrders(signal.symbol);
       for (const order of openOrders) {
-        if (order.id) await exchange.cancelOrder(order.id, hlSymbol);
+        if (order.id) await exchange.cancelOrder(order.id, signal.symbol);
       }
       
       // 1. EXCHANGE EXECUTION
       if (signal.executionType === 'LIMIT') {
-          await exchange.createLimitOrder(hlSymbol, side, amount, signal.entryPrice);
+          await exchange.createLimitOrder(signal.symbol, side, amount, signal.entryPrice);
       } else {
-          await exchange.createMarketOrder(hlSymbol, side, amount);
+          await exchange.createMarketOrder(signal.symbol, side, amount);
       }
       
       const oppositeSide = side === "buy" ? "sell" : "buy";
-      await exchange.createOrder(hlSymbol, 'market', oppositeSide, amount, undefined, { triggerPrice: signal.stopLoss, reduceOnly: true });
+      await exchange.createOrder(signal.symbol, 'market', oppositeSide, amount, undefined, { triggerPrice: signal.stopLoss, reduceOnly: true });
       // ❌ HUMAN EMOTION REMOVED: No Hard Take-Profit order. 
       // A machine doesn't say "I'm satisfied with this profit." It trails the Stop-Loss until the trend dies.
       
@@ -316,16 +315,15 @@ export async function closeMicroPosition(symbol: string, positionType: "BUY" | "
   if (mode !== "MICRO") return;
   const exchange = buildExchange();
   try {
-    const hlSymbol = symbol.includes('/USDT') ? symbol.replace('/USDT', '/USDC:USDC') : symbol;
-    const openOrders = await exchange.fetchOpenOrders(hlSymbol);
+    const openOrders = await exchange.fetchOpenOrders(symbol);
     for (const order of openOrders) {
-      if (order.id) await exchange.cancelOrder(order.id, hlSymbol);
+      if (order.id) await exchange.cancelOrder(order.id, symbol);
     }
     const side = positionType === "BUY" ? "sell" : "buy";
-    const positions = await exchange.fetchPositions([hlSymbol]);
-    const pos = positions.find((p: any) => p.symbol === hlSymbol);
+    const positions = await exchange.fetchPositions([symbol]);
+    const pos = positions.find((p: any) => p.symbol === symbol);
     if (pos && parseFloat((pos.contracts || 0).toString()) > 0) {
-      await exchange.createMarketOrder(hlSymbol, side, Math.abs(parseFloat((pos.contracts || 0).toString())));
+      await exchange.createMarketOrder(symbol, side, Math.abs(parseFloat((pos.contracts || 0).toString())));
     }
   } catch (err: any) {
     await logError("EXECUTOR_CLOSE_POSITION", err, { symbol, positionType }, false);
