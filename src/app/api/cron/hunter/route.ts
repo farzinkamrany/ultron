@@ -32,11 +32,17 @@ export async function POST(request: NextRequest) {
     // 1.2 CORRELATION FILTER (Max 3 Open Trades - Drawdown Reduction)
     const { data: openTrades, error: countError } = await supabase
       .from('paper_trades')
-      .select('symbol, status')
+      .select('symbol, status, rationale')
       .eq('status', 'OPEN');
       
-    if (openTrades && openTrades.length >= 8) {
-      console.log("[SHIELD PROTOCOL] Correlation Filter Active: Already have 8 open trades. Skipping hunt.");
+    const uniqueBaseTrades = new Set(
+      openTrades
+        ?.filter(t => !t.rationale?.includes('PYRAMID child'))
+        .map(t => t.symbol) || []
+    );
+
+    if (uniqueBaseTrades.size >= 8) {
+      console.log("[SHIELD PROTOCOL] Correlation Filter Active: Already trading 8 distinct symbols. Skipping hunt.");
       return NextResponse.json({ message: 'SHIELD PROTOCOL: CORRELATION FILTER ACTIVE - MAX TRADES REACHED' });
     }
 
