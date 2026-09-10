@@ -53,9 +53,51 @@ export async function getAccountDrawdown(): Promise<number> {
   return peakBalance > 0 ? (peakBalance - currentBalance) / peakBalance : 0;
 }
 
-export async function calculateDynamicKelly(symbol: string, winRate: number = 0.45, rr: number = 2.0): Promise<number> {
+// --- SELF-CALIBRATING ENGINE ---
+// Reads real win rate and R:R from closed trade history.
+// Falls back to conservative defaults until at least 30 trades are available.
+const MIN_TRADES_FOR_CALIBRATION = 30;
+
+async function getRealEdge(): Promise<{ winRate: number; rr: number; tradeCount: number }> {
+  try {
+    const { data: closedTrades } = await supabase
+      .from('paper_trades')
+      .select('status, entry_price, take_profit, stop_loss')
+      .in('status', ['WON', 'LOST']);
+
+    if (!closedTrades || closedTrades.length < MIN_TRADES_FOR_CALIBRATION) {
+      console.log(`[Kelly] Not enough trades for calibration (${closedTrades?.length || 0}/${MIN_TRADES_FOR_CALIBRATION}). Using defaults.`);
+      return { winRate: 0.45, rr: 2.0, tradeCount: closedTrades?.length || 0 };
+    }
+
+    const wins = closedTrades.filter(t => t.status === 'WON').length;
+    const realWinRate = wins / closedTrades.length;
+
+    // Calculate average R:R from actual TP/SL distances
+    const rrValues = closedTrades
+      .map(t => {
+        const tpDist = Math.abs(t.take_profit - t.entry_price);
+        const slDist = Math.abs(t.stop_loss - t.entry_price);
+        return slDist > 0 ? tpDist / slDist : 0;
+      })
+      .filter(v => v > 0);
+
+    const realRR = rrValues.length > 0
+      ? rrValues.reduce((a, b) => a + b, 0) / rrValues.length
+      : 2.0;
+
+    console.log(`[Kelly] Calibrated from ${closedTrades.length} trades → Win Rate: ${(realWinRate * 100).toFixed(1)}%, Avg R:R: ${realRR.toFixed(2)}`);
+    return { winRate: realWinRate, rr: realRR, tradeCount: closedTrades.length };
+
+  } catch (err) {
+    console.error('[Kelly] Calibration fetch failed, using defaults.', err);
+    return { winRate: 0.45, rr: 2.0, tradeCount: 0 };
+  }
+}
+
+export async function calculateDynamicKelly(symbol: string): Promise<number> {
   const regime = await detectMarketRegime(symbol);
-  const drawdownPerc = await getAccountDrawdown();
+  const { winRate, rr } = await getRealEdge();
 
   // f = (bp - q) / b
   const p = winRate;
@@ -64,16 +106,18 @@ export async function calculateDynamicKelly(symbol: string, winRate: number = 0.
 
   const kellyFraction = (b * p - q) / b;
 
-  if (kellyFraction <= 0) return 0; // Negative expectancy, don't trade
+  if (kellyFraction <= 0) {
+    console.warn(`[Kelly] Negative expectancy detected (WR=${(p*100).toFixed(1)}%, RR=${b.toFixed(2)}). Skipping trade.`);
+    return 0; // Negative expectancy → don't trade
+  }
 
-  // --- THE PURE QUANT PROTOCOL: Unwavering Mathematical Conviction ---
-  // A trend follower never shrinks in fear during a drawdown. The math already handles it.
-  const baseRiskPercentage = 0.015; // Max 1.5% Base Risk
+  const baseRiskPercentage = 0.015; // Hard cap: Max 1.5% risk per trade
 
-  // Use a strict Quarter-Kelly for long-term compounding stability.
-  // This exactly matches the backtest parameters that yielded the safe 27% drawdown.
+  // Quarter-Kelly for long-term compounding stability
   const finalRisk = kellyFraction * 0.25;
 
-  // Enforce the maximum structural risk limit
-  return Math.min(finalRisk, baseRiskPercentage);
+  // Wild market: cut risk in half
+  const regimeMultiplier = regime === 'WILD' ? 0.5 : 1.0;
+
+  return Math.min(finalRisk * regimeMultiplier, baseRiskPercentage);
 }

@@ -16,8 +16,8 @@ interface MultiCandle {
 
 const INITIAL_CAPITAL = 1000;
 const MAX_LOSS_LIMIT = 900;
-const MAKER_FEE = 0.0004; // Taker fee + Slippage simulation
-const HARD_POSITION_CAP = 50000; // Realistic orderbook liquidity limit for altcoins
+const MAKER_FEE = 0.0004;
+const HARD_POSITION_CAP = Infinity; // NO LIMIT — theoretical max test
 
 function calculateATR(candles: MultiCandle[], period: number = 14): number {
     if (candles.length < 2) return 0;
@@ -194,19 +194,10 @@ async function runMegalodon() {
                 let totalEntryVolume = 0;
                 let totalExitVolume = 0;
                 
-                let baseRisk = 0.005;
-                let maxKellyRisk = 0.01; // Max 1% risk per trade
-                let leverage = 10;
-                
-                if (activeTrade.balanceAtEntry >= 100000) {
-                    baseRisk = 0.002;
-                    maxKellyRisk = 0.005;
-                    leverage = 3;
-                } else if (activeTrade.balanceAtEntry >= 20000) {
-                    baseRisk = 0.003;
-                    maxKellyRisk = 0.008;
-                    leverage = 5;
-                }
+                // AGGRESSIVE MODE: Fixed 10x leverage and 1% Kelly regardless of balance size
+                let baseRisk = 0.01;         // 1% base risk always
+                let maxKellyRisk = 0.01;     // 1% cap always
+                let leverage = 10;            // 10x always
                 
                 let riskMultiplier = baseRisk; 
                 
