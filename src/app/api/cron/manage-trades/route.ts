@@ -57,15 +57,19 @@ export async function GET(req: NextRequest) {
     const allSymbols = [...new Set(openTrades.map(t => t.symbol))];
     // Filter out symbols that don't exist on this exchange
     const exchangeMarkets = exchange.markets || {};
-    const symbols = allSymbols.filter(s => !!exchangeMarkets[s]);
-    const skippedSymbols = allSymbols.filter(s => !exchangeMarkets[s]);
-    if (skippedSymbols.length > 0) {
-      console.warn(`[Manage Trades] Skipping unsupported symbols on this exchange: ${skippedSymbols.join(', ')}`);
+    
+    // Map legacy USDT symbols to USDC:USDC for fetching from Hyperliquid
+    const mappedSymbols = allSymbols.map(s => s.endsWith('/USDT') ? s.replace('/USDT', '/USDC:USDC') : s);
+    const validMappedSymbols = mappedSymbols.filter(s => !!exchangeMarkets[s]);
+    
+    const skippedOriginalSymbols = allSymbols.filter((_, i) => !exchangeMarkets[mappedSymbols[i]]);
+    if (skippedOriginalSymbols.length > 0) {
+      console.warn(`[Manage Trades] Skipping unsupported symbols on this exchange: ${skippedOriginalSymbols.join(', ')}`);
     }
     
     let tickers: any = {};
     try {
-        tickers = await exchange.fetchTickers(symbols);
+        tickers = await exchange.fetchTickers(validMappedSymbols);
     } catch (err: any) {
         console.warn(`[Manage Trades] Failed to fetch tickers in bulk: ${err.message}. Falling back to fetchAll.`);
         tickers = await exchange.fetchTickers();
@@ -83,8 +87,8 @@ export async function GET(req: NextRequest) {
     // Fetch 15m candles for ATR 14 Trailing Stop (Chunked Parallel Fetching to prevent timeout & rate limits)
     const atrCache: Record<string, number> = {};
     const chunkSize = 3; // Process 3 symbols concurrently to balance speed and rate limits
-    for (let i = 0; i < symbols.length; i += chunkSize) {
-      const chunk = symbols.slice(i, i + chunkSize);
+    for (let i = 0; i < validMappedSymbols.length; i += chunkSize) {
+      const chunk = validMappedSymbols.slice(i, i + chunkSize);
       await Promise.all(chunk.map(async (symbol) => {
          try {
             const ohlcv = await exchange.fetchOHLCV(symbol, '15m', undefined, 15);
@@ -111,7 +115,9 @@ export async function GET(req: NextRequest) {
     const newTradesToInsert: any[] = [];
 
     for (const trade of openTrades) {
-      const symbol = trade.symbol;
+      const dbSymbol = trade.symbol;
+      const symbol = dbSymbol.endsWith('/USDT') ? dbSymbol.replace('/USDT', '/USDC:USDC') : dbSymbol;
+      
       const ticker = tickers[symbol];
       if (!ticker || !ticker.last) continue;
 
