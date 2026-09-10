@@ -176,6 +176,39 @@ export async function GET(req: NextRequest) {
                   newTakeProfit = currentPrice * 1.5; // Push TP way up
                   if (!newRationale.includes('ATR_TRAIL')) {
                      newRationale += ' | ATR_TRAIL (Riding the trend)';
+                     // === ASYMMETRIC SCALE-IN (PYRAMIDING) ===
+                     // Fire ONCE when position enters confirmed trend (first ATR_TRAIL activation).
+                     // Opens a second position of equal size to double the exposure on the winning trade.
+                     if (!trade.rationale?.includes('PYRAMID_SCALE_IN')) {
+                       newRationale += ' | PYRAMID_SCALE_IN';
+                       // Execute on exchange if in live mode
+                       if (tradeMode === 'MICRO') {
+                         try {
+                           const side = 'buy';
+                           await exchange.createMarketOrder(symbol, side, contracts);
+                           // Update SL order to cover doubled position
+                           const openOrders = await exchange.fetchOpenOrders(symbol);
+                           for (const o of openOrders) {
+                             if (o.id) await exchange.cancelOrder(o.id, symbol);
+                           }
+                           await exchange.createOrder(symbol, 'market', 'sell', contracts * 2, undefined, { triggerPrice: newStopLoss, reduceOnly: true });
+                           console.log(`[Pyramid] Scaled into LONG ${symbol} x2 @ ${currentPrice}`);
+                         } catch (err) {
+                           console.error(`[Pyramid] Failed to scale into ${symbol}:`, err);
+                         }
+                       }
+                       // Log pyramid trade in DB for tracking
+                       newTradesToInsert.push({
+                         symbol: trade.symbol,
+                         position_type: 'BUY',
+                         entry_price: currentPrice,
+                         stop_loss: newStopLoss,
+                         take_profit: newTakeProfit,
+                         status: 'OPEN',
+                         pnl: 0,
+                         rationale: `PYRAMID child of trade ${trade.id} | ATR_TRAIL`,
+                       });
+                     }
                   }
                 } else {
                   newStopLoss = trade.take_profit - (distanceToTp * 0.2);
@@ -206,6 +239,38 @@ export async function GET(req: NextRequest) {
                   newTakeProfit = currentPrice * 0.5; // Push TP way down
                   if (!newRationale.includes('ATR_TRAIL')) {
                      newRationale += ' | ATR_TRAIL (Riding the trend)';
+                     // === ASYMMETRIC SCALE-IN (PYRAMIDING) ===
+                     // Fire ONCE when SHORT position enters confirmed downtrend.
+                     if (!trade.rationale?.includes('PYRAMID_SCALE_IN')) {
+                       newRationale += ' | PYRAMID_SCALE_IN';
+                       // Execute on exchange if in live mode
+                       if (tradeMode === 'MICRO') {
+                         try {
+                           const side = 'sell';
+                           await exchange.createMarketOrder(symbol, side, contracts);
+                           // Update SL order to cover doubled position
+                           const openOrders = await exchange.fetchOpenOrders(symbol);
+                           for (const o of openOrders) {
+                             if (o.id) await exchange.cancelOrder(o.id, symbol);
+                           }
+                           await exchange.createOrder(symbol, 'market', 'buy', contracts * 2, undefined, { triggerPrice: newStopLoss, reduceOnly: true });
+                           console.log(`[Pyramid] Scaled into SHORT ${symbol} x2 @ ${currentPrice}`);
+                         } catch (err) {
+                           console.error(`[Pyramid] Failed to scale into ${symbol}:`, err);
+                         }
+                       }
+                       // Log pyramid trade in DB for tracking
+                       newTradesToInsert.push({
+                         symbol: trade.symbol,
+                         position_type: 'SELL',
+                         entry_price: currentPrice,
+                         stop_loss: newStopLoss,
+                         take_profit: newTakeProfit,
+                         status: 'OPEN',
+                         pnl: 0,
+                         rationale: `PYRAMID child of trade ${trade.id} | ATR_TRAIL`,
+                       });
+                     }
                   }
                 } else {
                   newStopLoss = trade.take_profit + (distanceToTp * 0.2);

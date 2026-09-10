@@ -16,8 +16,8 @@ interface MultiCandle {
 
 const INITIAL_CAPITAL = 1000;
 const MAX_LOSS_LIMIT = 900;
-const MAKER_FEE = 0.0004;
-const HARD_POSITION_CAP = Infinity; // No cap to see true multipliers
+const MAKER_FEE = 0.0004; // Taker fee + Slippage simulation
+const HARD_POSITION_CAP = 50000; // Realistic orderbook liquidity limit for altcoins
 
 function calculateATR(candles: MultiCandle[], period: number = 14): number {
     if (candles.length < 2) return 0;
@@ -160,7 +160,7 @@ async function runMegalodon() {
                 else if (candle.low <= activeTrade.sl) {
                   exitPrice = activeTrade.sl * 0.999;
                   closed = true;
-                } 
+                }
                 else if (pyramidStage === 0 && candle.high >= tp) {
                   activeTrade.pyramidStage = 1;
                 }
@@ -178,7 +178,7 @@ async function runMegalodon() {
                 else if (candle.high >= activeTrade.sl) {
                   exitPrice = activeTrade.sl * 1.001; 
                   closed = true;
-                } 
+                }
                 else if (pyramidStage === 0 && candle.low <= tp) {
                   activeTrade.pyramidStage = 1;
                 }
@@ -194,10 +194,20 @@ async function runMegalodon() {
                 let totalEntryVolume = 0;
                 let totalExitVolume = 0;
                 
-                // FLAT CONSERVATIVE MODE
-                let baseRisk = 0.005; // 0.5%
-                let maxKellyRisk = 0.005; // 0.5% cap
-                let leverage = 3; // 3x leverage
+                // Production-equivalent: Balance-tiered leverage & risk
+                let baseRisk = 0.005;
+                let maxKellyRisk = 0.01; // Max 1% risk per trade
+                let leverage = 10;
+                
+                if (activeTrade.balanceAtEntry >= 100000) {
+                    baseRisk = 0.002;
+                    maxKellyRisk = 0.005;
+                    leverage = 3;
+                } else if (activeTrade.balanceAtEntry >= 20000) {
+                    baseRisk = 0.003;
+                    maxKellyRisk = 0.008;
+                    leverage = 5;
+                }
                 
                 let riskMultiplier = baseRisk; 
                 
@@ -229,6 +239,7 @@ async function runMegalodon() {
                    totalExitVolume = basePositionSize;
                 } 
                 else if (activeTrade.pyramidStage === 1) {
+                   // Pyramided: position was doubled when in profit, so PnL is 2x
                    const movePerc = action === 'BUY' ? (exitPrice - entryPrice) / entryPrice : (entryPrice - exitPrice) / entryPrice;
                    rawPnl = (basePositionSize * 2) * movePerc;
                    totalEntryVolume = basePositionSize * 2;
