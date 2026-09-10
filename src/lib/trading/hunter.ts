@@ -40,6 +40,13 @@ export async function huntForSetup(fallbackTargetProfitPerc: number, openSymbols
   } catch (err) {
     console.error("Redis fetch failed, using fallback config.");
   }
+  
+  // === SESSION FILTER (WEEKEND BAN) ===
+  const today = new Date().getUTCDay();
+  if (today === 0 || today === 6) {
+      console.log(`[Hunter] Halting hunt: Weekend detected (Day ${today}). No new entries allowed.`);
+      return null;
+  }
 
   const slBuffer = ctoConfig?.gann_tolerance_pct || 0.015; // Widen initial tolerance to 1.5% for volatile altcoins
   const smcLookback = ctoConfig?.smc_lookback_candles || 5;
@@ -105,7 +112,8 @@ export async function huntForSetup(fallbackTargetProfitPerc: number, openSymbols
     for (const candidate of candidates) {
       try {
         // Fetch dynamic timeframe candles based on the regime
-        const ohlcv = await exchange.fetchOHLCV(candidate.asset, targetTF, undefined, 250);
+        // Increased from 250 to 850 to calculate EMA 800 (4H Macro Trend)
+        const ohlcv = await exchange.fetchOHLCV(candidate.asset, targetTF, undefined, 850);
         if (!ohlcv || ohlcv.length === 0) continue;
 
         let macroOhlcv;
@@ -138,15 +146,15 @@ export async function huntForSetup(fallbackTargetProfitPerc: number, openSymbols
         let gannContext = '';
 
         const closes = ohlcv.map(c => c[4] as number);
-        let ema200 = closes[0];
-        if (closes.length >= 200) {
-            ema200 = closes.slice(0, 200).reduce((a, b) => a + b, 0) / 200;
-            const k = 2 / (200 + 1);
-            for (let i = 200; i < closes.length; i++) {
-                ema200 = (closes[i] * k) + (ema200 * (1 - k));
+        let ema800 = closes[0];
+        if (closes.length >= 800) {
+            ema800 = closes.slice(0, 800).reduce((a, b) => a + b, 0) / 800;
+            const k = 2 / (800 + 1);
+            for (let i = 800; i < closes.length; i++) {
+                ema800 = (closes[i] * k) + (ema800 * (1 - k));
             }
         }
-        const trend = closes.length >= 200 ? (candidate.currentPrice > ema200 ? 'UP' : 'DOWN') : 'UNKNOWN';
+        const trend = closes.length >= 800 ? (candidate.currentPrice > ema800 ? 'UP' : 'DOWN') : 'UNKNOWN';
 
         const candles = ohlcv.map(c => ({
           timestamp: c[0] as number,
@@ -172,7 +180,7 @@ export async function huntForSetup(fallbackTargetProfitPerc: number, openSymbols
 
         if (candidate.action === 'BUY') {
           if (trend === 'DOWN') {
-             console.log(`[Hunter] Rejected ${candidate.asset} BUY: Counter-trend (Price below EMA 200).`);
+             console.log(`[Hunter] Rejected ${candidate.asset} BUY: Counter-trend (Price below EMA 800 / 4H).`);
              continue;
           }
           if (isReversalWindow) {
@@ -210,7 +218,7 @@ export async function huntForSetup(fallbackTargetProfitPerc: number, openSymbols
           break; // Found the best trade, stop checking
         } else {
           if (trend === 'UP') {
-             console.log(`[Hunter] Rejected ${candidate.asset} SELL: Counter-trend (Price above EMA 200).`);
+             console.log(`[Hunter] Rejected ${candidate.asset} SELL: Counter-trend (Price above EMA 800 / 4H).`);
              continue;
           }
           if (isReversalWindow) {

@@ -379,11 +379,19 @@ async function runMegalodon() {
             }
         }
         
-        // MACRO TREND ALIGNMENT FILTER (MTF) - 200 EMA on 15m (equivalent to 50 EMA on 1H)
-        if (action && candles.length >= 200) {
-            const macroEma = calculateEMA(candles, 200);
+        // MACRO TREND ALIGNMENT FILTER (MTF) - 800 EMA on 15m (equivalent to 50 EMA on 4H)
+        if (action && candles.length >= 800) {
+            const macroEma = calculateEMA(candles, 800);
             if (action === 'BUY' && currentPrice < macroEma) action = '';
             if (action === 'SELL' && currentPrice > macroEma) action = '';
+        }
+        
+        // SESSION FILTER - No new entries on Weekends (Saturday=6, Sunday=0)
+        if (action) {
+            const dayOfWeek = date.getUTCDay();
+            if (dayOfWeek === 0 || dayOfWeek === 6) {
+                action = '';
+            }
         }
         
         if (action) {

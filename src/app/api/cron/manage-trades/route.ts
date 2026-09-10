@@ -85,24 +85,42 @@ export async function GET(req: NextRequest) {
     }
     
     // Fetch 15m candles for ATR 14 Trailing Stop (Chunked Parallel Fetching to prevent timeout & rate limits)
-    const atrCache: Record<string, number> = {};
+    const metricsCache: Record<string, { atr: number; avgVol: number; currentVol: number; ema200: number }> = {};
     const chunkSize = 3; // Process 3 symbols concurrently to balance speed and rate limits
     for (let i = 0; i < validMappedSymbols.length; i += chunkSize) {
       const chunk = validMappedSymbols.slice(i, i + chunkSize);
       await Promise.all(chunk.map(async (symbol) => {
          try {
-            const ohlcv = await exchange.fetchOHLCV(symbol, '15m', undefined, 15);
-            if (ohlcv.length >= 15) {
+            const ohlcv = await exchange.fetchOHLCV(symbol, '15m', undefined, 250);
+            if (ohlcv.length >= 20) {
               let trSum = 0;
-              for (let j = 1; j < ohlcv.length; j++) {
+              for (let j = ohlcv.length - 14; j < ohlcv.length; j++) {
                  const cHigh = ohlcv[j][2] as number;
                  const cLow = ohlcv[j][3] as number;
-                 const cClose = ohlcv[j][4] as number;
                  const pClose = ohlcv[j-1][4] as number;
-                 const tr = Math.max(cHigh - cLow, Math.abs(cHigh - pClose), Math.abs(cLow - pClose));
-                 trSum += tr;
+                 trSum += Math.max(cHigh - cLow, Math.abs(cHigh - pClose), Math.abs(cLow - pClose));
               }
-              atrCache[symbol] = trSum / 14;
+              const atr = trSum / 14;
+              
+              let volSum = 0;
+              const volPeriod = 20;
+              for(let v = ohlcv.length - volPeriod; v < ohlcv.length; v++) {
+                  volSum += ohlcv[v][5] as number;
+              }
+              const avgVol = volSum / volPeriod;
+              const currentVol = ohlcv[ohlcv.length - 1][5] as number;
+              
+              const closes = ohlcv.map(c => c[4] as number);
+              let ema200 = closes[0];
+              if (closes.length >= 200) {
+                  ema200 = closes.slice(0, 200).reduce((a, b) => a + b, 0) / 200;
+                  const k = 2 / (200 + 1);
+                  for (let idx = 200; idx < closes.length; idx++) {
+                      ema200 = (closes[idx] * k) + (ema200 * (1 - k));
+                  }
+              }
+              
+              metricsCache[symbol] = { atr, avgVol, currentVol, ema200 };
             }
          } catch (err) {
             console.error(`[Manage Trades] Failed to fetch OHLCV for ${symbol}:`, err);
@@ -175,55 +193,59 @@ export async function GET(req: NextRequest) {
             // Stage 3: 100% Mark (TP Extension & ATR Trailing)
             if (currentPrice > trade.entry_price * 1.005) { // 0.5% in profit
               if (defconLevel === 0) {
-                const atr = atrCache[symbol];
-                if (atr) {
-                  const chandelierLong = currentPrice - (atr * 2);
-                  newStopLoss = Math.max(trade.stop_loss, chandelierLong);
+                const metrics = metricsCache[symbol];
+                if (metrics) {
+                  const isPyramided = trade.rationale?.includes('PYRAMID_SCALE_IN');
+                  const trailingAtrMult = isPyramided ? 1.5 : 2;
+                  const chandelierLong = currentPrice - (metrics.atr * trailingAtrMult);
+                  
+                  // Aggressive Breakeven logic applies once Pyramided
+                  const baselineSL = isPyramided ? Math.max(trade.entry_price, chandelierLong) : chandelierLong;
+                  newStopLoss = Math.max(trade.stop_loss, baselineSL);
                   newTakeProfit = currentPrice * 1.5; // Push TP way up
+                  
                   if (!newRationale.includes('ATR_TRAIL')) {
                      newRationale += ' | ATR_TRAIL (Riding the trend)';
-                     // === ASYMMETRIC SCALE-IN (PYRAMIDING) ===
-                     // Fire ONCE when position enters confirmed trend (first ATR_TRAIL activation).
-                     // Opens a second position of equal size to double the exposure on the winning trade.
-                     if (!trade.rationale?.includes('PYRAMID_SCALE_IN')) {
-                       newRationale += ' | PYRAMID_SCALE_IN';
-                       // Execute on exchange if in live mode
-                       if (tradeMode === 'MICRO') {
+                  }
+                  
+                  // === ASYMMETRIC SCALE-IN (SMART PYRAMIDING) ===
+                  const volSpike = metrics.currentVol > metrics.avgVol * 1.5;
+                  const trendAligned = currentPrice > metrics.ema200;
+                  
+                  if (!isPyramided && volSpike && trendAligned) {
+                     newRationale += ' | PYRAMID_SCALE_IN';
+                     newStopLoss = Math.max(newStopLoss, trade.entry_price); // INSTANT BREAKEVEN
+                     
+                     if (tradeMode === 'MICRO') {
+                       try {
+                         await exchange.createMarketOrder(symbol, 'buy', contracts);
                          try {
-                           const side = 'buy';
-                           await exchange.createMarketOrder(symbol, side, contracts);
-                           
-                           // Create NEW SL first
-                           try {
-                             const newSLOrder = await exchange.createOrder(symbol, 'market', 'sell', contracts * 2, undefined, { triggerPrice: newStopLoss, reduceOnly: true });
-                             // Update SL order to cover doubled position (cancel old ones)
-                             const openOrders = await exchange.fetchOpenOrders(symbol);
-                             for (const o of openOrders) {
-                               if (o.id && o.id !== newSLOrder.id) await exchange.cancelOrder(o.id, symbol);
-                             }
-                             console.log(`[Pyramid] Scaled into LONG ${symbol} x2 @ ${currentPrice}`);
-                           } catch (slError: any) {
-                             console.error(`[CRITICAL SHIELD] Failed to set doubled Stop Loss for ${symbol} Pyramid. Panic reverting. Error: ${slError.message}`);
-                             // Revert the pyramid by selling the exact amount we just bought
-                             await exchange.createMarketOrder(symbol, 'sell', contracts);
-                             throw new Error(`Pyramid aborted: Failed to secure doubled Stop Loss.`);
+                           const newSLOrder = await exchange.createOrder(symbol, 'market', 'sell', contracts * 2, undefined, { triggerPrice: newStopLoss, reduceOnly: true });
+                           const openOrders = await exchange.fetchOpenOrders(symbol);
+                           for (const o of openOrders) {
+                             if (o.id && o.id !== newSLOrder.id) await exchange.cancelOrder(o.id, symbol);
                            }
-                         } catch (err) {
-                           console.error(`[Pyramid] Failed to scale into ${symbol}:`, err);
+                           console.log(`[Pyramid] Scaled into LONG ${symbol} x2 @ ${currentPrice}`);
+                         } catch (slError: any) {
+                           console.error(`[CRITICAL SHIELD] Failed SL, reverting Pyramid. Error: ${slError.message}`);
+                           await exchange.createMarketOrder(symbol, 'sell', contracts);
+                           throw new Error(`Pyramid aborted.`);
                          }
+                       } catch (err) {
+                         console.error(`[Pyramid] Failed to scale into ${symbol}:`, err);
                        }
-                       // Log pyramid trade in DB for tracking
-                       newTradesToInsert.push({
-                         symbol: trade.symbol,
-                         position_type: 'BUY',
-                         entry_price: currentPrice,
-                         stop_loss: newStopLoss,
-                         take_profit: newTakeProfit,
-                         status: 'OPEN',
-                         pnl: 0,
-                         rationale: `PYRAMID child of trade ${trade.id} | ATR_TRAIL`,
-                       });
                      }
+                     
+                     newTradesToInsert.push({
+                       symbol: trade.symbol,
+                       position_type: 'BUY',
+                       entry_price: currentPrice,
+                       stop_loss: newStopLoss,
+                       take_profit: newTakeProfit,
+                       status: 'OPEN',
+                       pnl: 0,
+                       rationale: `PYRAMID child of trade ${trade.id} | ATR_TRAIL`,
+                     });
                   }
                 } else {
                   newStopLoss = trade.take_profit - (distanceToTp * 0.2);
@@ -247,53 +269,59 @@ export async function GET(req: NextRequest) {
             // Stage 3: 100% Mark (TP Extension & ATR Trailing)
             if (currentPrice < trade.entry_price * 0.995) { // 0.5% in profit
               if (defconLevel === 0) {
-                const atr = atrCache[symbol];
-                if (atr) {
-                  const chandelierShort = currentPrice + (atr * 2);
-                  newStopLoss = Math.min(trade.stop_loss, chandelierShort);
+                const metrics = metricsCache[symbol];
+                if (metrics) {
+                  const isPyramided = trade.rationale?.includes('PYRAMID_SCALE_IN');
+                  const trailingAtrMult = isPyramided ? 1.5 : 2;
+                  const chandelierShort = currentPrice + (metrics.atr * trailingAtrMult);
+                  
+                  // Aggressive Breakeven logic applies once Pyramided
+                  const baselineSL = isPyramided ? Math.min(trade.entry_price, chandelierShort) : chandelierShort;
+                  newStopLoss = Math.min(trade.stop_loss, baselineSL);
                   newTakeProfit = currentPrice * 0.5; // Push TP way down
+                  
                   if (!newRationale.includes('ATR_TRAIL')) {
                      newRationale += ' | ATR_TRAIL (Riding the trend)';
-                     // === ASYMMETRIC SCALE-IN (PYRAMIDING) ===
-                     // Fire ONCE when SHORT position enters confirmed downtrend.
-                     if (!trade.rationale?.includes('PYRAMID_SCALE_IN')) {
-                       newRationale += ' | PYRAMID_SCALE_IN';
-                       // Execute on exchange if in live mode
-                       if (tradeMode === 'MICRO') {
+                  }
+                  
+                  // === ASYMMETRIC SCALE-IN (SMART PYRAMIDING) ===
+                  const volSpike = metrics.currentVol > metrics.avgVol * 1.5;
+                  const trendAligned = currentPrice < metrics.ema200;
+                  
+                  if (!isPyramided && volSpike && trendAligned) {
+                     newRationale += ' | PYRAMID_SCALE_IN';
+                     newStopLoss = Math.min(newStopLoss, trade.entry_price); // INSTANT BREAKEVEN
+                     
+                     if (tradeMode === 'MICRO') {
+                       try {
+                         await exchange.createMarketOrder(symbol, 'sell', contracts);
                          try {
-                           const side = 'sell';
-                           await exchange.createMarketOrder(symbol, side, contracts);
-                           
-                           // Create NEW SL first
-                           try {
-                             const newSLOrder = await exchange.createOrder(symbol, 'market', 'buy', contracts * 2, undefined, { triggerPrice: newStopLoss, reduceOnly: true });
-                             // Cancel old SL orders
-                             const openOrders = await exchange.fetchOpenOrders(symbol);
-                             for (const o of openOrders) {
-                               if (o.id && o.id !== newSLOrder.id) await exchange.cancelOrder(o.id, symbol);
-                             }
-                             console.log(`[Pyramid] Scaled into SHORT ${symbol} x2 @ ${currentPrice}`);
-                           } catch (slError: any) {
-                             console.error(`[CRITICAL SHIELD] Failed to set doubled Stop Loss for ${symbol} Pyramid. Panic reverting. Error: ${slError.message}`);
-                             await exchange.createMarketOrder(symbol, 'buy', contracts);
-                             throw new Error(`Pyramid aborted: Failed to secure doubled Stop Loss.`);
+                           const newSLOrder = await exchange.createOrder(symbol, 'market', 'buy', contracts * 2, undefined, { triggerPrice: newStopLoss, reduceOnly: true });
+                           const openOrders = await exchange.fetchOpenOrders(symbol);
+                           for (const o of openOrders) {
+                             if (o.id && o.id !== newSLOrder.id) await exchange.cancelOrder(o.id, symbol);
                            }
-                         } catch (err) {
-                           console.error(`[Pyramid] Failed to scale into ${symbol}:`, err);
+                           console.log(`[Pyramid] Scaled into SHORT ${symbol} x2 @ ${currentPrice}`);
+                         } catch (slError: any) {
+                           console.error(`[CRITICAL SHIELD] Failed SL, reverting Pyramid. Error: ${slError.message}`);
+                           await exchange.createMarketOrder(symbol, 'buy', contracts);
+                           throw new Error(`Pyramid aborted.`);
                          }
+                       } catch (err) {
+                         console.error(`[Pyramid] Failed to scale into ${symbol}:`, err);
                        }
-                       // Log pyramid trade in DB for tracking
-                       newTradesToInsert.push({
-                         symbol: trade.symbol,
-                         position_type: 'SELL',
-                         entry_price: currentPrice,
-                         stop_loss: newStopLoss,
-                         take_profit: newTakeProfit,
-                         status: 'OPEN',
-                         pnl: 0,
-                         rationale: `PYRAMID child of trade ${trade.id} | ATR_TRAIL`,
-                       });
                      }
+                     
+                     newTradesToInsert.push({
+                       symbol: trade.symbol,
+                       position_type: 'SELL',
+                       entry_price: currentPrice,
+                       stop_loss: newStopLoss,
+                       take_profit: newTakeProfit,
+                       status: 'OPEN',
+                       pnl: 0,
+                       rationale: `PYRAMID child of trade ${trade.id} | ATR_TRAIL`,
+                     });
                   }
                 } else {
                   newStopLoss = trade.take_profit + (distanceToTp * 0.2);
