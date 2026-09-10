@@ -274,6 +274,25 @@ export async function detectCapitulation(candles: Candle[], symbol: string, look
   let isBullishStructure = (lowerWick >= currRange * 0.4 && current.close > current.open);
   let isBearishStructure = (upperWick >= currRange * 0.4 && current.close < current.open);
   
+  // Calculate 14-period RSI
+  let avgGain = 0;
+  let avgLoss = 0;
+  const rsiPeriod = 14;
+  for (let i = candles.length - rsiPeriod; i < candles.length; i++) {
+      const change = candles[i].close - candles[i - 1].close;
+      if (change > 0) avgGain += change;
+      else avgLoss -= change;
+  }
+  avgGain /= rsiPeriod;
+  avgLoss /= rsiPeriod;
+  
+  let rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
+  let rsi = 100 - (100 / (1 + rs));
+  
+  // Require RSI confirmation for Mean Reversion
+  if (isBullishStructure && rsi > 35) isBullishStructure = false; // Dump must reach extreme oversold
+  if (isBearishStructure && rsi < 65) isBearishStructure = false; // Pump must reach extreme overbought
+  
   if (!isBullishStructure && !isBearishStructure) return null;
 
   // TAPE READING (CVD Confirmation) - ONLY IN MICRO MODE

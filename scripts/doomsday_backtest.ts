@@ -113,7 +113,9 @@ async function runMegalodon() {
     
     let activeTrades: Record<string, any> = {};
     let lastTradeClosedTime: Record<string, number> = {};
-    let currentYear = 0;
+    let vaultBalance = 0;
+    let consecutiveLosses = 0;
+    let circuitBreakerUntil = 0;
     
     const buffers: Record<string, MultiCandle[]> = {
         'BTC': [], 'ETH': [], 'SOL': [], 'LINK': [], 'ADA': [],
@@ -130,18 +132,21 @@ async function runMegalodon() {
         const candles = buffers[symbol];
         if (candles.length < 1500) continue;
         
-        const date = new Date(timestamp);
-        const year = date.getFullYear();
+        // Vault Harvesting DISABLED FOR TEST
+        // if (balance >= INITIAL_CAPITAL * 2) {
+        //     vaultBalance += INITIAL_CAPITAL;
+        //     balance -= INITIAL_CAPITAL;
+        //     console.log(`[VAULT HARVEST] Doubled! Stashed $${INITIAL_CAPITAL} in Vault. Total Vault: $${vaultBalance} | Active Balance: $${balance}`);
+        // }
         
-        if (year !== currentYear) {
-            if (currentYear !== 0) {
-                console.log(`[YEAR END] Finished ${currentYear}. Final Balance: $${balance.toFixed(2)} (Started with $1000)`);
-            }
-            currentYear = year;
-            balance = INITIAL_CAPITAL; // Reset for new year
-            activeTrades = {}; // Close all trades at year end
-            stats.peakBalance = INITIAL_CAPITAL; // Reset drawdown tracking
-        }
+        // Auto-Recharge DISABLED FOR TEST
+        // if (balance < 100) {
+        //     if (vaultBalance >= INITIAL_CAPITAL) {
+        //         vaultBalance -= INITIAL_CAPITAL;
+        //         balance += INITIAL_CAPITAL;
+        //         console.log(`[DOOMSDAY RECHARGE] Account nearly wiped. Recharged $${INITIAL_CAPITAL} from Vault. Remaining Vault: $${vaultBalance} | Active Balance: $${balance}`);
+        //     }
+        // }
         
         // TRADE MANAGEMENT (Cross-Margin)
         let activeTrade = activeTrades[symbol];
@@ -285,16 +290,25 @@ async function runMegalodon() {
                 stats.symbolStats[activeTrade.symbol].trades++;
                 stats.symbolStats[activeTrade.symbol].pnl += pnl;
                 
-                if (pnl > 0) {
-                   stats.wins++;
-                   stats.grossProfit += pnl;
-                }
-                else if (pnl > -2 && pnl < 2) stats.breakEvens++; 
-                else {
-                   stats.losses++;
-                   stats.grossLoss += Math.abs(pnl);
+                if (rawPnl > 0) {
+                    stats.wins++;
+                    stats.grossProfit += rawPnl;
+                    consecutiveLosses = 0; // Reset circuit breaker on win
+                } else if (rawPnl < 0) {
+                    stats.losses++;
+                    stats.grossLoss += Math.abs(rawPnl);
+                    consecutiveLosses++;
+                    
+                    // Activate Circuit Breaker on 3 consecutive losses
+                    if (consecutiveLosses >= 3) {
+                        circuitBreakerUntil = timestamp + (24 * 60 * 60 * 1000); // 24 hours cooldown
+                        console.log(`[CIRCUIT BREAKER] 3 Consecutive Losses. Halting trading for 24h until ${new Date(circuitBreakerUntil).toISOString()}`);
+                        consecutiveLosses = 0; // Reset counter for next time
+                    }
                 }
                 
+                const date = new Date(timestamp);
+                const year = date.getFullYear();
                 const half = date.getMonth() < 6 ? 'H1' : 'H2';
                 const period = `${year}-${half}`;
                 if (!stats.periods[period]) stats.periods[period] = { trades: 0, wins: 0, pnl: 0 };
@@ -323,6 +337,9 @@ async function runMegalodon() {
             if (tr.action === 'BUY') buyCount++;
             else sellCount++;
         }
+        
+        // Enforce Circuit Breaker and Time Spacing
+        if (timestamp < circuitBreakerUntil) continue;
         const lastClose = lastTradeClosedTime[symbol] || 0;
         if (timestamp - lastClose < 1000 * 60 * 15) continue; // Cooldown
         
@@ -413,8 +430,10 @@ async function runMegalodon() {
     console.log(`\n============================================`);
     console.log(`   MEGALODON CROSS-MARGIN BACKTEST (10 COINS)`);
     console.log(`============================================`);
-    console.log(`Final Balance:    $${balance.toFixed(2)} (Start: $${INITIAL_CAPITAL})`);
-    console.log(`Net Profit:       $${(balance - INITIAL_CAPITAL).toFixed(2)}`);
+    console.log(`Final Active Bal: $${balance.toFixed(2)}`);
+    console.log(`Vault Balance:    $${vaultBalance.toFixed(2)} (Harvested safely!)`);
+    console.log(`Total Value:      $${(balance + vaultBalance).toFixed(2)}`);
+    console.log(`Net Profit:       $${((balance + vaultBalance) - INITIAL_CAPITAL).toFixed(2)}`);
     console.log(`Max Drawdown:     $${stats.maxDrawdown.toFixed(2)} (${stats.maxDrawdownPercent.toFixed(2)}%)`);
     console.log(`Total Fees Paid:  $${stats.totalFeesPaid.toFixed(2)}`);
     console.log(`Total Trades:     ${stats.totalTrades}`);
