@@ -192,13 +192,22 @@ export async function GET(req: NextRequest) {
                          try {
                            const side = 'buy';
                            await exchange.createMarketOrder(symbol, side, contracts);
-                           // Update SL order to cover doubled position
-                           const openOrders = await exchange.fetchOpenOrders(symbol);
-                           for (const o of openOrders) {
-                             if (o.id) await exchange.cancelOrder(o.id, symbol);
+                           
+                           // Create NEW SL first
+                           try {
+                             const newSLOrder = await exchange.createOrder(symbol, 'market', 'sell', contracts * 2, undefined, { triggerPrice: newStopLoss, reduceOnly: true });
+                             // Update SL order to cover doubled position (cancel old ones)
+                             const openOrders = await exchange.fetchOpenOrders(symbol);
+                             for (const o of openOrders) {
+                               if (o.id && o.id !== newSLOrder.id) await exchange.cancelOrder(o.id, symbol);
+                             }
+                             console.log(`[Pyramid] Scaled into LONG ${symbol} x2 @ ${currentPrice}`);
+                           } catch (slError: any) {
+                             console.error(`[CRITICAL SHIELD] Failed to set doubled Stop Loss for ${symbol} Pyramid. Panic reverting. Error: ${slError.message}`);
+                             // Revert the pyramid by selling the exact amount we just bought
+                             await exchange.createMarketOrder(symbol, 'sell', contracts);
+                             throw new Error(`Pyramid aborted: Failed to secure doubled Stop Loss.`);
                            }
-                           await exchange.createOrder(symbol, 'market', 'sell', contracts * 2, undefined, { triggerPrice: newStopLoss, reduceOnly: true });
-                           console.log(`[Pyramid] Scaled into LONG ${symbol} x2 @ ${currentPrice}`);
                          } catch (err) {
                            console.error(`[Pyramid] Failed to scale into ${symbol}:`, err);
                          }
@@ -254,13 +263,21 @@ export async function GET(req: NextRequest) {
                          try {
                            const side = 'sell';
                            await exchange.createMarketOrder(symbol, side, contracts);
-                           // Update SL order to cover doubled position
-                           const openOrders = await exchange.fetchOpenOrders(symbol);
-                           for (const o of openOrders) {
-                             if (o.id) await exchange.cancelOrder(o.id, symbol);
+                           
+                           // Create NEW SL first
+                           try {
+                             const newSLOrder = await exchange.createOrder(symbol, 'market', 'buy', contracts * 2, undefined, { triggerPrice: newStopLoss, reduceOnly: true });
+                             // Cancel old SL orders
+                             const openOrders = await exchange.fetchOpenOrders(symbol);
+                             for (const o of openOrders) {
+                               if (o.id && o.id !== newSLOrder.id) await exchange.cancelOrder(o.id, symbol);
+                             }
+                             console.log(`[Pyramid] Scaled into SHORT ${symbol} x2 @ ${currentPrice}`);
+                           } catch (slError: any) {
+                             console.error(`[CRITICAL SHIELD] Failed to set doubled Stop Loss for ${symbol} Pyramid. Panic reverting. Error: ${slError.message}`);
+                             await exchange.createMarketOrder(symbol, 'buy', contracts);
+                             throw new Error(`Pyramid aborted: Failed to secure doubled Stop Loss.`);
                            }
-                           await exchange.createOrder(symbol, 'market', 'buy', contracts * 2, undefined, { triggerPrice: newStopLoss, reduceOnly: true });
-                           console.log(`[Pyramid] Scaled into SHORT ${symbol} x2 @ ${currentPrice}`);
                          } catch (err) {
                            console.error(`[Pyramid] Failed to scale into ${symbol}:`, err);
                          }
@@ -298,14 +315,15 @@ export async function GET(req: NextRequest) {
         // ❌ FIX: Live Exchange Trailing Stop Execution
         if (tradeMode === 'MICRO' && newStopLoss !== trade.stop_loss && newStatus === trade.status) {
           try {
-            // Cancel old stop-loss
+            const side = (trade.position_type === 'BUY' || trade.position_type === 'LONG') ? 'sell' : 'buy';
+            // Create NEW trailing stop-loss FIRST
+            const newSLOrder = await exchange.createOrder(symbol, 'market', side, contracts, undefined, { triggerPrice: newStopLoss, reduceOnly: true });
+            
+            // Cancel old stop-loss only if creation succeeded
             const openOrders = await exchange.fetchOpenOrders(symbol);
             for (const o of openOrders) {
-               if (o.id) await exchange.cancelOrder(o.id, symbol);
+               if (o.id && o.id !== newSLOrder.id) await exchange.cancelOrder(o.id, symbol);
             }
-            // Create new trailing stop-loss
-            const side = (trade.position_type === 'BUY' || trade.position_type === 'LONG') ? 'sell' : 'buy';
-            await exchange.createOrder(symbol, 'market', side, contracts, undefined, { triggerPrice: newStopLoss, reduceOnly: true });
             console.log(`[Manage Trades] Trailed Stop Loss for ${trade.symbol} to ${newStopLoss}`);
           } catch (err) {
             console.error(`[Manage Trades] Failed to trail Hyperliquid order for ${trade.symbol}`, err);

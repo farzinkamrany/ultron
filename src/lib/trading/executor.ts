@@ -282,7 +282,20 @@ export async function runTradingCycle(symbol: string = "BTC/USDT"): Promise<void
       }
       
       const oppositeSide = side === "buy" ? "sell" : "buy";
-      await exchange.createOrder(signal.symbol, 'market', oppositeSide, amount, undefined, { triggerPrice: signal.stopLoss, reduceOnly: true });
+      try {
+        await exchange.createOrder(signal.symbol, 'market', oppositeSide, amount, undefined, { triggerPrice: signal.stopLoss, reduceOnly: true });
+      } catch (slError: any) {
+        // FATAL: The market order went through but the stop loss failed. NAKED POSITION!
+        console.error(`[CRITICAL SHIELD] Failed to set Stop Loss for ${signal.symbol}. Panic closing naked position. Error: ${slError.message}`);
+        try {
+          await exchange.createMarketOrder(signal.symbol, oppositeSide, amount);
+          console.log(`[CRITICAL SHIELD] Successfully panic closed naked position for ${signal.symbol}.`);
+        } catch (panicError: any) {
+          console.error(`[CRITICAL SHIELD] FATAL: Failed to panic close naked position for ${signal.symbol}. MANUAL INTERVENTION REQUIRED! Error: ${panicError.message}`);
+        }
+        throw new Error(`Execution aborted: Failed to secure position with Stop Loss. Panic closed to prevent liquidation.`);
+      }
+      
       // ❌ HUMAN EMOTION REMOVED: No Hard Take-Profit order. 
       // A machine doesn't say "I'm satisfied with this profit." It trails the Stop-Loss until the trend dies.
       
