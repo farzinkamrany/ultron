@@ -148,8 +148,9 @@ async function runMegalodon() {
             
             const { entryPrice, tp, action, pyramidStage, initialSl, entryTime } = activeTrade;
             const atr = calculateATR(candles, 14);
-            const chandelierLong = currentPrice - (atr * 2);
-            const chandelierShort = currentPrice + (atr * 2);
+            const trailingAtrMult = activeTrade.pyramidStage > 0 ? 1.5 : 2;
+            const chandelierLong = currentPrice - (atr * trailingAtrMult);
+            const chandelierShort = currentPrice + (atr * trailingAtrMult);
             
             if (action === 'BUY') {
                 const isEarlyExit = checkEarlyExit(activeTrade, candles);
@@ -162,12 +163,28 @@ async function runMegalodon() {
                   closed = true;
                 }
                 else if (pyramidStage === 0 && candle.high >= tp) {
-                  activeTrade.pyramidStage = 1;
+                  const macroEma = calculateEMA(candles, 200);
+                  let volSum = 0;
+                  const volPeriod = Math.min(20, candles.length);
+                  for(let v = candles.length - volPeriod; v < candles.length; v++) {
+                      volSum += candles[v].volume;
+                  }
+                  const avgVol = volSum / volPeriod;
+
+                  if (currentPrice > macroEma && candle.volume > avgVol * 1.5) {
+                      activeTrade.pyramidStage = 1;
+                      activeTrade.pyramidPrice = tp;
+                      activeTrade.sl = Math.max(activeTrade.sl, entryPrice);
+                  }
                 }
                 
                 if (pyramidStage > 0) {
-                  activeTrade.sl = Math.max(activeTrade.sl, chandelierLong); 
-                  if (candle.low <= activeTrade.sl) { exitPrice = activeTrade.sl; closed = true; }
+                  activeTrade.sl = Math.max(activeTrade.sl, chandelierLong);
+                }
+                
+                if (candle.low <= activeTrade.sl) {
+                    exitPrice = activeTrade.sl;
+                    closed = true;
                 }
             } else {
                 const isEarlyExit = checkEarlyExit(activeTrade, candles);
@@ -180,12 +197,28 @@ async function runMegalodon() {
                   closed = true;
                 }
                 else if (pyramidStage === 0 && candle.low <= tp) {
-                  activeTrade.pyramidStage = 1;
+                  const macroEma = calculateEMA(candles, 200);
+                  let volSum = 0;
+                  const volPeriod = Math.min(20, candles.length);
+                  for(let v = candles.length - volPeriod; v < candles.length; v++) {
+                      volSum += candles[v].volume;
+                  }
+                  const avgVol = volSum / volPeriod;
+
+                  if (currentPrice < macroEma && candle.volume > avgVol * 1.5) {
+                      activeTrade.pyramidStage = 1;
+                      activeTrade.pyramidPrice = tp;
+                      activeTrade.sl = Math.min(activeTrade.sl, entryPrice);
+                  }
                 }
                 
                 if (pyramidStage > 0) {
                   activeTrade.sl = Math.min(activeTrade.sl, chandelierShort);
-                  if (candle.high >= activeTrade.sl) { exitPrice = activeTrade.sl; closed = true; }
+                }
+                
+                if (candle.high >= activeTrade.sl) {
+                    exitPrice = activeTrade.sl;
+                    closed = true;
                 }
             }
             
