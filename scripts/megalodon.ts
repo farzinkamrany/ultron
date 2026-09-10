@@ -17,7 +17,7 @@ interface MultiCandle {
 const INITIAL_CAPITAL = 1000;
 const MAX_LOSS_LIMIT = 900;
 const MAKER_FEE = 0.0004;
-const HARD_POSITION_CAP = Infinity; // NO LIMIT — theoretical max test
+const HARD_POSITION_CAP = Infinity; // No cap to see true multipliers
 
 function calculateATR(candles: MultiCandle[], period: number = 14): number {
     if (candles.length < 2) return 0;
@@ -194,10 +194,10 @@ async function runMegalodon() {
                 let totalEntryVolume = 0;
                 let totalExitVolume = 0;
                 
-                // AGGRESSIVE MODE: Fixed 10x leverage and 1% Kelly regardless of balance size
-                let baseRisk = 0.01;         // 1% base risk always
-                let maxKellyRisk = 0.01;     // 1% cap always
-                let leverage = 10;            // 10x always
+                // FLAT CONSERVATIVE MODE
+                let baseRisk = 0.005; // 0.5%
+                let maxKellyRisk = 0.005; // 0.5% cap
+                let leverage = 3; // 3x leverage
                 
                 let riskMultiplier = baseRisk; 
                 

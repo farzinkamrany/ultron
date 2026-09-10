@@ -80,26 +80,30 @@ export async function GET(req: NextRequest) {
       }
     }
     
-    // Fetch 15m candles for ATR 14 Trailing Stop
+    // Fetch 15m candles for ATR 14 Trailing Stop (Chunked Parallel Fetching to prevent timeout & rate limits)
     const atrCache: Record<string, number> = {};
-    for (const symbol of symbols) {
-       try {
-          const ohlcv = await exchange.fetchOHLCV(symbol, '15m', undefined, 15);
-          if (ohlcv.length >= 15) {
-            let trSum = 0;
-            for (let i = 1; i < ohlcv.length; i++) {
-               const cHigh = ohlcv[i][2] as number;
-               const cLow = ohlcv[i][3] as number;
-               const cClose = ohlcv[i][4] as number;
-               const pClose = ohlcv[i-1][4] as number;
-               const tr = Math.max(cHigh - cLow, Math.abs(cHigh - pClose), Math.abs(cLow - pClose));
-               trSum += tr;
+    const chunkSize = 3; // Process 3 symbols concurrently to balance speed and rate limits
+    for (let i = 0; i < symbols.length; i += chunkSize) {
+      const chunk = symbols.slice(i, i + chunkSize);
+      await Promise.all(chunk.map(async (symbol) => {
+         try {
+            const ohlcv = await exchange.fetchOHLCV(symbol, '15m', undefined, 15);
+            if (ohlcv.length >= 15) {
+              let trSum = 0;
+              for (let j = 1; j < ohlcv.length; j++) {
+                 const cHigh = ohlcv[j][2] as number;
+                 const cLow = ohlcv[j][3] as number;
+                 const cClose = ohlcv[j][4] as number;
+                 const pClose = ohlcv[j-1][4] as number;
+                 const tr = Math.max(cHigh - cLow, Math.abs(cHigh - pClose), Math.abs(cLow - pClose));
+                 trSum += tr;
+              }
+              atrCache[symbol] = trSum / 14;
             }
-            atrCache[symbol] = trSum / 14;
-          }
-       } catch (err) {
-          console.error(`[Manage Trades] Failed to fetch OHLCV for ${symbol}:`, err);
-       }
+         } catch (err) {
+            console.error(`[Manage Trades] Failed to fetch OHLCV for ${symbol}:`, err);
+         }
+      }));
     }
 
     const FEE_RATE = 0.0012; // 0.12% offset
