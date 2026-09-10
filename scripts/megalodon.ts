@@ -286,7 +286,9 @@ async function runMegalodon() {
         }
         
         // TRIGGER LOGIC
-        if (Object.keys(activeTrades).length >= 3) continue;
+        const regime = detectRegime(candles);
+        const maxConcurrent = regime === 'TRENDING' ? 8 : 3;
+        if (Object.keys(activeTrades).length >= maxConcurrent) continue;
         const lastClose = lastTradeClosedTime[symbol] || 0;
         if (timestamp - lastClose < 1000 * 60 * 15) continue; // Cooldown
         

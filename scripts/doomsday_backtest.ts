@@ -247,19 +247,35 @@ async function runMegalodon() {
                    const movePerc = action === 'BUY' ? (exitPrice - entryPrice) / entryPrice : (entryPrice - exitPrice) / entryPrice;
                    rawPnl = basePositionSize * movePerc;
                    totalEntryVolume = basePositionSize;
+                   rawPnl = basePositionSize * movePerc;
+                   totalEntryVolume = basePositionSize;
                    totalExitVolume = basePositionSize;
-                } 
-                else if (activeTrade.pyramidStage === 1) {
-                   // Pyramided: position was doubled when in profit, so PnL is 2x
+                } else {
                    const movePerc = action === 'BUY' ? (exitPrice - entryPrice) / entryPrice : (entryPrice - exitPrice) / entryPrice;
                    rawPnl = (basePositionSize * 2) * movePerc;
                    totalEntryVolume = basePositionSize * 2;
                    totalExitVolume = basePositionSize * 2;
                 }
                 
-                const entryFee = totalEntryVolume * MAKER_FEE;
-                const exitFee = totalExitVolume * MAKER_FEE;
-                pnl = rawPnl - entryFee - exitFee;
+                // FLASH CRASH GAP SLIPPAGE
+                if (action === 'BUY' && candle.low < activeTrade.sl * 0.98) {
+                   exitPrice = activeTrade.sl * 0.985;
+                   rawPnl -= basePositionSize * 0.015; // Extra 1.5% slippage loss
+                }
+                if (action === 'SELL' && candle.high > activeTrade.sl * 1.02) {
+                   exitPrice = activeTrade.sl * 1.015;
+                   rawPnl -= basePositionSize * 0.015; // Extra 1.5% slippage loss
+                }
+                
+                const entryFee = totalEntryVolume * 0.0012; 
+                const exitFee = totalExitVolume * 0.0012; 
+                
+                // FUNDING RATE BLEED
+                const holdingCandles = (timestamp - activeTrade.entryTime) / (1000 * 60 * 15);
+                const fundingPeriods = Math.floor(holdingCandles / 32); // Every 8 hours
+                const fundingFee = fundingPeriods * (totalEntryVolume * 0.0001); // 0.01% fee
+                
+                pnl = rawPnl - entryFee - exitFee - fundingFee;
                 
                 balance += pnl;
                 stats.totalFeesPaid += (entryFee + exitFee);
@@ -300,6 +316,13 @@ async function runMegalodon() {
         const regime = detectRegime(candles);
         const maxConcurrent = regime === 'TRENDING' ? 8 : 3;
         if (Object.keys(activeTrades).length >= maxConcurrent) continue;
+        
+        // BETA-NEUTRALIZER
+        let buyCount = 0; let sellCount = 0;
+        for (const tr of Object.values(activeTrades)) {
+            if (tr.action === 'BUY') buyCount++;
+            else sellCount++;
+        }
         const lastClose = lastTradeClosedTime[symbol] || 0;
         if (timestamp - lastClose < 1000 * 60 * 15) continue; // Cooldown
         
@@ -362,6 +385,11 @@ async function runMegalodon() {
             const macroEma = calculateEMA(candles, 200);
             if (action === 'BUY' && currentPrice < macroEma) action = '';
             if (action === 'SELL' && currentPrice > macroEma) action = '';
+        }
+        
+        if (action) {
+            if (action === 'BUY' && buyCount >= 2) action = '';
+            if (action === 'SELL' && sellCount >= 2) action = '';
         }
         
         if (action) {

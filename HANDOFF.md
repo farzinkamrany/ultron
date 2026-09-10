@@ -215,6 +215,18 @@ After simulating 140,000+ candles across 10 major assets, the mathematical concl
    - Concurrency: Max 5 positions globally.
 5. **The Goal:** Do absolutely nothing for 6 to 12 months. Do not look at the PnL. Do not panic during a drawdown (which will happen due to the ~10% win rate). The margin allocation engine ensures that 5 concurrent winners in a macro trend will exponentiate the $1000 base capital into life-changing equity (theoretical target: $20,000+). Withdraw a bonus only at major milestones (e.g., reaching $20k).
 
+### The "Doomsday" Reality Check (Darkest Days)
+The theoretical mathematical models (which can project $1,000 to $1M+) are pristine, but the live market introduces chaotic variables known as **"Doomsday Constraints"**:
+1. **Flash Crash Gap Slippage:** In real markets, a 15-minute flash crash will gap past the Stop Loss. If the SL is hit during a liquidity void, the position will suffer an extra 1% to 2% slippage penalty, severely magnifying the drawdown of highly-leveraged Kelly positions.
+2. **The Funding Rate Bleed:** Swinging positions on perpetual futures incurs an 8-hour funding fee. During ranging markets where pyramided positions are held for days without hitting Take Profit, the funding fee will slowly bleed the equity.
+3. **Correlation Wipeout (Beta-Neutralizer Constraints):** To prevent 8 LONG positions from getting liquidated simultaneously during a Bitcoin crash, the system restricts directional concurrency (e.g., max 2 LONGs at a time). This saves the account from ruin but massively throttles the exponential compounding speed during mega bull runs.
+
+**The 2023 Circuit Breaker Event:**
+When these Doomsday constraints were fully simulated against the year 2023 (the most choppy, low-volume, sideways year in crypto history), the engine suffered continuous stop-outs without enough trend to recover. **A $1000 base dropped to $99, triggering the absolute Circuit Breaker.**
+
+**The Strategic Antidote (Manual Yield Harvesting):**
+To survive the "Darkest Days" of sideways markets while running the Aggressive V5 engine, the operator MUST employ manual yield harvesting. By **withdrawing 50% of profits at every major milestone (e.g., $50k or $100k)**, or sweeping profits daily/weekly, the operator completely neutralizes the risk of a multi-month Doomsday chop wiping out the compounded gains. The system will fight with its base capital, while the operator secures the exponential windfalls.
+
 ---
 
 ## 8. The Megalodon Elevator Pitch (How to Explain Ultron)

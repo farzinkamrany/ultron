@@ -113,7 +113,7 @@ async function runMegalodon() {
     
     let activeTrades: Record<string, any> = {};
     let lastTradeClosedTime: Record<string, number> = {};
-    let currentYear = 0;
+    let lastPeriod = '';
     
     const buffers: Record<string, MultiCandle[]> = {
         'BTC': [], 'ETH': [], 'SOL': [], 'LINK': [], 'ADA': [],
@@ -132,14 +132,16 @@ async function runMegalodon() {
         
         const date = new Date(timestamp);
         const year = date.getFullYear();
+        const half = date.getMonth() < 6 ? 'H1' : 'H2';
+        const currentPeriod = `${year}-${half}`;
         
-        if (year !== currentYear) {
-            if (currentYear !== 0) {
-                console.log(`[YEAR END] Finished ${currentYear}. Final Balance: $${balance.toFixed(2)} (Started with $1000)`);
+        if (currentPeriod !== lastPeriod) {
+            if (lastPeriod !== '') {
+                console.log(`[HALF-YEAR END] Finished ${lastPeriod}. Final Balance: $${balance.toFixed(2)} (Started with $1000)`);
             }
-            currentYear = year;
-            balance = INITIAL_CAPITAL; // Reset for new year
-            activeTrades = {}; // Close all trades at year end
+            lastPeriod = currentPeriod;
+            balance = INITIAL_CAPITAL; // Reset for new period
+            activeTrades = {}; // Close all trades at period end
             stats.peakBalance = INITIAL_CAPITAL; // Reset drawdown tracking
         }
         
