@@ -6,7 +6,7 @@ import { CTOConfig } from '../ai';
 import { detectMarketRegime } from './risk';
 
 // ============ PHASE 1: SNOWBALL (15m) - Maximum Volatility (Best Risk/Reward) ============
-const BEAST_MODE_SYMBOLS = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'LINK/USDT', 'ADA/USDT', 'BNB/USDT', 'XRP/USDT', 'DOGE/USDT', 'AVAX/USDT', 'DOT/USDT'];
+const BEAST_MODE_SYMBOLS = ['BTC/USDC:USDC', 'ETH/USDC:USDC', 'SOL/USDC:USDC', 'LINK/USDC:USDC', 'ADA/USDC:USDC', 'BNB/USDC:USDC', 'XRP/USDC:USDC', 'DOGE/USDC:USDC', 'AVAX/USDC:USDC', 'DOT/USDC:USDC'];
 const BEAST_MODE_TF = '15m';
 
 export interface HuntResult {
@@ -30,7 +30,7 @@ export interface HuntTrade {
  * Performs a "Fast Pass" checking Gann Supports/Resistances to avoid rate limits.
  */
 export async function huntForSetup(fallbackTargetProfitPerc: number, openSymbols: string[] = []): Promise<HuntTrade | null> {
-  const exchange = new ccxt.bybit({ enableRateLimit: true });
+  const exchange = new ccxt.hyperliquid({ enableRateLimit: true });
 
   // 1. Fetch CTO Config
   let ctoConfig: CTOConfig | null = null;

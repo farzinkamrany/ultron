@@ -21,9 +21,9 @@ import { TradeSignal as SetupSignal } from "./gann";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 export function buildExchange() {
-  const exchange = new ccxt.bybit({
-    apiKey: process.env.BYBIT_API_KEY || "",
-    secret: process.env.BYBIT_SECRET || "",
+  const exchange = new ccxt.hyperliquid({
+    walletAddress: process.env.HYPERLIQUID_WALLET || "",
+    privateKey: process.env.HYPERLIQUID_PRIVATE_KEY || "",
     enableRateLimit: true,
     options: {
       defaultType: 'swap',
