@@ -44,6 +44,24 @@ function calculateEMA(candles: MultiCandle[], period: number): number {
     return ema;
 }
 
+function calculateRSI(candles: MultiCandle[], period: number = 14): number {
+    if (candles.length < period + 1) return 50;
+    let gains = 0, losses = 0;
+    
+    for (let i = candles.length - period; i < candles.length; i++) {
+        const change = candles[i].close - candles[i-1].close;
+        if (change > 0) gains += change;
+        else losses -= change;
+    }
+    
+    let avgGain = gains / period;
+    let avgLoss = losses / period;
+    
+    if (avgLoss === 0) return 100;
+    let rs = avgGain / avgLoss;
+    return 100 - (100 / (1 + rs));
+}
+
 async function loadCSV(filePath: string, symbol: string): Promise<MultiCandle[]> {
     const fileStream = fs.createReadStream(filePath);
     const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
@@ -115,7 +133,7 @@ async function runMegalodon() {
     let lastTradeClosedTime: Record<string, number> = {};
     let vaultBalance = 0;
     let consecutiveLosses = 0;
-    let circuitBreakerUntil = 0;
+    let circuitBreakerActive = false;
     
     const buffers: Record<string, MultiCandle[]> = {
         'BTC': [], 'ETH': [], 'SOL': [], 'LINK': [], 'ADA': [],
@@ -301,9 +319,7 @@ async function runMegalodon() {
                     
                     // Activate Circuit Breaker on 3 consecutive losses
                     if (consecutiveLosses >= 3) {
-                        circuitBreakerUntil = timestamp + (24 * 60 * 60 * 1000); // 24 hours cooldown
-                        console.log(`[CIRCUIT BREAKER] 3 Consecutive Losses. Halting trading for 24h until ${new Date(circuitBreakerUntil).toISOString()}`);
-                        consecutiveLosses = 0; // Reset counter for next time
+                        circuitBreakerActive = true;
                     }
                 }
                 
@@ -338,8 +354,17 @@ async function runMegalodon() {
             else sellCount++;
         }
         
-        // Enforce Circuit Breaker and Time Spacing
-        if (timestamp < circuitBreakerUntil) continue;
+        // Enforce Smart Circuit Breaker and Time Spacing
+        if (circuitBreakerActive) {
+            const chop = calculateChoppinessIndex(candles, 288);
+            if (chop < 50) {
+                circuitBreakerActive = false;
+                consecutiveLosses = 0;
+            } else {
+                continue;
+            }
+        }
+        
         const lastClose = lastTradeClosedTime[symbol] || 0;
         if (timestamp - lastClose < 1000 * 60 * 15) continue; // Cooldown
         
@@ -397,11 +422,36 @@ async function runMegalodon() {
             }
         }
         
-        // MACRO TREND ALIGNMENT FILTER (MTF) - 200 EMA on 15m (equivalent to 50 EMA on 1H)
-        if (action && candles.length >= 200) {
-            const macroEma = calculateEMA(candles, 200);
-            if (action === 'BUY' && currentPrice < macroEma) action = '';
-            if (action === 'SELL' && currentPrice > macroEma) action = '';
+        // MACRO TREND ALIGNMENT FILTER (MTF) - 800 EMA on 15m (equivalent to 50 EMA on 4H)
+        if (action && candles.length >= 800) {
+            const macroEma = calculateEMA(candles, 800);
+            const weeklyEma = calculateEMA(candles, 672); // Approx 1-week moving average
+            
+            // CAPITULATION OVERRIDE (Knife Catcher)
+            const rsi = calculateRSI(candles, 14);
+            let volSum = 0;
+            const volPeriod = 20;
+            for(let v = candles.length - volPeriod; v < candles.length; v++) {
+                volSum += candles[v].volume;
+            }
+            const avgVol = volSum / volPeriod;
+            const volSpike = candle.volume > avgVol * 3.0; // 300% volume spike
+            
+            let override = false;
+            if (action === 'BUY' && rsi < 25 && volSpike) override = true;
+            if (action === 'SELL' && rsi > 75 && volSpike) override = true;
+            
+            if (!override) {
+                if (action === 'BUY' && currentPrice < macroEma) action = '';
+                if (action === 'SELL' && currentPrice > macroEma) action = '';
+                
+                // Strict Weekly Alignment Filter (Reduce Drawdown)
+                if (action === 'BUY' && currentPrice < weeklyEma) action = '';
+                if (action === 'SELL' && currentPrice > weeklyEma) action = '';
+            } else {
+                // If it's a capitulation knife-catch, widen the stop loss slightly to survive the chop
+                sl = action === 'BUY' ? sl * 0.99 : sl * 1.01;
+            }
         }
         
         if (action) {

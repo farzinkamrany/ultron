@@ -115,6 +115,8 @@ async function runMegalodon() {
     console.log(`Simulation starting with ${globalTimeline.length} total events.\n`);
     
     let balance = INITIAL_CAPITAL;
+    let consecutiveLosses = 0;
+    let circuitBreakerActive = false;
     let stats = {
         totalTrades: 0,
         wins: 0,
@@ -313,11 +315,16 @@ async function runMegalodon() {
                 if (pnl > 0) {
                    stats.wins++;
                    stats.grossProfit += pnl;
+                   consecutiveLosses = 0;
                 }
                 else if (pnl > -2 && pnl < 2) stats.breakEvens++; 
                 else {
                    stats.losses++;
                    stats.grossLoss += Math.abs(pnl);
+                   consecutiveLosses++;
+                   if (consecutiveLosses >= 3) {
+                       circuitBreakerActive = true;
+                   }
                 }
                 
                 const half = date.getMonth() < 6 ? 'H1' : 'H2';
@@ -340,6 +347,18 @@ async function runMegalodon() {
         // TRIGGER LOGIC
         const regime = detectRegime(candles);
         const maxConcurrent = regime === 'TRENDING' ? 8 : 3;
+        
+        // Enforce Smart Circuit Breaker and Time Spacing
+        if (circuitBreakerActive) {
+            const chop = calculateChoppinessIndex(candles, 288);
+            if (chop < 50) {
+                circuitBreakerActive = false;
+                consecutiveLosses = 0;
+            } else {
+                continue;
+            }
+        }
+        
         if (Object.keys(activeTrades).length >= maxConcurrent) continue;
         const lastClose = lastTradeClosedTime[symbol] || 0;
         if (timestamp - lastClose < 1000 * 60 * 15) continue; // Cooldown
@@ -401,6 +420,7 @@ async function runMegalodon() {
         // MACRO TREND ALIGNMENT FILTER (MTF) - 800 EMA on 15m (equivalent to 50 EMA on 4H)
         if (action && candles.length >= 800) {
             const macroEma = calculateEMA(candles, 800);
+            const weeklyEma = calculateEMA(candles, 672); // Approx 1-week moving average
             
             // CAPITULATION OVERRIDE (Knife Catcher)
             const rsi = calculateRSI(candles, 14);
@@ -419,6 +439,10 @@ async function runMegalodon() {
             if (!override) {
                 if (action === 'BUY' && currentPrice < macroEma) action = '';
                 if (action === 'SELL' && currentPrice > macroEma) action = '';
+                
+                // Strict Weekly Alignment Filter (Reduce Drawdown)
+                if (action === 'BUY' && currentPrice < weeklyEma) action = '';
+                if (action === 'SELL' && currentPrice > weeklyEma) action = '';
             } else {
                 // If it's a capitulation knife-catch, widen the stop loss slightly to survive the chop
                 sl = action === 'BUY' ? sl * 0.99 : sl * 1.01;

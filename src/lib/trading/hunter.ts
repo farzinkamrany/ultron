@@ -1,9 +1,11 @@
 import ccxt from 'ccxt';
 import { calculateGannSquareOf9 } from './gann';
 import { redis } from '../redis';
+import { supabase } from '../supabase';
 import { CTOConfig } from '../ai';
 
 import { detectMarketRegime } from './risk';
+import { calculateChoppinessIndex } from './financial-intelligence';
 
 // ============ PHASE 1: SNOWBALL (15m) - Maximum Volatility (Best Risk/Reward) ============
 const BEAST_MODE_SYMBOLS = ['BTC/USDC:USDC', 'ETH/USDC:USDC', 'SOL/USDC:USDC', 'LINK/USDC:USDC', 'ADA/USDC:USDC', 'BNB/USDC:USDC', 'XRP/USDC:USDC', 'DOGE/USDC:USDC', 'AVAX/USDC:USDC', 'DOT/USDC:USDC'];
@@ -46,6 +48,24 @@ export async function huntForSetup(fallbackTargetProfitPerc: number, openSymbols
   if (today === 0 || today === 6) {
       console.log(`[Hunter] Halting hunt: Weekend detected (Day ${today}). No new entries allowed.`);
       return null;
+  }
+  
+  // === SMART CIRCUIT BREAKER CHECK ===
+  let isCircuitBreakerActive = false;
+  try {
+      const { data: recentTrades } = await supabase
+          .from('trades')
+          .select('pnl')
+          .eq('status', 'CLOSED')
+          .order('closed_at', { ascending: false })
+          .limit(3);
+          
+      if (recentTrades && recentTrades.length === 3) {
+          const allLosses = recentTrades.every(t => t.pnl !== null && t.pnl < 0);
+          if (allLosses) isCircuitBreakerActive = true;
+      }
+  } catch (err) {
+      console.error("[Hunter] Failed to check recent trades for Circuit Breaker", err);
   }
 
   const slBuffer = ctoConfig?.gann_tolerance_pct || 0.015; // Widen initial tolerance to 1.5% for volatile altcoins
@@ -147,11 +167,19 @@ export async function huntForSetup(fallbackTargetProfitPerc: number, openSymbols
 
         const closes = ohlcv.map(c => c[4] as number);
         let ema800 = closes[0];
+        let ema672 = closes[0];
         if (closes.length >= 800) {
             ema800 = closes.slice(0, 800).reduce((a, b) => a + b, 0) / 800;
             const k = 2 / (800 + 1);
             for (let i = 800; i < closes.length; i++) {
                 ema800 = (closes[i] * k) + (ema800 * (1 - k));
+            }
+        }
+        if (closes.length >= 672) {
+            ema672 = closes.slice(0, 672).reduce((a, b) => a + b, 0) / 672;
+            const k = 2 / (672 + 1);
+            for (let i = 672; i < closes.length; i++) {
+                ema672 = (closes[i] * k) + (ema672 * (1 - k));
             }
         }
         const trend = closes.length >= 800 ? (candidate.currentPrice > ema800 ? 'UP' : 'DOWN') : 'UNKNOWN';
@@ -164,6 +192,17 @@ export async function huntForSetup(fallbackTargetProfitPerc: number, openSymbols
           close: c[4] as number,
           volume: c[5] as number
         }));
+        
+        // === SMART CIRCUIT BREAKER (Wait for Chop to end) ===
+        if (isCircuitBreakerActive) {
+            const chop = calculateChoppinessIndex(candles, 288);
+            if (chop > 50) {
+                console.log(`[Hunter] Smart Circuit Breaker ACTIVE for ${candidate.asset}: Market is choppy (Chop: ${chop.toFixed(1)}) after 3 consecutive losses. Halting.`);
+                continue;
+            } else {
+                console.log(`[Hunter] Smart Circuit Breaker RECOVERED for ${candidate.asset}: Trend is clean (Chop: ${chop.toFixed(1)}). Resuming trade evaluation.`);
+            }
+        }
 
         let trSum = 0;
         for (let i = Math.max(1, candles.length - 14); i < candles.length; i++) {
@@ -202,12 +241,12 @@ export async function huntForSetup(fallbackTargetProfitPerc: number, openSymbols
         const obs = findOrderBlocks(candles);
 
         if (candidate.action === 'BUY') {
-          if (trend === 'DOWN') {
+          if (trend === 'DOWN' || candidate.currentPrice < ema672) {
              if (rsi < 25 && volSpike) {
                 console.log(`[Hunter] CAPITULATION OVERRIDE ${candidate.asset} BUY: Catching the knife (RSI: ${rsi.toFixed(1)}, Vol: 3x).`);
                 candidate.closestSupport *= 0.99; // widen SL to survive chop
              } else {
-                console.log(`[Hunter] Rejected ${candidate.asset} BUY: Counter-trend (Price below EMA 800 / 4H).`);
+                console.log(`[Hunter] Rejected ${candidate.asset} BUY: Counter-trend (Price below EMA 800 / EMA 672).`);
                 continue;
              }
           }
@@ -245,12 +284,12 @@ export async function huntForSetup(fallbackTargetProfitPerc: number, openSymbols
           };
           break; // Found the best trade, stop checking
         } else {
-          if (trend === 'UP') {
+          if (trend === 'UP' || candidate.currentPrice > ema672) {
              if (rsi > 75 && volSpike) {
                 console.log(`[Hunter] CAPITULATION OVERRIDE ${candidate.asset} SELL: Shorting euphoria (RSI: ${rsi.toFixed(1)}, Vol: 3x).`);
                 candidate.closestResistance *= 1.01; // widen SL to survive chop
              } else {
-                console.log(`[Hunter] Rejected ${candidate.asset} SELL: Counter-trend (Price above EMA 800 / 4H).`);
+                console.log(`[Hunter] Rejected ${candidate.asset} SELL: Counter-trend (Price above EMA 800 / EMA 672).`);
                 continue;
              }
           }
