@@ -43,12 +43,7 @@ export async function huntForSetup(fallbackTargetProfitPerc: number, openSymbols
     console.error("Redis fetch failed, using fallback config.");
   }
   
-  // === SESSION FILTER (WEEKEND BAN) ===
-  const today = new Date().getUTCDay();
-  if (today === 0 || today === 6) {
-      console.log(`[Hunter] Halting hunt: Weekend detected (Day ${today}). No new entries allowed.`);
-      return null;
-  }
+
   
   // === SMART CIRCUIT BREAKER CHECK ===
   let isCircuitBreakerActive = false;
