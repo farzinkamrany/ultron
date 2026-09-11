@@ -11,17 +11,24 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
   try {
-    // 0. Verify QStash signature for security (prevent DDoS/Rate Limit attacks)
-    const isQStash = !!req.headers.get("upstash-signature");
-    if (isQStash) {
-      const isValid = await verifyQStashSignature(req);
-      if (!isValid) {
-        console.error("[Manage Trades] Invalid QStash signature");
+    // 0. Verify QStash signature OR CRON_SECRET for security
+    const isDev = process.env.NODE_ENV === 'development';
+    
+    if (!isDev) {
+      const authHeader = req.headers.get('authorization');
+      const isVercelCron = authHeader === `Bearer ${process.env.CRON_SECRET}`;
+      const isQStash = !!req.headers.get("upstash-signature");
+      
+      if (isQStash) {
+        const isValid = await verifyQStashSignature(req);
+        if (!isValid) {
+          console.error("[Manage Trades] Invalid QStash signature");
+          return new NextResponse("Unauthorized", { status: 401 });
+        }
+      } else if (!isVercelCron) {
+        console.error("[Manage Trades] Direct access blocked. Invalid CRON_SECRET.");
         return new NextResponse("Unauthorized", { status: 401 });
       }
-    } else if (process.env.NODE_ENV === 'production') {
-      console.error("[Manage Trades] Direct access blocked. Must use QStash.");
-      return new NextResponse("Unauthorized", { status: 401 });
     }
     // 1. Fetch CTO Config
     let ctoConfig: CTOConfig | null = null;
