@@ -44,6 +44,25 @@ function calculateEMA(candles: MultiCandle[], period: number): number {
     return ema;
 }
 
+function calculateRSI(candles: MultiCandle[], period: number = 14): number {
+    if (candles.length < period + 1) return 50;
+    let gains = 0, losses = 0;
+    
+    // First period
+    for (let i = candles.length - period; i < candles.length; i++) {
+        const change = candles[i].close - candles[i-1].close;
+        if (change > 0) gains += change;
+        else losses -= change;
+    }
+    
+    let avgGain = gains / period;
+    let avgLoss = losses / period;
+    
+    if (avgLoss === 0) return 100;
+    let rs = avgGain / avgLoss;
+    return 100 - (100 / (1 + rs));
+}
+
 async function loadCSV(filePath: string, symbol: string): Promise<MultiCandle[]> {
     const fileStream = fs.createReadStream(filePath);
     const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
@@ -382,8 +401,28 @@ async function runMegalodon() {
         // MACRO TREND ALIGNMENT FILTER (MTF) - 800 EMA on 15m (equivalent to 50 EMA on 4H)
         if (action && candles.length >= 800) {
             const macroEma = calculateEMA(candles, 800);
-            if (action === 'BUY' && currentPrice < macroEma) action = '';
-            if (action === 'SELL' && currentPrice > macroEma) action = '';
+            
+            // CAPITULATION OVERRIDE (Knife Catcher)
+            const rsi = calculateRSI(candles, 14);
+            let volSum = 0;
+            const volPeriod = 20;
+            for(let v = candles.length - volPeriod; v < candles.length; v++) {
+                volSum += candles[v].volume;
+            }
+            const avgVol = volSum / volPeriod;
+            const volSpike = candle.volume > avgVol * 3.0; // 300% volume spike
+            
+            let override = false;
+            if (action === 'BUY' && rsi < 25 && volSpike) override = true;
+            if (action === 'SELL' && rsi > 75 && volSpike) override = true;
+            
+            if (!override) {
+                if (action === 'BUY' && currentPrice < macroEma) action = '';
+                if (action === 'SELL' && currentPrice > macroEma) action = '';
+            } else {
+                // If it's a capitulation knife-catch, widen the stop loss slightly to survive the chop
+                sl = action === 'BUY' ? sl * 0.99 : sl * 1.01;
+            }
         }
         
         // SESSION FILTER - No new entries on Weekends (Saturday=6, Sunday=0)

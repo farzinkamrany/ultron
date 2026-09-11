@@ -175,13 +175,41 @@ export async function huntForSetup(fallbackTargetProfitPerc: number, openSymbols
         const atr = trSum / Math.min(14, candles.length - 1);
         const atrPadding = atr * 1.5;
 
+        // RSI & Volume Spike for Capitulation Override
+        let rsi = 50;
+        if (closes.length >= 15) {
+            let gains = 0, losses = 0;
+            for (let i = closes.length - 14; i < closes.length; i++) {
+                const change = closes[i] - closes[i-1];
+                if (change > 0) gains += change;
+                else losses -= change;
+            }
+            const avgGain = gains / 14;
+            const avgLoss = losses / 14;
+            rsi = avgLoss === 0 ? 100 : 100 - (100 / (1 + (avgGain / avgLoss)));
+        }
+        
+        let volSum = 0;
+        const volPeriod = 20;
+        for(let v = ohlcv.length - volPeriod; v < ohlcv.length; v++) {
+            volSum += ohlcv[v][5] as number;
+        }
+        const avgVol = volSum / volPeriod;
+        const currentVol = ohlcv[ohlcv.length - 1][5] as number;
+        const volSpike = currentVol > avgVol * 3.0; // 300% volume spike
+
         const { findOrderBlocks } = await import('./ict');
         const obs = findOrderBlocks(candles);
 
         if (candidate.action === 'BUY') {
           if (trend === 'DOWN') {
-             console.log(`[Hunter] Rejected ${candidate.asset} BUY: Counter-trend (Price below EMA 800 / 4H).`);
-             continue;
+             if (rsi < 25 && volSpike) {
+                console.log(`[Hunter] CAPITULATION OVERRIDE ${candidate.asset} BUY: Catching the knife (RSI: ${rsi.toFixed(1)}, Vol: 3x).`);
+                candidate.closestSupport *= 0.99; // widen SL to survive chop
+             } else {
+                console.log(`[Hunter] Rejected ${candidate.asset} BUY: Counter-trend (Price below EMA 800 / 4H).`);
+                continue;
+             }
           }
           if (isReversalWindow) {
              console.log(`[Hunter] Rejected ${candidate.asset} BUY: TIME REVERSAL ACTIVE.`);
@@ -218,8 +246,13 @@ export async function huntForSetup(fallbackTargetProfitPerc: number, openSymbols
           break; // Found the best trade, stop checking
         } else {
           if (trend === 'UP') {
-             console.log(`[Hunter] Rejected ${candidate.asset} SELL: Counter-trend (Price above EMA 800 / 4H).`);
-             continue;
+             if (rsi > 75 && volSpike) {
+                console.log(`[Hunter] CAPITULATION OVERRIDE ${candidate.asset} SELL: Shorting euphoria (RSI: ${rsi.toFixed(1)}, Vol: 3x).`);
+                candidate.closestResistance *= 1.01; // widen SL to survive chop
+             } else {
+                console.log(`[Hunter] Rejected ${candidate.asset} SELL: Counter-trend (Price above EMA 800 / 4H).`);
+                continue;
+             }
           }
           if (isReversalWindow) {
              console.log(`[Hunter] Rejected ${candidate.asset} SELL: TIME REVERSAL ACTIVE.`);
