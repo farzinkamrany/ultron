@@ -130,6 +130,25 @@ export async function evaluateSetup(symbol: string, currentPrice: number, candle
         }
     }
     
+    // WEEKEND CHOPPINESS FILTER
+    if (action !== 'HOLD') {
+        const dayOfWeek = new Date().getUTCDay();
+        if (dayOfWeek === 0 || dayOfWeek === 6) {
+            if (!['BTC', 'ETH', 'SOL'].includes(symbol)) {
+                action = 'HOLD';
+                rationale = 'Rejected: Weekend Choppiness Filter (Altcoin)';
+            } else {
+                const rr = Math.abs(tp - currentPrice) / Math.abs(currentPrice - sl);
+                if (rr < 5) {
+                    action = 'HOLD';
+                    rationale = `Rejected: Weekend Choppiness Filter (R:R < 5, was ${rr.toFixed(2)})`;
+                } else {
+                    rationale += ' | Passed Weekend Filter';
+                }
+            }
+        }
+    }
+    
     if (action !== 'HOLD') {
         return {
             symbol,

@@ -449,11 +449,16 @@ async function runMegalodon() {
             }
         }
         
-        // SESSION FILTER - No new entries on Weekends (Saturday=6, Sunday=0)
+        // SMART WEEKEND CHOPPINESS FILTER
         if (action) {
             const dayOfWeek = date.getUTCDay();
             if (dayOfWeek === 0 || dayOfWeek === 6) {
-                action = '';
+                if (!['BTC', 'ETH', 'SOL'].includes(symbol)) {
+                    action = '';
+                } else {
+                    const rr = Math.abs(tp - currentPrice) / Math.abs(currentPrice - sl);
+                    if (rr < 5) action = '';
+                }
             }
         }
         
