@@ -3,7 +3,7 @@ import path from 'path';
 config({ path: path.resolve(process.cwd(), '.env.local') });
 
 import ccxt from 'ccxt';
-import { evaluateSetup, resetCircuitBreaker, isCircuitBreakerActive, updateCircuitBreaker, CIRCUIT_BREAKER } from '../src/lib/trading/strategy';
+import { evaluateSetup } from '../src/lib/trading/strategy';
 import { Candle } from '../src/lib/trading/gann';
 
 const exchange = new ccxt.kucoin({ enableRateLimit: true });
@@ -76,19 +76,12 @@ async function runOptimization() {
     let peakBalance = balance;
     let cbTriggeredCount = 0;
 
-    resetCircuitBreaker(balance);
-    CIRCUIT_BREAKER.enabled = true;
-
     for (let i = 100; i < candles.length - 1; i++) {
-      if (isCircuitBreakerActive(i)) {
-        cbTriggeredCount++;
-        continue;
-      }
 
       const window = candles.slice(i - 100, i + 1);
       const currentPrice = window[window.length - 1].close;
       
-      const signal = evaluateSetup(symbol, currentPrice, window, macroCandles);
+      const signal = await evaluateSetup(symbol, currentPrice, window, macroCandles);
       
       if (signal.action !== "HOLD") {
         const slDist = Math.abs(currentPrice - signal.stopLoss) / currentPrice;
@@ -128,13 +121,11 @@ async function runOptimization() {
              const profit = (Math.abs(signal.takeProfit - currentPrice) / currentPrice) * posValue;
              balance += (profit - entryFee - exitFee);
              if (balance > peakBalance) peakBalance = balance;
-             updateCircuitBreaker(true, balance, i, candles[i].timestamp);
            } else if (hitSL) {
              losses++;
              balance -= (riskAmount + entryFee + exitFee);
              const currentDrawdown = (peakBalance - balance) / peakBalance;
              if (currentDrawdown > maxDrawdown) maxDrawdown = currentDrawdown;
-             updateCircuitBreaker(false, balance, i, candles[i].timestamp);
            }
 
            // Stop if liquidated
