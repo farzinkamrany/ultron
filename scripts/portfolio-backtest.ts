@@ -59,12 +59,12 @@ async function runPortfolioBacktest() {
   console.log(`Loading CSVs for ${assets.join(', ')}...`);
   
   for (const asset of assets) {
-      const filepath = path.join(process.cwd(), 'data', 'hyperliquid-15m-2024', `${asset}_15m_2024.csv`);
+      const filepath = path.join(process.cwd(), 'data', `${asset}_15m_history.csv`);
       
       if (fs.existsSync(filepath)) {
           let data = await loadDataFromCSV(filepath, asset);
           allEvents = allEvents.concat(data);
-          console.log(`Loaded ${data.length} candles (Since 2024) for ${asset}`);
+          console.log(`Loaded ${data.length} candles for ${asset}`);
       } else {
           console.warn(`File not found: ${filepath}`);
       }
