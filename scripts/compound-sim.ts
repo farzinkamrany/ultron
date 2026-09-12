@@ -3,7 +3,7 @@ import path from 'path';
 config({ path: path.resolve(process.cwd(), '.env.local') });
 
 import ccxt from 'ccxt';
-import { evaluateSetup, resetCircuitBreaker, updateCircuitBreaker, isCircuitBreakerActive } from '../src/lib/trading/strategy';
+import { evaluateSetup} from '../src/lib/trading/strategy';
 import { Candle } from '../src/lib/trading/gann';
 
 const exchange = new ccxt.kucoin({ enableRateLimit: true });
@@ -38,7 +38,7 @@ async function simulate(symbol: string, tf: string, startingCapital: number, mac
   const monthly: { date: string, balance: number }[] = [];
   let lastMonth = -1;
 
-  resetCircuitBreaker(balance);
+  
 
   for (let i = 100; i < candles.length - 1; i++) {
     const date = new Date(candles[i].timestamp);
@@ -47,11 +47,11 @@ async function simulate(symbol: string, tf: string, startingCapital: number, mac
       lastMonth = date.getMonth();
     }
 
-    if (isCircuitBreakerActive(i)) { cbPaused++; continue; }
+    
 
     const window = candles.slice(i - 100, i + 1);
     const currentPrice = window[window.length - 1].close;
-    const signal = evaluateSetup(symbol, currentPrice, window, macroCandles);
+    const signal = await evaluateSetup(symbol, currentPrice, window, macroCandles);
 
     if (signal.action !== "HOLD") {
       const slDist = Math.abs(currentPrice - signal.stopLoss) / currentPrice;
@@ -84,7 +84,7 @@ async function simulate(symbol: string, tf: string, startingCapital: number, mac
           const dd = (peakBalance - balance) / peakBalance;
           if (dd > maxDrawdown) maxDrawdown = dd;
         }
-        updateCircuitBreaker(won, balance, i, candles[i].timestamp);
+        
         if (balance <= 0) { balance = 0; break; }
       }
     }

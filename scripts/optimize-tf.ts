@@ -73,7 +73,7 @@ async function runOptimization() {
         const window = candles.slice(i - 100, i + 1);
         const currentPrice = window[window.length - 1].close;
         
-        const signal = evaluateSetup(symbol, currentPrice, window, macroCandles);
+        const signal = await evaluateSetup(symbol, currentPrice, window, macroCandles);
         
         if (signal.action !== "HOLD") {
           // Calculate actual Risk and Position Size based on SL

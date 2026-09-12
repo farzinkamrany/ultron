@@ -3,7 +3,7 @@ import path from 'path';
 config({ path: path.resolve(process.cwd(), '.env.local') });
 
 import ccxt from 'ccxt';
-import { evaluateSetup, resetCircuitBreaker, updateCircuitBreaker, isCircuitBreakerActive, CIRCUIT_BREAKER } from '../src/lib/trading/strategy';
+import { evaluateSetup } from '../src/lib/trading/strategy';
 import { Candle } from '../src/lib/trading/gann';
 
 const exchange = new ccxt.kucoin({ enableRateLimit: true });
@@ -61,8 +61,8 @@ async function runBacktest(
   let maxDrawdown = 0, peakBalance = balance;
 
   if (withCB) {
-    resetCircuitBreaker(balance);
-    CIRCUIT_BREAKER.enabled = true;
+    
+    
   } else {
     CIRCUIT_BREAKER.enabled = false;
   }
@@ -75,7 +75,7 @@ async function runBacktest(
 
     const window = candles.slice(i - 100, i + 1);
     const currentPrice = window[window.length - 1].close;
-    const signal = evaluateSetup(symbol, currentPrice, window, macroCandles);
+    const signal = await evaluateSetup(symbol, currentPrice, window, macroCandles);
 
     if (signal.action !== "HOLD") {
       const slDist = Math.abs(currentPrice - signal.stopLoss) / currentPrice;
@@ -121,7 +121,7 @@ async function runBacktest(
         }
 
         if (withCB) {
-          updateCircuitBreaker(won, balance, i, candles[i].timestamp);
+          
         }
 
         if (balance <= 0) { balance = 0; break; }

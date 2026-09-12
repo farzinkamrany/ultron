@@ -66,7 +66,7 @@ async function runBacktest(symbol: string, tf: string, since: number, macroCandl
       lastMonth = month;
     }
 
-    const signal = evaluateSetup(symbol, currentPrice, window, macroCandles);
+    const signal = await evaluateSetup(symbol, currentPrice, window, macroCandles);
 
     if (signal.action !== "HOLD") {
       const slDist = Math.abs(currentPrice - signal.stopLoss) / currentPrice;
