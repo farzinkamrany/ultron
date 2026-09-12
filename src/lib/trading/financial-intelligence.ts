@@ -421,10 +421,53 @@ export function calculateADX(candles: Candle[], period: number = 14): number {
     return prevAdx;
 }
 
+export function calculateHurstExponent(candles: any[], period: number = 100): number {
+    if (candles.length <= period) return 0.5;
+    
+    const returns: number[] = [];
+    for (let i = candles.length - period; i < candles.length; i++) {
+        const c = candles[i];
+        const p = candles[i - 1];
+        if (p.close > 0) {
+            returns.push(Math.log(c.close / p.close));
+        } else {
+            returns.push(0);
+        }
+    }
+    
+    const mean = returns.reduce((a, b) => a + b, 0) / returns.length;
+    
+    let varianceSum = 0;
+    let maxCumulative = -Infinity;
+    let minCumulative = Infinity;
+    let cumulative = 0;
+    
+    for (let i = 0; i < returns.length; i++) {
+        const dev = returns[i] - mean;
+        varianceSum += dev * dev;
+        cumulative += dev;
+        if (cumulative > maxCumulative) maxCumulative = cumulative;
+        if (cumulative < minCumulative) minCumulative = cumulative;
+    }
+    
+    const S = Math.sqrt(varianceSum / returns.length);
+    if (S === 0) return 0.5;
+    
+    const R = maxCumulative - minCumulative;
+    if (R === 0) return 0.5;
+    
+    const RS = R / S;
+    const hurst = Math.log(RS) / Math.log(returns.length);
+    
+    return hurst;
+}
+
 export function detectRegime(candles: any[]): 'TRENDING' | 'RANGING' | 'HIGH_VOL' | 'NORMAL' {
     if (candles.length < 110) return 'NORMAL';
     const chop = calculateChoppinessIndex(candles, 14);
     const adx  = calculateADX(candles, 14);
+    const hurst = calculateHurstExponent(candles, 100);
+    
     let shortATR = 0;
     for (let i = candles.length - 14; i < candles.length; i++) {
         const c = candles[i], p = candles[i - 1];
@@ -438,7 +481,14 @@ export function detectRegime(candles: any[]): 'TRENDING' | 'RANGING' | 'HIGH_VOL
         baseATR += Math.max(c.high - c.low, Math.abs(c.high - p.close), Math.abs(c.low - p.close));
     }
     baseATR /= 14;
+    
     if (baseATR > 0 && shortATR > baseATR * 1.8) return 'HIGH_VOL';
+    
+    // Pure math fractals
+    if (hurst > 0.58) return 'TRENDING';
+    if (hurst < 0.42) return 'RANGING';
+    
+    // Fallback to classic ADX/CHOP for the neutral fractal zone (0.42 - 0.58)
     if (adx > 25 && chop < 38) return 'TRENDING';
     if (chop > 55) return 'RANGING';
     return 'NORMAL';
