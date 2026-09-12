@@ -4,6 +4,7 @@ export interface DerivativesAnalysis {
   fundingRate: number;
   openInterest: number;
   sentiment: string;
+  btcDominanceTrend?: 'UP' | 'DOWN' | 'FLAT';
 }
 
 /**
@@ -14,6 +15,7 @@ export async function analyzeDerivatives(asset: string): Promise<DerivativesAnal
   let fundingRate = 0;
   let openInterest = 0;
   let sentiment = "Neutral";
+  let btcDominanceTrend: 'UP' | 'DOWN' | 'FLAT' = 'FLAT';
 
   try {
     const exchange = new ccxt.bybit({ 
@@ -53,6 +55,20 @@ export async function analyzeDerivatives(asset: string): Promise<DerivativesAnal
       sentiment = "BALANCED";
     }
 
+    // Fetching BTC Dominance Trend via Binance BTCDOM index
+    try {
+      const binance = new ccxt.binance({ enableRateLimit: true, options: { defaultType: 'future' } });
+      const domData = await binance.fetchOHLCV('BTCDOM/USDT', '1h', undefined, 2);
+      if (domData && domData.length >= 2) {
+        const prevClose = domData[0][4] as number;
+        const currentClose = domData[1][4] as number;
+        if (currentClose > prevClose * 1.002) btcDominanceTrend = 'UP';
+        else if (currentClose < prevClose * 0.998) btcDominanceTrend = 'DOWN';
+      }
+    } catch (e) {
+      console.warn('Could not fetch BTCDOM index', e);
+    }
+
   } catch (err) {
     console.error("Derivatives Engine Error:", err);
   }
@@ -60,6 +76,7 @@ export async function analyzeDerivatives(asset: string): Promise<DerivativesAnal
   return {
     fundingRate,
     openInterest,
-    sentiment
+    sentiment,
+    btcDominanceTrend
   };
 }

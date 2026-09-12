@@ -17,6 +17,7 @@ import { logError } from "@/lib/logger";
 import { calculateDynamicKelly } from "./risk";
 import { Candle, detectRegime } from "./financial-intelligence";
 import { evaluateSetup } from "./strategy";
+import { analyzeDerivatives } from "./derivatives";
 import { TradeSignal as SetupSignal } from "./gann";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
@@ -159,8 +160,15 @@ export async function runTradingCycle(symbol: string = "BTC/USDT"): Promise<void
   const maxConcurrentTrades = regime === 'TRENDING' ? 8 : 3;
   console.log(`[Regime] Current Market Regime: ${regime}. Max Concurrency set to ${maxConcurrentTrades}.`);
 
+  // Fetch Micro-Structure Data (Funding Rates & BTC.D)
+  const derivs = await analyzeDerivatives(symbol);
+  const marketContext = { 
+      fundingRate: derivs.fundingRate, 
+      btcDominanceTrend: derivs.btcDominanceTrend
+  };
+
   // Engine Evaluation
-  const signal = await evaluateSetup(symbol, livePrice, candles15m, candles1h, regime);
+  const signal = await evaluateSetup(symbol, livePrice, candles15m, candles1h, regime, marketContext);
   console.log(`[Quant Engine] Setup evaluated: ${signal.action}. Reason: ${signal.reason || 'Valid setup'}`);
   
   if (signal.action === "HOLD") return;

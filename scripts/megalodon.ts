@@ -448,6 +448,36 @@ async function runMegalodon() {
                 sl = action === 'BUY' ? sl * 0.99 : sl * 1.01;
             }
         }
+        // SYNTHETIC FUNDING RATE PROXY (Prevent buying into extreme retail euphoria or selling into panic)
+        // High RSI on higher timeframes usually correlates with extremely positive funding rates
+        if (action) {
+            const rsi = calculateRSI(candles, 14);
+            if (action === 'BUY' && rsi > 75) {
+                // Euphoria (Funding rate likely > 0.03%) - skip long
+                action = '';
+            } else if (action === 'SELL' && rsi < 25) {
+                // Panic (Funding rate likely < -0.03%) - skip short
+                action = '';
+            }
+        }
+        
+        // SYNTHETIC BTC DOMINANCE PROXY (Protect Altcoins)
+        if (action === 'BUY' && symbol !== 'BTC' && symbol !== 'ETH') {
+            const btcData = buffers['BTC'];
+            const btcCandle = btcData.find(c => c.timestamp === candle.timestamp);
+            if (btcCandle) {
+                const btcIndex = btcData.indexOf(btcCandle);
+                if (btcIndex >= 20) {
+                    const btcSlice = btcData.slice(0, btcIndex + 1);
+                    const btcRsi = calculateRSI(btcSlice, 14);
+                    const altRsi = calculateRSI(candles, 14);
+                    // If BTC is surging (RSI > 60) but Altcoin is lagging (RSI < 50), BTC.D is rising. Altcoin will bleed.
+                    if (btcRsi > 60 && altRsi < 50) {
+                        action = '';
+                    }
+                }
+            }
+        }
         
         // SMART WEEKEND CHOPPINESS FILTER
         if (action) {

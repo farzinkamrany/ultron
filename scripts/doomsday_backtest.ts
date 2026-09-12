@@ -454,20 +454,6 @@ async function runMegalodon() {
             }
         }
         
-        // SMART WEEKEND CHOPPINESS FILTER
-        if (action) {
-            const date = new Date(timestamp);
-            const dayOfWeek = date.getUTCDay();
-            if (dayOfWeek === 0 || dayOfWeek === 6) {
-                if (!['BTC', 'ETH', 'SOL'].includes(symbol)) {
-                    action = '';
-                } else {
-                    const rr = Math.abs(tp - currentPrice) / Math.abs(currentPrice - sl);
-                    if (rr < 5) action = '';
-                }
-            }
-        }
-        
         if (action) {
             if (action === 'BUY' && buyCount >= 2) action = '';
             if (action === 'SELL' && sellCount >= 2) action = '';

@@ -26,7 +26,14 @@ export function calculateEMA(candles: any[], period: number): number {
     return ema;
 }
 
-export async function evaluateSetup(symbol: string, currentPrice: number, candles: any[], macroCandles: any[], regime: string = 'NORMAL'): Promise<TradeSignal> {
+export async function evaluateSetup(
+    symbol: string, 
+    currentPrice: number, 
+    candles: any[], 
+    macroCandles: any[], 
+    regime: string = 'NORMAL',
+    marketContext?: { fundingRate?: number; btcDominanceTrend?: 'UP' | 'DOWN' | 'FLAT' }
+): Promise<TradeSignal> {
     const gann = calculateGannSquareOf9(currentPrice);
     const supports = gann.supports.sort((a, b) => b - a);
     const resistances = gann.resistances.sort((a, b) => a - b);
@@ -147,6 +154,28 @@ export async function evaluateSetup(symbol: string, currentPrice: number, candle
                 }
             }
         }
+    }
+    
+    // FUNDING RATE FILTER (Contrarian Squeeze Hunter)
+    if (action !== 'HOLD' && marketContext?.fundingRate !== undefined) {
+        const fr = marketContext.fundingRate;
+        if (action === 'BUY' && fr > 0.0003) { // Highly positive funding (everyone is long)
+            action = 'HOLD';
+            rationale = `Rejected: Funding Rate too high (${(fr*100).toFixed(3)}%). Waiting for long squeeze.`;
+        } else if (action === 'SELL' && fr < -0.0003) { // Highly negative funding (everyone is short)
+            action = 'HOLD';
+            rationale = `Rejected: Funding Rate too low (${(fr*100).toFixed(3)}%). Waiting for short squeeze.`;
+        } else if (action === 'BUY' && fr < -0.0001) {
+            rationale += ` | High Confidence: Short Squeeze Fuel (${(fr*100).toFixed(3)}%)`;
+        } else if (action === 'SELL' && fr > 0.0001) {
+            rationale += ` | High Confidence: Long Squeeze Fuel (${(fr*100).toFixed(3)}%)`;
+        }
+    }
+    
+    // BTC DOMINANCE CORRELATION SHIELD (Protect Altcoins)
+    if (action === 'BUY' && symbol !== 'BTC' && marketContext?.btcDominanceTrend === 'UP') {
+        action = 'HOLD';
+        rationale = 'Rejected: BTC Dominance is rising. Altcoins are bleeding.';
     }
     
     if (action !== 'HOLD') {

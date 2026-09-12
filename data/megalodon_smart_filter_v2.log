@@ -1,0 +1,72 @@
+Loading Multiple Assets...
+Merging and Synchronizing Timeline...
+Simulation starting with 2081004 total events.
+
+
+============================================
+   MEGALODON CROSS-MARGIN BACKTEST (10 COINS)
+============================================
+Final Balance:    $7373052.03 (Start: $1000)
+Net Profit:       $7372052.03
+Max Drawdown:     $44089.30 (29.80%)
+Total Fees Paid:  $1323189.88
+Total Trades:     26659
+Win Rate:         26.34%
+Loss Rate:        73.62%
+Break-Evens:      0.04%
+
+--- 2020-H1 ---
+Trades: 1444 | Period PnL: $125958.54 | End Balance: $126958.54 | Win Rate: 28.46%
+
+--- 2020-H2 ---
+Trades: 1739 | Period PnL: $443624.01 | End Balance: $570582.54 | Win Rate: 27.03%
+
+--- 2021-H1 ---
+Trades: 1993 | Period PnL: $1291014.13 | End Balance: $1861596.68 | Win Rate: 30.26%
+
+--- 2021-H2 ---
+Trades: 1902 | Period PnL: $714783.26 | End Balance: $2576379.93 | Win Rate: 30.28%
+
+--- 2022-H1 ---
+Trades: 2047 | Period PnL: $711434.10 | End Balance: $3287814.03 | Win Rate: 28.24%
+
+--- 2022-H2 ---
+Trades: 1969 | Period PnL: $446381.92 | End Balance: $3734195.95 | Win Rate: 24.99%
+
+--- 2023-H1 ---
+Trades: 1841 | Period PnL: $332349.41 | End Balance: $4066545.36 | Win Rate: 24.55%
+
+--- 2023-H2 ---
+Trades: 1812 | Period PnL: $355072.60 | End Balance: $4421617.96 | Win Rate: 23.84%
+
+--- 2024-H1 ---
+Trades: 2275 | Period PnL: $666219.02 | End Balance: $5087836.98 | Win Rate: 27.34%
+
+--- 2024-H2 ---
+Trades: 2259 | Period PnL: $764176.20 | End Balance: $5852013.18 | Win Rate: 27.67%
+
+--- 2025-H1 ---
+Trades: 2231 | Period PnL: $494927.76 | End Balance: $6346940.94 | Win Rate: 24.38%
+
+--- 2025-H2 ---
+Trades: 2214 | Period PnL: $533401.72 | End Balance: $6880342.65 | Win Rate: 23.80%
+
+--- 2026-H1 ---
+Trades: 2109 | Period PnL: $368744.56 | End Balance: $7249087.21 | Win Rate: 23.76%
+
+--- 2026-H2 ---
+Trades: 824 | Period PnL: $123964.82 | End Balance: $7373052.03 | Win Rate: 22.94%
+
+--- SYMBOL BREAKDOWN ---
+XRP -> Trades: 2722 | PnL: $710559.08
+ADA -> Trades: 2878 | PnL: $809164.46
+BNB -> Trades: 3113 | PnL: $641071.74
+LINK -> Trades: 3063 | PnL: $1067244.48
+DOGE -> Trades: 2763 | PnL: $864859.73
+DOT -> Trades: 2440 | PnL: $747199.33
+AVAX -> Trades: 2412 | PnL: $1144031.99
+ETH -> Trades: 3090 | PnL: $617865.75
+BTC -> Trades: 2807 | PnL: $579455.95
+SOL -> Trades: 1371 | PnL: $190599.52
+============================================
+
