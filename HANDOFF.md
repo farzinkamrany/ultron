@@ -245,7 +245,103 @@ If explaining this system to an investor, trader, or friend, focus on its **emot
 
 ---
 
-## 9. Future Roadmap
+## 10. Latest Mathematical Upgrades (v3.1 — Pure Math Engine)
+
+**Commit:** `7c1a6f9` | **Branch:** `master`
+
+> **Core Philosophy Enforcement:** All ML/AI-based regime detection was removed and replaced with pure mathematical formulas. The system now uses zero black-box components in its trade decision pipeline.
+
+### Upgrade 1: Hurst Exponent (Market Regime Detection)
+*Location: `src/lib/trading/financial-intelligence.ts` → `calculateHurstExponent()` → `detectRegime()`*
+
+Replaced the discarded K-Means Clustering ML model with the **Rescaled Range (R/S) Analysis** — a fractal dimension formula developed by hydrologist H.E. Hurst in 1951 and adopted by Mandelbrot for financial market analysis.
+
+**Mathematical Formula:**
+```
+For each sub-period of length n:
+  R(n) = Max(cumulative deviation) - Min(cumulative deviation)
+  S(n) = Standard Deviation of returns in that period
+  RS(n) = R(n) / S(n)
+
+H = log(mean(RS)) / log(n)
+```
+
+**Decision Rules:**
+| H Value | Market Condition | Bot Behavior |
+|---|---|---|
+| `H > 0.55` | **Trending** (persistent) | Up to 8 concurrent positions; trend-following mode |
+| `H < 0.45` | **Ranging** (mean-reverting) | Max 3 positions; support/resistance bounce mode |
+| `0.45–0.55` | **Random Walk** | Reduced risk; higher RR ratio required |
+
+**Backtest Impact:** Net Profit $5.9M → **$7.34M** (+24%). Max Drawdown reduced from ~28% → 22.97%.
+
+---
+
+### Upgrade 2: FFT Dominant Cycle Filter (Wave Phase Detection)
+*Location: `src/lib/trading/financial-intelligence.ts` → `detectDominantCycleFFT()`*
+*Applied in: `scripts/megalodon.ts`, `scripts/doomsday_backtest.ts`, `src/lib/trading/strategy.ts`*
+
+The **Discrete Fourier Transform (DFT)** decomposes the price series (N=64 candles) into a spectrum of sinusoidal waves, identifying the dominant market cycle and its current **phase angle**.
+
+**Mathematical Formula:**
+```
+For each frequency bin k (from 1 to N/2):
+  Re[k] = Σ x[n] × cos(2πkn/N)   (Real component)
+  Im[k] = Σ x[n] × sin(2πkn/N)   (Imaginary component)
+  |Magnitude[k]| = √(Re[k]² + Im[k]²)
+  Phase[k] = atan2(Im[k], Re[k])
+
+Dominant Cycle: k with maximum Magnitude
+Phase Value = cos(Phase of dominant cycle)
+```
+
+**Decision Rules:**
+```
+If Phase Value > 0.7  → We are at a WAVE PEAK  → Block BUY orders
+If Phase Value < -0.7 → We are at a WAVE TROUGH → Block SELL orders
+```
+
+**Backtest Impact (Megalodon):**
+
+| Metric | Without FFT | With FFT |
+|---|---|---|
+| Net Profit | $7,348,612 | $7,209,130 |
+| **Max Drawdown** | 22.97% | **19.78%** ✅ |
+| Total Trades | 26,675 | 25,694 |
+| Win Rate | 26.52% | 26.43% |
+
+**Conclusion:** FFT trades less but better — filters 981 low-quality setups while reducing drawdown by 3.2%. Ideal for live capital preservation.
+
+---
+
+### Why Kalman Filter Was Tested But Rejected
+
+The Kalman Filter (`calculateKalmanFilter`) was implemented and tested as a replacement for EMA in the **Macro Trend Alignment Filter**. It was rejected because:
+
+- **Kalman = Zero-lag.** It reacts instantly to every price movement.
+- **EMA 800 = High-lag.** It absorbs short-term Wicks without changing direction.
+- For **macro trend detection** (the 800-candle "highway"), lag is a feature, not a bug.
+- When Kalman replaced EMA 800, violent Wicks temporarily flipped the macro filter direction, causing the bot to block valid trend-aligned trades.
+
+**Result:** Kalman reduced profit $7.34M → $6.46M and increased drawdown 22.97% → 27.01%. It was removed. The Kalman Filter may still be valuable for **precise entry refinement** (not macro trend detection).
+
+---
+
+## 11. Backtest Master Record
+
+All backtests cover: **2020-H1 to 2026-H2** | **10 Coins** | **15-min candles** | **$1,000 starting capital**
+
+| Strategy | Net Profit | Max Drawdown | Trades | Win Rate |
+|---|---|---|---|---|
+| Megalodon v1 (base) | ~$5.9M | ~28% | ~30K | ~25% |
+| Megalodon + Hurst | $7.34M | 22.97% | 26,675 | 26.52% |
+| **Megalodon + Hurst + FFT (current)** | **$7.21M** | **19.78%** | **25,694** | **26.43%** |
+| Doomsday (base) | $2.46M | 39.09% | 24,366 | 29.25% |
+| Doomsday + FFT | $2.40M | 39.06% | 23,680 | 29.18% |
+
+> **Note on Doomsday:** The 39% drawdown in Doomsday is structural — it comes from its Funding Rate accumulation, pyramiding fees, and vault-harvesting mechanism. FFT had minimal impact because Doomsday's risk profile is dominated by position-sizing math, not entry quality.
+
+
 
 **🚀 Next Evolutionary Milestones:**
 1. **Omni-Channel Life-OS:** Integrate iOS Shortcuts, track physical asset depreciation (Castrol 10W-40 oil change intervals, plant humidity), enforce "Focus Mode" during gaming (Sekiro/Wukong), and enforce German B2 linguistic context in casual queries.
