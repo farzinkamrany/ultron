@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateAIResponse } from '@/lib/ai';
-import { sendTelegramMessage, sendTelegramVoice } from '@/lib/telegram';
+import { sendTelegramMessage } from '@/lib/telegram';
 import { verifyQStashSignature } from '@/lib/qstash';
-import { generateSpeech } from '@/lib/audio';
 import ccxt from 'ccxt';
 
 export const dynamic = "force-dynamic";
@@ -38,46 +37,44 @@ export async function POST(request: NextRequest) {
       console.error("[Morning Podcaster] CCXT Fetch Error:", e);
     }
 
-    // 2. Generate Podcast Script
-    const prompt = `System Directive: You are Ultron, a highly intelligent and charismatic AI assistant created by Farzin. 
-It is morning time. You are hosting a short, 1-minute daily crypto podcast exclusively for Farzin.
+    // 2. Generate Anti-Gravity Briefing
+    const prompt = `System Prompt: The Omni-Channel Cosmic Life-OS (Anti-Gravity Engine)
 
-Current Market Status:
-- Bitcoin Price: ${btcPrice}
-- 24h Change: ${btcChange} (${trendWord})
+Role & Objective:
+You are "Anti-Gravity", a hyper-logical Astrological ERP and Daily Strategist for farzinman. Map his exact Natal Chart (Born: June 28, 1995, 09:00 AM, Sanandaj, Iran) against today's real-time planetary transits and output highly actionable, binary, and strategic daily directives.
 
-Your task: Write a highly engaging, energetic, and slightly futuristic Persian script (2 short paragraphs max) to give him a morning briefing.
-Start by saying good morning to Farzin. Give him a quick wrap-up of what Bitcoin is doing based on the data above.
-Then, motivate him for his day job, reminding him that the algorithms and AI (you) are working hard in the background to build his trading empire.
-Use a professional yet warm "brotherly" tone. 
-CRITICAL RULE: DO NOT use any emojis, asterisks (*), hashtags, or special characters in the text, as it will be read by a Text-To-Speech engine. Use simple, easily readable Persian phrasing. Spell out numbers clearly if necessary.`;
+Current Date: ${new Date().toISOString().split('T')[0]}
+Current Bitcoin Price: ${btcPrice} (${trendWord})
 
-    const aiScript = await generateAIResponse([{ role: 'user', content: prompt }], false, false); // Using flash model for speed
+Your task: Output the Daily Briefing in PERSIAN.
+Tone: Cold, precise, strategic, highly technical. Use strong imperatives.
+
+Output Format:
+🌌 تله‌متری کیهانی امروز
+سیارات فعال: [List top 3 impactful transits for today against his chart]
+وضعیت سیستم: [Expansion / Consolidation / Recovery]
+
+⚙️ دستورالعمل‌های اجرایی
+فیزیکی (باشگاه): [GO / HALT] - [Reason]
+شغل (شرکتی): [DEEP WORK / MINIMUM EFFORT / TAKE LEAVE] - [Reason]
+توسعه آلترون (مگالودون): [Exact directive for today]
+
+💰 لبه‌ی برتری ثروت
+[Specific insight on the market or wealth strategy based on current transits and Bitcoin status].`;
+
+    const aiMessage = await generateAIResponse([{ role: 'user', content: prompt }], false, false);
     
     const chatId = process.env.TELEGRAM_CHAT_ID;
     if (!chatId) {
       throw new Error('TELEGRAM_CHAT_ID is not defined');
     }
 
-    // 3. Convert to Voice (ElevenLabs)
-    try {
-      const audioBuffer = await generateSpeech(aiScript);
-      
-      // 4. Send Voice Message
-      await sendTelegramVoice(chatId, audioBuffer);
-      
-      // Also send the text as a caption/follow-up
-      await sendTelegramMessage(chatId, `🎙️ **پادکست صبحگاهی اولتران**\n\nمتن پادکست:\n${aiScript}`);
-
-    } catch (audioError) {
-      console.error("[Morning Podcaster] Audio Generation/Send Error:", audioError);
-      // Fallback to text only
-      await sendTelegramMessage(chatId, `🌅 **بریفینگ صبحگاهی (خطا در تولید صدا)**\n\n${aiScript}`);
-    }
+    // Send the structured text message directly
+    await sendTelegramMessage(chatId, aiMessage);
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
-    console.error('Morning Cron Error:', error);
+    console.error("[Anti-Gravity Cron] Error:", error);
     
     // Auto-Heal the error
     try {
