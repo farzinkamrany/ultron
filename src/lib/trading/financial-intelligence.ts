@@ -352,13 +352,61 @@ export function synthesizeHourlyCandles(candles: Candle[]): Candle[] {
 }
 
 export function calculateEMA(candles: Candle[], period: number): number {
-    if (candles.length < period) return candles[candles.length - 1]?.close || 0;
+    if (candles.length < period) return candles[candles.length - 1].close;
     const k = 2 / (period + 1);
     let ema = candles[0].close;
     for (let i = 1; i < candles.length; i++) {
         ema = (candles[i].close - ema) * k + ema;
     }
     return ema;
+}
+
+export function detectDominantCycleFFT(candles: any[], N: number = 64): { period: number, phase: number, magnitude: number } {
+    if (candles.length < N) return { period: 0, phase: 0, magnitude: 0 };
+    
+    // 1. Extract and detrend data
+    let sum = 0;
+    for (let i = candles.length - N; i < candles.length; i++) {
+        sum += candles[i].close;
+    }
+    const mean = sum / N;
+    
+    let real = new Float64Array(N);
+    
+    let idx = 0;
+    for (let i = candles.length - N; i < candles.length; i++) {
+        real[idx++] = candles[i].close - mean; // Detrended
+    }
+    
+    // 2. Compute DFT (O(N^2) which is super fast for N=64)
+    let maxMag = -1;
+    let peakK = 0;
+    let peakPhase = 0;
+    
+    for (let k = 1; k < N / 2; k++) { 
+        let sumRe = 0;
+        let sumIm = 0;
+        for (let n = 0; n < N; n++) {
+            const angle = (2 * Math.PI * k * n) / N;
+            sumRe += real[n] * Math.cos(angle);
+            sumIm -= real[n] * Math.sin(angle); // negative sign for standard DFT
+        }
+        const magnitude = Math.sqrt(sumRe * sumRe + sumIm * sumIm);
+        
+        if (magnitude > maxMag) {
+            maxMag = magnitude;
+            peakK = k;
+            peakPhase = Math.atan2(sumIm, sumRe);
+        }
+    }
+    
+    if (peakK === 0) return { period: 0, phase: 0, magnitude: 0 };
+    
+    return {
+        period: N / peakK,
+        phase: peakPhase,
+        magnitude: maxMag
+    };
 }
 
 export function calculateADX(candles: Candle[], period: number = 14): number {

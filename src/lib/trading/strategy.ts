@@ -1,5 +1,5 @@
 import { calculateGannSquareOf9, calculateTimeCycles, calculateGannAngles, calculateDownwardGannAngles, calculateCosmicAlignment, TradeSignal } from './gann';
-import { detectCapitulation } from './financial-intelligence';
+import { detectLiquiditySweep, detectRegime, detectCapitulation, detectDominantCycleFFT } from './financial-intelligence';
 
 export function calculateATR(candles: any[], period: number = 14): number {
     if (candles.length < 2) return 0;
@@ -134,6 +134,23 @@ export async function evaluateSetup(
             rationale = 'Rejected: Fighting Macro Uptrend (Price > 1H EMA50)';
         } else {
             rationale += ' | Macro Trend Aligned';
+        }
+    }
+    
+    // MATHEMATICAL FFT CYCLE FILTER (Prevent buying tops / selling bottoms)
+    if (action !== 'HOLD' && candles.length >= 64) {
+        const fft = detectDominantCycleFFT(candles, 64);
+        if (fft.magnitude > 0) {
+            const phaseValue = Math.cos(fft.phase);
+            if (action === 'BUY' && phaseValue > 0.7) {
+                action = 'HOLD';
+                rationale = 'Rejected: FFT Cycle Peak (Buying the Top)';
+            } else if (action === 'SELL' && phaseValue < -0.7) {
+                action = 'HOLD';
+                rationale = 'Rejected: FFT Cycle Trough (Selling the Bottom)';
+            } else {
+                rationale += ` | FFT Cycle OK (Phase: ${phaseValue.toFixed(2)})`;
+            }
         }
     }
     

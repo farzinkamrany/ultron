@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as readline from 'readline';
 import { calculateGannSquareOf9 } from '../src/lib/trading/gann';
 import { findOrderBlocks } from '../src/lib/trading/ict';
-import { detectSqueeze, calculateChoppinessIndex, detectLiquiditySweep, calculateRollingVWAP, calculateVolumeProfile, synthesizeDailyCandles, detectDailyTrend, detectCandlePattern, detectCapitulation, checkEarlyExit, detectRegime } from '../src/lib/trading/financial-intelligence';
+import { detectSqueeze, calculateChoppinessIndex, detectLiquiditySweep, calculateRollingVWAP, calculateVolumeProfile, synthesizeDailyCandles, detectDailyTrend, detectCandlePattern, detectCapitulation, checkEarlyExit, detectRegime, detectDominantCycleFFT } from '../src/lib/trading/financial-intelligence';
 
 interface MultiCandle {
     symbol: string;
@@ -426,6 +426,16 @@ async function runMegalodon() {
                     const validTP = supports.find(s => (currentPrice - s) / (closestResistance * (1 + dynamicSL) - currentPrice) >= 1.5);
                     if (validTP) { action = 'SELL'; tp = validTP; sl = closestResistance * (1 + dynamicSL); }
                 }
+            }
+        }
+        
+        // FFT CYCLE FILTER (Prevent buying tops / selling bottoms)
+        if (action && candles.length >= 64) {
+            const fft = detectDominantCycleFFT(candles, 64);
+            if (fft.magnitude > 0) {
+                const phaseValue = Math.cos(fft.phase);
+                if (action === 'BUY' && phaseValue > 0.7) action = '';
+                if (action === 'SELL' && phaseValue < -0.7) action = '';
             }
         }
         
