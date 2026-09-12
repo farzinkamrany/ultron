@@ -276,14 +276,18 @@ export async function runTradingCycle(symbol: string = "BTC/USDT"): Promise<void
       
       // 1. EXCHANGE EXECUTION
       if (signal.executionType === 'LIMIT') {
-          await exchange.createLimitOrder(signal.symbol, side, amount, signal.entryPrice);
+          await exchange.createOrder(signal.symbol, 'limit', side, amount, signal.entryPrice, { postOnly: true });
       } else {
-          await exchange.createMarketOrder(signal.symbol, side, amount);
+          // Capitulation - Use IOC Limit to prevent extreme slippage (0.1% max buffer)
+          const limitPrice = side === 'buy' ? livePrice * 1.001 : livePrice * 0.999;
+          await exchange.createOrder(signal.symbol, 'limit', side, amount, limitPrice, { timeInForce: 'IOC' });
       }
       
       const oppositeSide = side === "buy" ? "sell" : "buy";
       try {
-        await exchange.createOrder(signal.symbol, 'market', oppositeSide, amount, undefined, { triggerPrice: signal.stopLoss, reduceOnly: true });
+        // Stop-Limit instead of Stop-Market (0.2% limit buffer)
+        const slLimitPrice = oppositeSide === "sell" ? signal.stopLoss * 0.998 : signal.stopLoss * 1.002;
+        await exchange.createOrder(signal.symbol, 'limit', oppositeSide, amount, slLimitPrice, { triggerPrice: signal.stopLoss, reduceOnly: true });
       } catch (slError: any) {
         // FATAL: The market order went through but the stop loss failed. NAKED POSITION!
         console.error(`[CRITICAL SHIELD] Failed to set Stop Loss for ${signal.symbol}. Panic closing naked position. Error: ${slError.message}`);

@@ -225,9 +225,12 @@ export async function GET(req: NextRequest) {
                      
                      if (tradeMode === 'MICRO') {
                        try {
-                         await exchange.createMarketOrder(symbol, 'buy', contracts);
+                         // IOC Limit for Pyramiding (0.1% buffer)
+                         const limitPrice = currentPrice * 1.001;
+                         await exchange.createOrder(symbol, 'limit', 'buy', contracts, limitPrice, { timeInForce: 'IOC' });
                          try {
-                           const newSLOrder = await exchange.createOrder(symbol, 'market', 'sell', contracts * 2, undefined, { triggerPrice: newStopLoss, reduceOnly: true });
+                           const slLimitPrice = newStopLoss * 0.998;
+                           const newSLOrder = await exchange.createOrder(symbol, 'limit', 'sell', contracts * 2, slLimitPrice, { triggerPrice: newStopLoss, reduceOnly: true });
                            const openOrders = await exchange.fetchOpenOrders(symbol);
                            for (const o of openOrders) {
                              if (o.id && o.id !== newSLOrder.id) await exchange.cancelOrder(o.id, symbol);
@@ -301,9 +304,12 @@ export async function GET(req: NextRequest) {
                      
                      if (tradeMode === 'MICRO') {
                        try {
-                         await exchange.createMarketOrder(symbol, 'sell', contracts);
+                         // IOC Limit for Pyramiding (0.1% buffer)
+                         const limitPrice = currentPrice * 0.999;
+                         await exchange.createOrder(symbol, 'limit', 'sell', contracts, limitPrice, { timeInForce: 'IOC' });
                          try {
-                           const newSLOrder = await exchange.createOrder(symbol, 'market', 'buy', contracts * 2, undefined, { triggerPrice: newStopLoss, reduceOnly: true });
+                           const slLimitPrice = newStopLoss * 1.002;
+                           const newSLOrder = await exchange.createOrder(symbol, 'limit', 'buy', contracts * 2, slLimitPrice, { triggerPrice: newStopLoss, reduceOnly: true });
                            const openOrders = await exchange.fetchOpenOrders(symbol);
                            for (const o of openOrders) {
                              if (o.id && o.id !== newSLOrder.id) await exchange.cancelOrder(o.id, symbol);
@@ -351,8 +357,9 @@ export async function GET(req: NextRequest) {
         if (tradeMode === 'MICRO' && newStopLoss !== trade.stop_loss && newStatus === trade.status) {
           try {
             const side = (trade.position_type === 'BUY' || trade.position_type === 'LONG') ? 'sell' : 'buy';
-            // Create NEW trailing stop-loss FIRST
-            const newSLOrder = await exchange.createOrder(symbol, 'market', side, contracts, undefined, { triggerPrice: newStopLoss, reduceOnly: true });
+            // Create NEW trailing stop-loss FIRST (Stop-Limit with 0.2% buffer)
+            const slLimitPrice = side === 'sell' ? newStopLoss * 0.998 : newStopLoss * 1.002;
+            const newSLOrder = await exchange.createOrder(symbol, 'limit', side, contracts, slLimitPrice, { triggerPrice: newStopLoss, reduceOnly: true });
             
             // Cancel old stop-loss only if creation succeeded
             const openOrders = await exchange.fetchOpenOrders(symbol);
