@@ -1,8 +1,7 @@
 import * as fs from 'fs';
 import * as readline from 'readline';
 import { calculateGannSquareOf9 } from '../src/lib/trading/gann';
-import { findOrderBlocks } from '../src/lib/trading/ict';
-import { detectSqueeze, calculateChoppinessIndex, detectLiquiditySweep, calculateRollingVWAP, calculateVolumeProfile, synthesizeDailyCandles, detectDailyTrend, detectCandlePattern, detectCapitulation, checkEarlyExit, detectRegime, detectDominantCycleFFT, calculateFisherTransform, calculateApproximateEntropy, calculateZScoreVWAP, calculateHurstExponent, getHurstAdaptiveATRMultiplier } from '../src/lib/trading/financial-intelligence';
+import { detectSqueeze, calculateChoppinessIndex, detectCapitulationSync, checkEarlyExit, detectRegime, detectDominantCycleFFT, calculateFisherTransform, calculateApproximateEntropy, calculateZScoreVWAP, calculateHurstExponent, getHurstAdaptiveATRMultiplier } from '../src/lib/trading/financial-intelligence';
 
 interface MultiCandle {
     symbol: string;
@@ -16,9 +15,8 @@ interface MultiCandle {
 
 const INITIAL_CAPITAL = 1000;
 const MAX_LOSS_LIMIT = 900;
-const MAKER_FEE = 0.0004; // Taker fee + Slippage simulation
-const HARD_POSITION_CAP = 50000; // Realistic orderbook liquidity limit for altcoins
-
+const MAKER_FEE = 0.0004;
+const HARD_POSITION_CAP = 500000; // Realistic orderbook liquidity limit for top 10 coins
 function calculateATR(candles: MultiCandle[], period: number = 14): number {
     if (candles.length < 2) return 0;
     const actualPeriod = Math.min(period, candles.length - 1);
@@ -129,7 +127,10 @@ async function runMegalodon() {
         maxDrawdownPercent: 0,
         peakBalance: INITIAL_CAPITAL,
         periods: {} as Record<string, { trades: number, wins: number, pnl: number }>,
-        symbolStats: {} as Record<string, { trades: number, pnl: number }>
+        symbolStats: {} as Record<string, { trades: number, pnl: number }>,
+        cachedRegime: '' as any,
+        cachedFft: 0 as any,
+        cachedApEn: 0 as any
     };
     
     let activeTrades: Record<string, any> = {};
@@ -142,10 +143,10 @@ async function runMegalodon() {
     
     for (let i = 0; i < globalTimeline.length; i++) {
         const candle = globalTimeline[i];
-        const { symbol, timestamp, open, high, low, close: currentPrice, volume } = candle;
+        const { symbol, timestamp, close: currentPrice } = candle;
         
         buffers[symbol].push(candle);
-        if (buffers[symbol].length > 1500) buffers[symbol].shift();
+        if (buffers[symbol].length > 2000) buffers[symbol] = buffers[symbol].slice(500);
         
         const candles = buffers[symbol];
         if (candles.length < 1500) continue;
@@ -167,7 +168,7 @@ async function runMegalodon() {
             let pnl = 0;
             let exitPrice = 0;
             
-            const { entryPrice, tp, action, pyramidStage, initialSl, entryTime } = activeTrade;
+            const { action, entryPrice, initialSl, sl, tp, pyramidStage, pyramidPrice } = activeTrade;
             const atr = calculateATR(candles, 14);
             const trailingAtrMult = activeTrade.pyramidStage > 0 ? 1.5 : 2;
             const chandelierLong = currentPrice - (atr * trailingAtrMult);
@@ -254,12 +255,18 @@ async function runMegalodon() {
                 let leverage = 10;
                 
                 if (activeTrade.balanceAtEntry >= 100000) {
-                    baseRisk = 0.002;
-                    maxKellyRisk = 0.005;
-                    leverage = 3;
+                    if (stats.cachedRegime === 'TRENDING') {
+                        baseRisk = 0.01;
+                        maxKellyRisk = 0.02;
+                        leverage = 10; // Max aggression in trends
+                    } else {
+                        baseRisk = 0.003;
+                        maxKellyRisk = 0.006;
+                        leverage = 3; 
+                    }
                 } else if (activeTrade.balanceAtEntry >= 20000) {
-                    baseRisk = 0.003;
-                    maxKellyRisk = 0.008;
+                    baseRisk = 0.005;
+                    maxKellyRisk = 0.01;
                     leverage = 5;
                 }
                 
@@ -281,12 +288,16 @@ async function runMegalodon() {
                 if (activeTrade.isSqueezeAccelerated) riskMultiplier *= 1.5; 
                 else if (activeTrade.isChoppy) riskMultiplier *= 0.5;
                 
-                // --- EQUITY CURVE DRAWDOWN BRAKE ---
-                if (drawdownPercent > 25) {
-                    riskMultiplier *= 0.25; // Survival Mode
-                } else if (drawdownPercent > 15) {
-                    riskMultiplier *= 0.50; // Warning Mode
+                // --- 1. EXPONENTIAL EQUITY CURVE SMOOTHING ---
+                if (drawdownPercent > 2) {
+                    riskMultiplier *= Math.pow(0.5, drawdownPercent / 5); 
                 }
+                
+                // --- 2. VOLATILITY-ADJUSTED SIZING (ATR SHIELD) ---
+                const atr = calculateATR(candles, 14);
+                const volRatio = (atr / currentPrice) * 100;
+                const volDiscount = Math.max(1, volRatio / 4);
+                riskMultiplier /= volDiscount;
                 
                 let basePositionSize = activeTrade.balanceAtEntry * riskMultiplier / (Math.abs(entryPrice - initialSl) / entryPrice);
                 const maxPositionSize = activeTrade.balanceAtEntry * leverage; 
@@ -351,9 +362,13 @@ async function runMegalodon() {
             continue;
         }
         
-        // TRIGGER LOGIC
-        const regime = detectRegime(candles);
-        const maxConcurrent = regime === 'TRENDING' ? 8 : 3;
+        // CACHE HEAVY MATH (Every 4 candles / 1 hour)
+        const isHourTick = (timestamp % (1000 * 60 * 60)) === 0;
+        if (isHourTick || !stats.cachedRegime) {
+            stats.cachedRegime = detectRegime(candles);
+        }
+        const regime = stats.cachedRegime;
+        const maxConcurrent = regime === 'TRENDING' ? 10 : 3;
         
         // Enforce Smart Circuit Breaker and Time Spacing
         if (circuitBreakerActive) {
@@ -391,7 +406,7 @@ async function runMegalodon() {
         let dynamicSL = (atr / currentPrice) * atrMultiplier;
         if (dynamicSL < 0.003) dynamicSL = 0.003;
         
-        const capitulation = await detectCapitulation(candles, symbol, 200);
+        const capitulation = detectCapitulationSync(candles, 200);
         if (capitulation === 'BULLISH') {
             action = 'BUY'; 
             sl = currentPrice * (1 - dynamicSL); 
@@ -404,7 +419,7 @@ async function runMegalodon() {
         }
         
         if (!action) {
-            const regime = detectRegime(candles);
+            const regime = stats.cachedRegime;
             
             if (regime === 'RANGING') {
                 if (distanceToSupportPerc <= dynamicSL) {
@@ -427,26 +442,27 @@ async function runMegalodon() {
             }
         }
         
-        // MATHEMATICAL FFT CYCLE FILTER (Prevent buying tops / selling bottoms)
-        if (action && candles.length >= 64) {
-            const fft = detectDominantCycleFFT(candles, 64);
-            if (fft.magnitude > 0) {
-                const phaseValue = Math.cos(fft.phase);
-                if (action === 'BUY' && phaseValue > 0.7) action = '';
-                if (action === 'SELL' && phaseValue < -0.7) action = '';
-            }
-        }
-        
-        // APPROXIMATE ENTROPY FILTER (Avoid chaotic, unpredictable markets)
+        // MATHEMATICAL FFT CYCLE FILTER & APEN (Cached every 4 candles for Speed)
         if (action && candles.length >= 66) {
-            const apEn = calculateApproximateEntropy(candles, 2, 0.2);
-            if (apEn > 1.5) action = ''; // Market is too chaotic to trade
+            if (isHourTick || !stats.cachedFft) {
+                const fft = detectDominantCycleFFT(candles, 64);
+                let phaseValue = 0;
+                if (fft.magnitude > 0) phaseValue = Math.cos(fft.phase);
+                const apEn = calculateApproximateEntropy(candles, 2, 0.2);
+                
+                stats.cachedFft = phaseValue;
+                stats.cachedApEn = apEn;
+            }
+            
+            if (action === 'BUY' && stats.cachedFft > 0.7) action = '';
+            if (action === 'SELL' && stats.cachedFft < -0.7) action = '';
+            if (stats.cachedApEn > 1.5) action = ''; 
         }
         
         // EHLERS FISHER TRANSFORM CONFIRMATION
         // Only enter if Fisher is aligned (not at extreme opposite side)
         if (action && candles.length >= 12) {
-            const { fisher, trigger } = calculateFisherTransform(candles, 10);
+            const { fisher } = calculateFisherTransform(candles, 10);
             if (action === 'BUY' && fisher > 2.0) action = '';   // Overbought extreme
             if (action === 'SELL' && fisher < -2.0) action = ''; // Oversold extreme
         }
@@ -535,6 +551,17 @@ async function runMegalodon() {
                     if (rr < 5) action = '';
                 }
             }
+        }
+        
+        // DIRECTIONAL PARITY SHIELD (Beta-Neutralizer)
+        if (action) {
+            let buyCount = 0; let sellCount = 0;
+            for (const tr of Object.values(activeTrades)) {
+                if (tr.action === 'BUY') buyCount++;
+                else if (tr.action === 'SELL') sellCount++;
+            }
+            if (action === 'BUY' && (buyCount - sellCount) >= 3) action = '';
+            if (action === 'SELL' && (sellCount - buyCount) >= 3) action = '';
         }
         
         if (action) {

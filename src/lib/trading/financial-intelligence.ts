@@ -252,6 +252,53 @@ export function detectCandlePattern(candles: Candle[], type: 'BULLISH' | 'BEARIS
 
 import ccxt from "ccxt";
 
+export function detectCapitulationSync(candles: Candle[], lookback: number = 200): 'BULLISH' | 'BEARISH' | null {
+  if (candles.length < lookback) return null;
+  const current = candles[candles.length - 1];
+  
+  let totalVol = 0;
+  for (let i = candles.length - lookback; i < candles.length - 1; i++) {
+    totalVol += candles[i].volume;
+  }
+  const avgVol = totalVol / (lookback - 1);
+  
+  // Need at least 3x average volume for Capitulation
+  if (current.volume < avgVol * 3) return null;
+  
+  const currRange = current.high - current.low;
+  if (currRange === 0) return null;
+  
+  const lowerWick = Math.min(current.open, current.close) - current.low;
+  const upperWick = current.high - Math.max(current.open, current.close);
+  
+  let isBullishStructure = (lowerWick >= currRange * 0.4 && current.close > current.open);
+  let isBearishStructure = (upperWick >= currRange * 0.4 && current.close < current.open);
+  
+  let avgGain = 0;
+  let avgLoss = 0;
+  const rsiPeriod = 14;
+  for (let i = candles.length - rsiPeriod; i < candles.length; i++) {
+      const change = candles[i].close - candles[i - 1].close;
+      if (change > 0) avgGain += change;
+      else avgLoss -= change;
+  }
+  avgGain /= rsiPeriod;
+  avgLoss /= rsiPeriod;
+  
+  let rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
+  let rsi = 100 - (100 / (1 + rs));
+  
+  if (isBullishStructure && rsi > 35) isBullishStructure = false; 
+  if (isBearishStructure && rsi < 65) isBearishStructure = false; 
+  
+  if (!isBullishStructure && !isBearishStructure) return null;
+  
+  if (isBullishStructure) return 'BULLISH';
+  if (isBearishStructure) return 'BEARISH';
+  return null;
+}
+
+
 export async function detectCapitulation(candles: Candle[], symbol: string, lookback: number = 200): Promise<'BULLISH' | 'BEARISH' | null> {
   if (candles.length < lookback) return null;
   const current = candles[candles.length - 1];
