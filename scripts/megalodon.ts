@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as readline from 'readline';
 import { calculateGannSquareOf9 } from '../src/lib/trading/gann';
 import { findOrderBlocks } from '../src/lib/trading/ict';
-import { detectSqueeze, calculateChoppinessIndex, detectLiquiditySweep, calculateRollingVWAP, calculateVolumeProfile, synthesizeDailyCandles, detectDailyTrend, detectCandlePattern, detectCapitulation, checkEarlyExit, detectRegime, detectDominantCycleFFT } from '../src/lib/trading/financial-intelligence';
+import { detectSqueeze, calculateChoppinessIndex, detectLiquiditySweep, calculateRollingVWAP, calculateVolumeProfile, synthesizeDailyCandles, detectDailyTrend, detectCandlePattern, detectCapitulation, checkEarlyExit, detectRegime, detectDominantCycleFFT, calculateFisherTransform, calculateApproximateEntropy, calculateZScoreVWAP, calculateHurstExponent, getHurstAdaptiveATRMultiplier } from '../src/lib/trading/financial-intelligence';
 
 interface MultiCandle {
     symbol: string;
@@ -385,8 +385,11 @@ async function runMegalodon() {
         let sl = 0;
         
         const atr = calculateATR(candles);
-        let dynamicSL = (atr / currentPrice) * 1.5; 
-        if (dynamicSL < 0.003) dynamicSL = 0.003; 
+        // HURST-ADAPTIVE STOP LOSS: Wider stops in trending markets, tighter in ranging
+        const hurstForSL = calculateHurstExponent(candles, 50);
+        const atrMultiplier = getHurstAdaptiveATRMultiplier(hurstForSL);
+        let dynamicSL = (atr / currentPrice) * atrMultiplier;
+        if (dynamicSL < 0.003) dynamicSL = 0.003;
         
         const capitulation = await detectCapitulation(candles, symbol, 200);
         if (capitulation === 'BULLISH') {
@@ -431,6 +434,31 @@ async function runMegalodon() {
                 const phaseValue = Math.cos(fft.phase);
                 if (action === 'BUY' && phaseValue > 0.7) action = '';
                 if (action === 'SELL' && phaseValue < -0.7) action = '';
+            }
+        }
+        
+        // APPROXIMATE ENTROPY FILTER (Avoid chaotic, unpredictable markets)
+        if (action && candles.length >= 66) {
+            const apEn = calculateApproximateEntropy(candles, 2, 0.2);
+            if (apEn > 1.5) action = ''; // Market is too chaotic to trade
+        }
+        
+        // EHLERS FISHER TRANSFORM CONFIRMATION
+        // Only enter if Fisher is aligned (not at extreme opposite side)
+        if (action && candles.length >= 12) {
+            const { fisher, trigger } = calculateFisherTransform(candles, 10);
+            if (action === 'BUY' && fisher > 2.0) action = '';   // Overbought extreme
+            if (action === 'SELL' && fisher < -2.0) action = ''; // Oversold extreme
+        }
+        
+        // Z-SCORE VWAP: In RANGING markets, only enter at statistical extremes
+        if (action && candles.length >= 50) {
+            const regime = detectRegime(candles);
+            if (regime === 'RANGING') {
+                const { zScore } = calculateZScoreVWAP(candles, 50);
+                // In ranging markets, only buy when oversold and sell when overbought
+                if (action === 'BUY' && zScore > 0.5) action = '';   // Price above VWAP, not yet cheap
+                if (action === 'SELL' && zScore < -0.5) action = ''; // Price below VWAP, not yet expensive
             }
         }
         

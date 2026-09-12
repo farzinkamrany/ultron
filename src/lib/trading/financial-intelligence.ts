@@ -409,7 +409,156 @@ export function detectDominantCycleFFT(candles: any[], N: number = 64): { period
     };
 }
 
+// ============================================================
+// EHLERS FISHER TRANSFORM
+// Normalizes price into Gaussian distribution.
+// Values near +2.5 / -2.5 signal extreme reversals.
+// ============================================================
+export function calculateFisherTransform(candles: any[], period: number = 10): { fisher: number, trigger: number } {
+    if (candles.length < period) return { fisher: 0, trigger: 0 };
+    
+    const slice = candles.slice(-period);
+    const highest = Math.max(...slice.map((c: any) => c.high));
+    const lowest = Math.min(...slice.map((c: any) => c.low));
+    const range = highest - lowest;
+    
+    if (range === 0) return { fisher: 0, trigger: 0 };
+    
+    // Normalize price to [-0.999, 0.999]
+    const currentClose = candles[candles.length - 1].close;
+    const prevClose = candles[candles.length - 2]?.close ?? currentClose;
+    
+    let value = 2 * ((currentClose - lowest) / range) - 1;
+    let prevValue = 2 * ((prevClose - lowest) / range) - 1;
+    
+    // Clamp to avoid log domain errors
+    value = Math.max(-0.999, Math.min(0.999, value));
+    prevValue = Math.max(-0.999, Math.min(0.999, prevValue));
+    
+    const fisher = 0.5 * Math.log((1 + value) / (1 - value));
+    const trigger = 0.5 * Math.log((1 + prevValue) / (1 - prevValue));
+    
+    return { fisher, trigger };
+}
+
+// ============================================================
+// PEARSON CORRELATION COEFFICIENT
+// Returns correlation [-1, 1] between two price series.
+// Used for Portfolio Heat management.
+// ============================================================
+export function calculatePearsonCorrelation(seriesA: number[], seriesB: number[], period: number = 50): number {
+    const n = Math.min(period, seriesA.length, seriesB.length);
+    if (n < 2) return 0;
+    
+    const a = seriesA.slice(-n);
+    const b = seriesB.slice(-n);
+    
+    const meanA = a.reduce((s, v) => s + v, 0) / n;
+    const meanB = b.reduce((s, v) => s + v, 0) / n;
+    
+    let num = 0, denomA = 0, denomB = 0;
+    for (let i = 0; i < n; i++) {
+        const da = a[i] - meanA;
+        const db = b[i] - meanB;
+        num += da * db;
+        denomA += da * da;
+        denomB += db * db;
+    }
+    
+    const denom = Math.sqrt(denomA * denomB);
+    return denom === 0 ? 0 : num / denom;
+}
+
+// ============================================================
+// APPROXIMATE ENTROPY (ApEn)
+// Measures market complexity/predictability.
+// ApEn ~0 = highly predictable pattern (trade!)
+// ApEn ~2 = chaotic noise (avoid!)
+// ============================================================
+export function calculateApproximateEntropy(candles: any[], m: number = 2, r_factor: number = 0.2): number {
+    const N = Math.min(64, candles.length);
+    if (N < m + 2) return 1;
+    
+    const data = candles.slice(-N).map((c: any) => c.close);
+    const stdDev = (() => {
+        const mean = data.reduce((s: number, v: number) => s + v, 0) / N;
+        const variance = data.reduce((s: number, v: number) => s + (v - mean) ** 2, 0) / N;
+        return Math.sqrt(variance);
+    })();
+    
+    const r = r_factor * stdDev;
+    if (r === 0) return 0;
+    
+    function phi(m_val: number): number {
+        let count = 0;
+        let total = 0;
+        for (let i = 0; i < N - m_val; i++) {
+            let matches = 0;
+            for (let j = 0; j < N - m_val; j++) {
+                let withinR = true;
+                for (let k = 0; k < m_val; k++) {
+                    if (Math.abs(data[i + k] - data[j + k]) > r) {
+                        withinR = false;
+                        break;
+                    }
+                }
+                if (withinR) matches++;
+            }
+            total += Math.log(matches / (N - m_val));
+        }
+        return total / (N - m_val);
+    }
+    
+    return phi(m) - phi(m + 1);
+}
+
+// ============================================================
+// Z-SCORE VWAP BANDS
+// Standard deviation distance from VWAP.
+// Z < -2: oversold mean-reversion zone
+// Z > +2: overbought mean-reversion zone
+// ============================================================
+export function calculateZScoreVWAP(candles: any[], period: number = 50): { vwap: number, zScore: number, stdDev: number } {
+    const n = Math.min(period, candles.length);
+    if (n < 2) return { vwap: candles[candles.length-1]?.close ?? 0, zScore: 0, stdDev: 0 };
+    
+    const slice = candles.slice(-n);
+    
+    // VWAP = Σ(typical_price × volume) / Σ(volume)
+    let sumPV = 0, sumV = 0;
+    for (const c of slice) {
+        const tp = (c.high + c.low + c.close) / 3;
+        sumPV += tp * c.volume;
+        sumV += c.volume;
+    }
+    const vwap = sumV === 0 ? slice[slice.length-1].close : sumPV / sumV;
+    
+    // Standard deviation of closes
+    const mean = slice.reduce((s: number, c: any) => s + c.close, 0) / n;
+    const variance = slice.reduce((s: number, c: any) => s + (c.close - mean) ** 2, 0) / n;
+    const stdDev = Math.sqrt(variance);
+    
+    const currentClose = candles[candles.length - 1].close;
+    const zScore = stdDev === 0 ? 0 : (currentClose - vwap) / stdDev;
+    
+    return { vwap, zScore, stdDev };
+}
+
+// ============================================================
+// HURST-ADAPTIVE ATR MULTIPLIER
+// Returns the ATR stop-loss multiplier adjusted by market regime.
+// Trending markets → wider stops (let profits run)
+// Ranging markets  → tighter stops (cut losses fast)
+// ============================================================
+export function getHurstAdaptiveATRMultiplier(hurstH: number): number {
+    if (hurstH > 0.65) return 2.5;   // Strong trend → very wide stop
+    if (hurstH > 0.55) return 2.0;   // Mild trend → standard wide
+    if (hurstH > 0.45) return 1.5;   // Neutral → balanced
+    return 1.2;                       // Ranging → tight, cut fast
+}
+
 export function calculateADX(candles: Candle[], period: number = 14): number {
+
     if (candles.length <= period * 2) return 0;
     
     let tr = 0, plusDM = 0, minusDM = 0;
