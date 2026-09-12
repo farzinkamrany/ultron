@@ -13,6 +13,8 @@
 import ccxt, { Exchange } from "ccxt";
 import { supabase } from "@/lib/supabase";
 import { sendTelegramMessage } from "@/lib/telegram";
+import * as fs from 'fs';
+import * as path from 'path';
 import { logError } from "@/lib/logger";
 import { calculateDynamicKelly } from "./risk";
 import { Candle, detectRegime } from "./financial-intelligence";
@@ -263,7 +265,31 @@ export async function runTradingCycle(symbol: string = "BTC/USDT"): Promise<void
         return;
       }
       
-      const kellyPercent = await calculateDynamicKelly(signal.symbol);
+      let kellyPercent = await calculateDynamicKelly(signal.symbol);
+      
+      // --- EQUITY CURVE DRAWDOWN BRAKE (DOOMSDAY MODE ONLY) ---
+      const isDoomsday = process.env.DOOMSDAY_MODE === 'true';
+      if (isDoomsday) {
+          const STATE_FILE = path.join(process.cwd(), 'data', 'bot_state.json');
+          let botState = { peakBalance: liveBalance };
+          if (fs.existsSync(STATE_FILE)) {
+              botState = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+          }
+          if (liveBalance > botState.peakBalance) {
+              botState.peakBalance = liveBalance;
+              fs.writeFileSync(STATE_FILE, JSON.stringify(botState));
+          }
+          const drawdownPercent = ((botState.peakBalance - liveBalance) / botState.peakBalance) * 100;
+          
+          if (drawdownPercent > 25) {
+              kellyPercent *= 0.25; // Survival Mode
+              console.warn(`[Drawdown Brake] Survival Mode! Drawdown: ${drawdownPercent.toFixed(2)}% -> Risk Cut 75%`);
+          } else if (drawdownPercent > 15) {
+              kellyPercent *= 0.50; // Warning Mode
+              console.warn(`[Drawdown Brake] Warning Mode! Drawdown: ${drawdownPercent.toFixed(2)}% -> Risk Cut 50%`);
+          }
+      }
+      
       const riskAmount = liveBalance * kellyPercent;
       const stopLossPerc = Math.abs(livePrice - signal.stopLoss) / livePrice;
       let targetPositionUsd = riskAmount / stopLossPerc;

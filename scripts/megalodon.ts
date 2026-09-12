@@ -281,6 +281,13 @@ async function runMegalodon() {
                 if (activeTrade.isSqueezeAccelerated) riskMultiplier *= 1.5; 
                 else if (activeTrade.isChoppy) riskMultiplier *= 0.5;
                 
+                // --- EQUITY CURVE DRAWDOWN BRAKE ---
+                if (drawdownPercent > 25) {
+                    riskMultiplier *= 0.25; // Survival Mode
+                } else if (drawdownPercent > 15) {
+                    riskMultiplier *= 0.50; // Warning Mode
+                }
+                
                 let basePositionSize = activeTrade.balanceAtEntry * riskMultiplier / (Math.abs(entryPrice - initialSl) / entryPrice);
                 const maxPositionSize = activeTrade.balanceAtEntry * leverage; 
                 if (basePositionSize > maxPositionSize) basePositionSize = maxPositionSize;
