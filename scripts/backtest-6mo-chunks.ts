@@ -3,7 +3,7 @@ import path from 'path';
 config({ path: path.resolve(process.cwd(), '.env.local') });
 
 import ccxt from 'ccxt';
-import { evaluateSetup, resetCircuitBreaker, isCircuitBreakerActive, updateCircuitBreaker, CIRCUIT_BREAKER } from '../src/lib/trading/strategy';
+import { evaluateSetup } from '../src/lib/trading/strategy';
 import { Candle } from '../src/lib/trading/gann';
 
 const exchange = new ccxt.kucoin({ enableRateLimit: true });
@@ -76,21 +76,15 @@ async function runOptimization() {
       
       let balance = STARTING_BALANCE;
       let wins = 0, losses = 0, maxDrawdown = 0, peakBalance = balance;
-      resetCircuitBreaker(balance);
-      CIRCUIT_BREAKER.enabled = true;
       
       let chunkEndDate = new Date(chunkEndTime);
       let startedDate = new Date(currentChunkStart);
 
       while (i < candles.length && candles[i].timestamp < chunkEndTime) {
-        if (isCircuitBreakerActive(i)) {
-          i++;
-          continue;
-        }
 
         const window = candles.slice(i - 100, i + 1);
         const currentPrice = window[window.length - 1].close;
-        const signal = evaluateSetup(symbol, currentPrice, window, macroCandles);
+        const signal = await evaluateSetup(symbol, currentPrice, window, macroCandles);
         
         if (signal.action !== "HOLD") {
           const slDist = Math.abs(currentPrice - signal.stopLoss) / currentPrice;
@@ -123,13 +117,11 @@ async function runOptimization() {
                    wins++;
                    balance += ((Math.abs(signal.takeProfit - currentPrice) / currentPrice) * posValue - entryFee - exitFee);
                    if (balance > peakBalance) peakBalance = balance;
-                   updateCircuitBreaker(true, balance, i, candles[i].timestamp);
                  } else if (hitSL) {
                    losses++;
                    balance -= (riskAmount + entryFee + exitFee);
                    const dd = (peakBalance - balance) / peakBalance;
                    if (dd > maxDrawdown) maxDrawdown = dd;
-                   updateCircuitBreaker(false, balance, i, candles[i].timestamp);
                  }
 
                  if (balance <= 0) { balance = 0; break; }
