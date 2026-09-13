@@ -7,6 +7,45 @@ export interface Candle {
   volume: number;
 }
 
+export function detectLiquiditySweep(candles: Candle[], lookback: number = 48): 'BULLISH_SWEEP' | 'BEARISH_SWEEP' | 'NONE' {
+  if (candles.length < lookback + 2) return 'NONE';
+  
+  // The current forming candle is at the end. We analyze the last *closed* candle (index - 2 or - 1 depending on how the loop passes them).
+  // Assume the last candle in the array is the one we are evaluating.
+  const current = candles[candles.length - 1];
+  const previous = candles[candles.length - 2];
+  
+  // Find swing low and high in the lookback period (excluding the current and previous candles)
+  let lowestLow = Infinity;
+  let highestHigh = -Infinity;
+  
+  for (let i = candles.length - lookback - 2; i <= candles.length - 3; i++) {
+    if (i < 0) continue;
+    if (candles[i].low < lowestLow) lowestLow = candles[i].low;
+    if (candles[i].high > highestHigh) highestHigh = candles[i].high;
+  }
+  
+  // Bullish Sweep: Current or previous candle wicked below lowestLow but closed above it.
+  const wickedBelow = previous.low < lowestLow || current.low < lowestLow;
+  const closedAbove = current.close > lowestLow;
+  const isGreen = current.close > current.open;
+  
+  if (wickedBelow && closedAbove && isGreen) {
+      return 'BULLISH_SWEEP';
+  }
+  
+  // Bearish Sweep: Current or previous candle wicked above highestHigh but closed below it.
+  const wickedAbove = previous.high > highestHigh || current.high > highestHigh;
+  const closedBelow = current.close < highestHigh;
+  const isRed = current.close < current.open;
+  
+  if (wickedAbove && closedBelow && isRed) {
+      return 'BEARISH_SWEEP';
+  }
+  
+  return 'NONE';
+}
+
 export function detectSqueeze(candles: Candle[], lookback: number = 20): boolean {
   if (candles.length < lookback) return false;
   const periodCandles = candles.slice(-lookback);
@@ -114,31 +153,7 @@ export function calculateVolumeProfile(candles: Candle[], lookback: number = 200
     return min + (pocIndex * binSize) + (binSize / 2);
 }
 
-export function detectLiquiditySweep(candles: Candle[], lookback: number = 50): { type: 'BULLISH' | 'BEARISH' } | null {
-  if (candles.length < lookback + 1) return null;
-  
-  const current = candles[candles.length - 1];
-  
-  let swingLow = Infinity;
-  let swingHigh = -Infinity;
-  
-  for (let i = candles.length - lookback; i < candles.length - 1; i++) {
-    if (candles[i].low < swingLow) swingLow = candles[i].low;
-    if (candles[i].high > swingHigh) swingHigh = candles[i].high;
-  }
-  
-  // Bullish Sweep: Price goes below recent swing low but closes above it
-  if (current.low < swingLow && current.close > swingLow) {
-    return { type: 'BULLISH' };
-  }
-  
-  // Bearish Sweep: Price goes above recent swing high but closes below it
-  if (current.high > swingHigh && current.close < swingHigh) {
-    return { type: 'BEARISH' };
-  }
-  
-  return null;
-}
+
 
 export function synthesizeDailyCandles(candles: Candle[], intervalMultiplier: number): Candle[] {
   const dailyCandles: Candle[] = [];

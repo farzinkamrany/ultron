@@ -1,7 +1,6 @@
 import * as fs from 'fs';
 import * as readline from 'readline';
-import { calculateGannSquareOf9 } from '../src/lib/trading/gann';
-import { detectSqueeze, calculateChoppinessIndex, detectCapitulationSync, checkEarlyExit, detectRegime, detectDominantCycleFFT, calculateFisherTransform, calculateApproximateEntropy, calculateZScoreVWAP, calculateHurstExponent, getHurstAdaptiveATRMultiplier } from '../src/lib/trading/financial-intelligence';
+import { detectSqueeze, calculateChoppinessIndex, detectCapitulationSync, checkEarlyExit, detectRegime, detectDominantCycleFFT, calculateFisherTransform, calculateApproximateEntropy, calculateZScoreVWAP, calculateHurstExponent, getHurstAdaptiveATRMultiplier, detectLiquiditySweep } from '../src/lib/trading/financial-intelligence';
 
 interface MultiCandle {
     symbol: string;
@@ -40,6 +39,42 @@ function calculateEMA(candles: MultiCandle[], period: number): number {
         ema = (candles[i].close - ema) * k + ema;
     }
     return ema;
+}
+
+function calculateMACD(candles: MultiCandle[]): { macd: number, signal: number, hist: number } {
+    if (candles.length < 35) return { macd: 0, signal: 0, hist: 0 };
+    
+    const ema12Arr = [];
+    const ema26Arr = [];
+    const macdArr = [];
+    
+    let sum12 = 0;
+    for (let i = 0; i < 12; i++) sum12 += candles[i].close;
+    let ema12 = sum12 / 12;
+    for(let i = 11; i < candles.length; i++) {
+        if(i > 11) ema12 = (candles[i].close - ema12) * (2/13) + ema12;
+        ema12Arr[i] = ema12;
+    }
+    
+    let sum26 = 0;
+    for (let i = 0; i < 26; i++) sum26 += candles[i].close;
+    let ema26 = sum26 / 26;
+    for(let i = 25; i < candles.length; i++) {
+        if(i > 25) ema26 = (candles[i].close - ema26) * (2/27) + ema26;
+        ema26Arr[i] = ema26;
+        macdArr[i] = ema12Arr[i] - ema26Arr[i];
+    }
+    
+    let sum9 = 0;
+    for (let i = 25; i < 25 + 9; i++) sum9 += macdArr[i];
+    let signal = sum9 / 9;
+    for(let i = 25 + 9; i < candles.length; i++) {
+        signal = (macdArr[i] - signal) * (2/10) + signal;
+    }
+    
+    const macd = macdArr[candles.length - 1];
+    const hist = macd - signal;
+    return { macd, signal, hist };
 }
 
 function calculateRSI(candles: MultiCandle[], period: number = 14): number {
@@ -99,7 +134,8 @@ async function runMegalodon() {
     
     console.log("Merging and Synchronizing Timeline...");
     const START_TIMESTAMP = 1514764800000; // Jan 1, 2018 (6-year backtest)
-    const globalTimeline = [...btcData, ...ethData, ...solData, ...linkData, ...adaData, ...bnbData, ...xrpData, ...dogeData, ...avaxData, ...dotData]
+    // DOT excluded: consistently negative PnL across all backtest runs
+    const globalTimeline = [...btcData, ...ethData, ...solData, ...linkData, ...adaData, ...bnbData, ...xrpData, ...dogeData, ...avaxData]
     .filter(c => c.timestamp >= START_TIMESTAMP)
     .sort((a, b) => {
         if (a.timestamp !== b.timestamp) return a.timestamp - b.timestamp;
@@ -138,7 +174,7 @@ async function runMegalodon() {
     
     const buffers: Record<string, MultiCandle[]> = {
         'BTC': [], 'ETH': [], 'SOL': [], 'LINK': [], 'ADA': [],
-        'BNB': [], 'XRP': [], 'DOGE': [], 'AVAX': [], 'DOT': []
+        'BNB': [], 'XRP': [], 'DOGE': [], 'AVAX': []
     };
     
     for (let i = 0; i < globalTimeline.length; i++) {
@@ -168,79 +204,96 @@ async function runMegalodon() {
             let pnl = 0;
             let exitPrice = 0;
             
-            const { action, entryPrice, initialSl, sl, tp, pyramidStage, pyramidPrice } = activeTrade;
-            const atr = calculateATR(candles, 14);
-            const trailingAtrMult = activeTrade.pyramidStage > 0 ? 1.5 : 2;
-            const chandelierLong = currentPrice - (atr * trailingAtrMult);
-            const chandelierShort = currentPrice + (atr * trailingAtrMult);
+            const { action, entryPrice, initialSl, sl, tp, pyramidStage, pyramidPrice, entryRegime, blendedEntry } = activeTrade;
+            
+            const effectiveEntry = blendedEntry || entryPrice;
+            const breakEvenLong = effectiveEntry * (1 + (MAKER_FEE * 3));
+            const breakEvenShort = effectiveEntry * (1 - (MAKER_FEE * 3));
+            
+            // Hard R:R system. No trailing Chandelier stop.
             
             if (action === 'BUY') {
-                const isEarlyExit = checkEarlyExit(activeTrade, candles);
-                if (isEarlyExit) {
-                   exitPrice = currentPrice;
-                   closed = true;
-                }
-                else if (candle.low <= activeTrade.sl) {
-                  exitPrice = activeTrade.sl * 0.999;
+                if (candle.low <= activeTrade.sl) {
+                  exitPrice = activeTrade.sl * 0.9995;
                   closed = true;
                 }
-                else if (pyramidStage === 0 && candle.high >= tp) {
-                  const macroEma = calculateEMA(candles, 200);
-                  let volSum = 0;
-                  const volPeriod = Math.min(20, candles.length);
-                  for(let v = candles.length - volPeriod; v < candles.length; v++) {
-                      volSum += candles[v].volume;
+                else if (candle.high >= tp) {
+                  // Hard TP Reached (either Ranging mean or Trend 4R target)
+                  exitPrice = tp;
+                  closed = true;
+                }
+                else if (entryRegime !== 'RANGING' && !activeTrade.isCapitulation) {
+                  // Trend Engine Management
+                  const riskDistance = entryPrice - initialSl;
+                  const currentR = (currentPrice - entryPrice) / riskDistance;
+                  
+                  // ── DONCHIAN TRAILING STOP (No Fixed Target) ──
+                  const lookback = 20;
+                  if (candles.length > lookback) {
+                      let donchianStop = activeTrade.sl;
+                      if (activeTrade.action === 'BUY') {
+                          // Trailing Stop is the lowest low of the last 20 candles
+                          let lowestLow = Infinity;
+                          for (let i = candles.length - lookback; i < candles.length; i++) {
+                              if (candles[i].low < lowestLow) lowestLow = candles[i].low;
+                          }
+                          activeTrade.sl = Math.max(activeTrade.sl, lowestLow - (lowestLow * 0.01));
+                      } else {
+                          // Trailing Stop is the highest high of the last 20 candles
+                          let highestHigh = -Infinity;
+                          for (let i = candles.length - lookback; i < candles.length; i++) {
+                              if (candles[i].high > highestHigh) highestHigh = candles[i].high;
+                          }
+                          activeTrade.sl = Math.min(activeTrade.sl, highestHigh + (highestHigh * 0.01));
+                      }
                   }
-                  const avgVol = volSum / volPeriod;
-
-                  if (currentPrice > macroEma && candle.volume > avgVol * 1.5) {
+                  
+                  // ── AGGRESSIVE PYRAMIDING (Add 100% size) ──
+                  if (currentR >= 2.0 && pyramidStage === 0) {
                       activeTrade.pyramidStage = 1;
-                      activeTrade.pyramidPrice = tp;
-                      activeTrade.sl = Math.max(activeTrade.sl, entryPrice);
+                      activeTrade.pyramidPrice = currentPrice; 
+                      // Add 100% size (average entry becomes exactly midpoint)
+                      activeTrade.blendedEntry = (entryPrice + currentPrice) / 2;
+                      const lockPrice = entryPrice + Math.abs(entryPrice - initialSl);
+                      activeTrade.sl = Math.max(activeTrade.sl, lockPrice);
                   }
-                }
-                
-                if (pyramidStage > 0) {
-                  activeTrade.sl = Math.max(activeTrade.sl, chandelierLong);
-                }
-                
-                if (candle.low <= activeTrade.sl) {
-                    exitPrice = activeTrade.sl;
-                    closed = true;
+                  if (currentR >= 4.0 && pyramidStage === 1) {
+                      activeTrade.pyramidStage = 2;
+                      activeTrade.pyramidPrice = currentPrice; 
+                      // Add another 100% of base size (total 3x)
+                      activeTrade.blendedEntry = (activeTrade.blendedEntry * 2 + currentPrice) / 3;
+                      const lockPrice = entryPrice + (Math.abs(entryPrice - initialSl) * 3);
+                      activeTrade.sl = Math.max(activeTrade.sl, lockPrice);
+                  }
                 }
             } else {
-                const isEarlyExit = checkEarlyExit(activeTrade, candles);
-                if (isEarlyExit) {
-                   exitPrice = currentPrice;
-                   closed = true;
-                }
-                else if (candle.high >= activeTrade.sl) {
-                  exitPrice = activeTrade.sl * 1.001; 
+                if (candle.high >= activeTrade.sl) {
+                  exitPrice = activeTrade.sl * 1.0005; 
                   closed = true;
                 }
-                else if (pyramidStage === 0 && candle.low <= tp) {
-                  const macroEma = calculateEMA(candles, 200);
-                  let volSum = 0;
-                  const volPeriod = Math.min(20, candles.length);
-                  for(let v = candles.length - volPeriod; v < candles.length; v++) {
-                      volSum += candles[v].volume;
-                  }
-                  const avgVol = volSum / volPeriod;
-
-                  if (currentPrice < macroEma && candle.volume > avgVol * 1.5) {
+                else if (candle.low <= tp) {
+                  exitPrice = tp;
+                  closed = true;
+                }
+                else if (entryRegime !== 'RANGING' && !activeTrade.isCapitulation) {
+                  const riskDistance = initialSl - entryPrice;
+                  const currentR = (entryPrice - currentPrice) / riskDistance;
+                  
+                  // ── AGGRESSIVE PYRAMIDING FOR SHORTS ──
+                  if (currentR >= 2.0 && pyramidStage === 0) {
                       activeTrade.pyramidStage = 1;
-                      activeTrade.pyramidPrice = tp;
-                      activeTrade.sl = Math.min(activeTrade.sl, entryPrice);
+                      activeTrade.pyramidPrice = currentPrice;
+                      activeTrade.blendedEntry = (entryPrice + currentPrice) / 2;
+                      const lockPrice = entryPrice - Math.abs(initialSl - entryPrice);
+                      activeTrade.sl = Math.min(activeTrade.sl, lockPrice);
                   }
-                }
-                
-                if (pyramidStage > 0) {
-                  activeTrade.sl = Math.min(activeTrade.sl, chandelierShort);
-                }
-                
-                if (candle.high >= activeTrade.sl) {
-                    exitPrice = activeTrade.sl;
-                    closed = true;
+                  if (currentR >= 4.0 && pyramidStage === 1) {
+                      activeTrade.pyramidStage = 2;
+                      activeTrade.pyramidPrice = currentPrice;
+                      activeTrade.blendedEntry = (activeTrade.blendedEntry * 2 + currentPrice) / 3;
+                      const lockPrice = entryPrice - (Math.abs(initialSl - entryPrice) * 3);
+                      activeTrade.sl = Math.min(activeTrade.sl, lockPrice);
+                  }
                 }
             }
             
@@ -249,55 +302,21 @@ async function runMegalodon() {
                 let totalEntryVolume = 0;
                 let totalExitVolume = 0;
                 
-                // Production-equivalent: Balance-tiered leverage & risk
-                let baseRisk = 0.005;
-                let maxKellyRisk = 0.01; // Max 1% risk per trade
+                // ── SAFE COMPOUNDER RISK PARAMETERS ─────────────────────────────────
+                let baseRisk = 0.02; // 2% Base Risk (Safe)
                 let leverage = 10;
-                
-                if (activeTrade.balanceAtEntry >= 100000) {
-                    if (stats.cachedRegime === 'TRENDING') {
-                        baseRisk = 0.01;
-                        maxKellyRisk = 0.02;
-                        leverage = 10; // Max aggression in trends
-                    } else {
-                        baseRisk = 0.003;
-                        maxKellyRisk = 0.006;
-                        leverage = 3; 
-                    }
-                } else if (activeTrade.balanceAtEntry >= 20000) {
-                    baseRisk = 0.005;
-                    maxKellyRisk = 0.01;
-                    leverage = 5;
-                }
-                
+
                 let riskMultiplier = baseRisk; 
                 
-                if (stats.totalTrades > 50) {
-                   const W = stats.wins / stats.totalTrades;
-                   const avgWin = stats.wins > 0 ? (stats.grossProfit / stats.wins) : 10;
-                   const avgLoss = stats.losses > 0 ? (stats.grossLoss / stats.losses) : 1;
-                   let R = avgWin / (avgLoss || 1);
-                   if (R < 1) R = 1;
-                   const kelly = W - ((1 - W) / R);
-                   if (kelly > 0) {
-                       const optimalRisk = Math.max(baseRisk, Math.min(maxKellyRisk, kelly * 0.25));
-                       riskMultiplier = optimalRisk;
-                   }
-                }
+                // --- EQUITY CURVE DRAWDOWN BRAKE RESTORED ---
+                if (drawdownPercent > 20) riskMultiplier *= 0.50; 
+                if (drawdownPercent > 30) riskMultiplier *= 0.50; // Total 0.25x
                 
-                if (activeTrade.isSqueezeAccelerated) riskMultiplier *= 1.5; 
-                else if (activeTrade.isChoppy) riskMultiplier *= 0.5;
-                
-                // --- 1. EXPONENTIAL EQUITY CURVE SMOOTHING ---
-                if (drawdownPercent > 2) {
-                    riskMultiplier *= Math.pow(0.5, drawdownPercent / 5); 
-                }
-                
-                // --- 2. VOLATILITY-ADJUSTED SIZING (ATR SHIELD) ---
-                const atr = calculateATR(candles, 14);
-                const volRatio = (atr / currentPrice) * 100;
-                const volDiscount = Math.max(1, volRatio / 4);
-                riskMultiplier /= volDiscount;
+                // --- SYMBOL-SPECIFIC RISK SLASHING ---
+                const symbolStats = stats.symbolStats[activeTrade.symbol];
+                const symbolLosses = symbolStats ? (symbolStats.consecutiveLosses || 0) : 0;
+                if (symbolLosses >= 2) riskMultiplier *= 0.5;
+                if (symbolLosses >= 4) riskMultiplier *= 0.5; // Total 0.25x
                 
                 let basePositionSize = activeTrade.balanceAtEntry * riskMultiplier / (Math.abs(entryPrice - initialSl) / entryPrice);
                 const maxPositionSize = activeTrade.balanceAtEntry * leverage; 
@@ -305,17 +324,23 @@ async function runMegalodon() {
                 if (basePositionSize > HARD_POSITION_CAP) basePositionSize = HARD_POSITION_CAP;
                 
                 if (activeTrade.pyramidStage === 0) {
+                   // Standard single-position PnL
                    const movePerc = action === 'BUY' ? (exitPrice - entryPrice) / entryPrice : (entryPrice - exitPrice) / entryPrice;
                    rawPnl = basePositionSize * movePerc;
                    totalEntryVolume = basePositionSize;
                    totalExitVolume = basePositionSize;
                 } 
                 else if (activeTrade.pyramidStage === 1) {
-                   // Pyramided: position was doubled when in profit, so PnL is 2x
-                   const movePerc = action === 'BUY' ? (exitPrice - entryPrice) / entryPrice : (entryPrice - exitPrice) / entryPrice;
-                   rawPnl = (basePositionSize * 2) * movePerc;
-                   totalEntryVolume = basePositionSize * 2;
-                   totalExitVolume = basePositionSize * 2;
+                    // ── FIX: Smart Pyramiding PnL (50% Size on 2nd Leg) ──────────────────────────
+                    const movePerc1 = action === 'BUY' ? (exitPrice - entryPrice) / entryPrice : (entryPrice - exitPrice) / entryPrice;
+                    const pnl1 = basePositionSize * movePerc1;
+                    
+                    const movePerc2 = action === 'BUY' ? (exitPrice - activeTrade.pyramidPrice) / activeTrade.pyramidPrice : (activeTrade.pyramidPrice - exitPrice) / activeTrade.pyramidPrice;
+                    const pnl2 = (basePositionSize * 0.5) * movePerc2; 
+                    
+                    rawPnl = pnl1 + pnl2;
+                    totalEntryVolume = basePositionSize + (basePositionSize * 0.5);
+                    totalExitVolume = basePositionSize + (basePositionSize * 0.5);
                 }
                 
                 const entryFee = totalEntryVolume * MAKER_FEE;
@@ -323,26 +348,37 @@ async function runMegalodon() {
                 pnl = rawPnl - entryFee - exitFee;
                 
                 balance += pnl;
+                
+                // --- BRAKE RELEASE MECHANISM ---
+                if (action === 'BUY') {
+                    const currentR = (exitPrice - entryPrice) / (entryPrice - initialSl);
+                    if (currentR >= 3.0) stats.peakBalance = balance;
+                } else {
+                    const currentR = (entryPrice - exitPrice) / (initialSl - entryPrice);
+                    if (currentR >= 3.0) stats.peakBalance = balance;
+                }
+                
                 stats.totalFeesPaid += (entryFee + exitFee);
                 stats.totalTrades++;
                 
-                if (!stats.symbolStats[activeTrade.symbol]) stats.symbolStats[activeTrade.symbol] = { trades: 0, pnl: 0 };
+                if (!stats.symbolStats[activeTrade.symbol]) {
+                    stats.symbolStats[activeTrade.symbol] = { trades: 0, pnl: 0, consecutiveLosses: 0 };
+                }
                 stats.symbolStats[activeTrade.symbol].trades++;
                 stats.symbolStats[activeTrade.symbol].pnl += pnl;
                 
                 if (pnl > 0) {
                    stats.wins++;
                    stats.grossProfit += pnl;
-                   consecutiveLosses = 0;
+                   stats.symbolStats[activeTrade.symbol].consecutiveLosses = 0;
                 }
-                else if (pnl > -2 && pnl < 2) stats.breakEvens++; 
+                else if (pnl > -2 && pnl < 2) {
+                   stats.breakEvens++; 
+                }
                 else {
                    stats.losses++;
                    stats.grossLoss += Math.abs(pnl);
-                   consecutiveLosses++;
-                   if (consecutiveLosses >= 3) {
-                       circuitBreakerActive = true;
-                   }
+                   stats.symbolStats[activeTrade.symbol].consecutiveLosses = (stats.symbolStats[activeTrade.symbol].consecutiveLosses || 0) + 1;
                 }
                 
                 const half = date.getMonth() < 6 ? 'H1' : 'H2';
@@ -368,77 +404,57 @@ async function runMegalodon() {
             stats.cachedRegime = detectRegime(candles);
         }
         const regime = stats.cachedRegime;
-        const maxConcurrent = regime === 'TRENDING' ? 10 : 3;
+        const maxConcurrent = 3;
         
-        // Enforce Smart Circuit Breaker and Time Spacing
-        if (circuitBreakerActive) {
-            const chop = calculateChoppinessIndex(candles, 288);
-            if (chop < 50) {
-                circuitBreakerActive = false;
-                consecutiveLosses = 0;
-            } else {
-                continue;
-            }
-        }
+        // Global circuit breaker removed in favor of symbol-specific risk slashing
         
         if (Object.keys(activeTrades).length >= maxConcurrent) continue;
         const lastClose = lastTradeClosedTime[symbol] || 0;
-        if (timestamp - lastClose < 1000 * 60 * 15) continue; // Cooldown
-        
-        const gann = calculateGannSquareOf9(currentPrice);
-        const supports = gann.supports.sort((a, b) => b - a);
-        const resistances = gann.resistances.sort((a, b) => a - b);
-        if (supports.length === 0 || resistances.length === 0) continue;
-        
-        const closestSupport = supports[0];
-        const closestResistance = resistances[0];
-        const distanceToSupportPerc = (currentPrice - closestSupport) / currentPrice;
-        const distanceToResPerc = (closestResistance - currentPrice) / currentPrice;
+        if (timestamp - lastClose < 1000 * 60 * 60 * 24) continue; // Cooldown: 24 hours
         
         let action = '';
         let tp = 0;
         let sl = 0;
         
         const atr = calculateATR(candles);
-        // HURST-ADAPTIVE STOP LOSS: Wider stops in trending markets, tighter in ranging
         const hurstForSL = calculateHurstExponent(candles, 50);
         const atrMultiplier = getHurstAdaptiveATRMultiplier(hurstForSL);
         let dynamicSL = (atr / currentPrice) * atrMultiplier;
-        if (dynamicSL < 0.003) dynamicSL = 0.003;
+        if (dynamicSL < 0.04) dynamicSL = 0.04; 
         
-        const capitulation = detectCapitulationSync(candles, 200);
-        if (capitulation === 'BULLISH') {
-            action = 'BUY'; 
-            sl = currentPrice * (1 - dynamicSL); 
-            tp = currentPrice * (1 + (dynamicSL * 5)); 
-        } 
-        else if (capitulation === 'BEARISH') {
-            action = 'SELL';
-            sl = currentPrice * (1 + dynamicSL);
-            tp = currentPrice * (1 - (dynamicSL * 5));
+        const macroEma = calculateEMA(candles, 800);
+        
+        // ── ALL-IN TURTLE ENGINE (Breakouts) ──────────────────────────────────
+        
+        // Calculate Bollinger Bands for Squeeze detection
+        const bbPeriod = 50;
+        let bbSma = currentPrice;
+        let bbStdDev = 0;
+        if (candles.length >= bbPeriod) {
+            let sum = 0;
+            for (let i = candles.length - bbPeriod; i < candles.length; i++) sum += candles[i].close;
+            bbSma = sum / bbPeriod;
+            let variance = 0;
+            for (let i = candles.length - bbPeriod; i < candles.length; i++) variance += Math.pow(candles[i].close - bbSma, 2);
+            bbStdDev = Math.sqrt(variance / bbPeriod);
         }
+        const upperBB = bbSma + (bbStdDev * 2);
+        const lowerBB = bbSma - (bbStdDev * 2);
         
-        if (!action) {
-            const regime = stats.cachedRegime;
-            
-            if (regime === 'RANGING') {
-                if (distanceToSupportPerc <= dynamicSL) {
-                    const validTP = resistances.find(r => r > currentPrice);
-                    if (validTP && (validTP - currentPrice) / (currentPrice - closestSupport * (1 - dynamicSL)) >= 1.0) { action = 'BUY'; tp = validTP; sl = closestSupport * (1 - dynamicSL); }
-                } 
-                else if (distanceToResPerc <= dynamicSL) {
-                    const validTP = supports.find(s => s < currentPrice);
-                    if (validTP && (currentPrice - validTP) / (closestResistance * (1 + dynamicSL) - currentPrice) >= 1.0) { action = 'SELL'; tp = validTP; sl = closestResistance * (1 + dynamicSL); }
-                }
-            } else {
-                if (distanceToSupportPerc <= dynamicSL) {
-                    const validTP = resistances.find(r => (r - currentPrice) / (currentPrice - closestSupport * (1 - dynamicSL)) >= 1.5);
-                    if (validTP) { action = 'BUY'; tp = validTP; sl = closestSupport * (1 - dynamicSL); }
-                } 
-                else if (distanceToResPerc <= dynamicSL) {
-                    const validTP = supports.find(s => (currentPrice - s) / (closestResistance * (1 + dynamicSL) - currentPrice) >= 1.5);
-                    if (validTP) { action = 'SELL'; tp = validTP; sl = closestResistance * (1 + dynamicSL); }
-                }
+        const isSqueeze = detectSqueeze(candles, 20); // BB inside Keltner Channels equivalent
+        
+        if (regime === 'TRENDING') {
+            // BUY BREAKOUT: Price closes above Upper Band in a macro uptrend (especially after a squeeze)
+            if (currentPrice > macroEma && candle.close > upperBB) {
+                action = 'BUY'; 
+                sl = currentPrice * (1 - 0.05); // 5% Stop Loss (to survive crypto chop)
+                tp = 999999999; // NO FIXED TARGET! Let the Donchian Trailing Stop exit.
+            } 
+            // SELL BREAKDOWN: Price closes below Lower Band in a macro downtrend
+            else if (currentPrice < macroEma && candle.close < lowerBB) {
+                action = 'SELL'; 
+                sl = currentPrice * (1 + 0.05); // 5% Stop Loss
+                tp = 0; // NO FIXED TARGET!
             }
         }
         
@@ -469,7 +485,6 @@ async function runMegalodon() {
         
         // Z-SCORE VWAP: In RANGING markets, only enter at statistical extremes
         if (action && candles.length >= 50) {
-            const regime = detectRegime(candles);
             if (regime === 'RANGING') {
                 const { zScore } = calculateZScoreVWAP(candles, 50);
                 // In ranging markets, only buy when oversold and sell when overbought
@@ -565,6 +580,18 @@ async function runMegalodon() {
         }
         
         if (action) {
+            // ── MINIMUM PROFIT GATE (Anti Fee-Grinder) ─────────────────────────
+            // Reject trades where TP distance can't cover at least 5x round-trip fees.
+            const tpDistancePerc = Math.abs(tp - currentPrice) / currentPrice;
+            const estimatedPositionSize = balance * 0.01 / Math.max(dynamicSL, 0.01);
+            const roundTripFee = estimatedPositionSize * MAKER_FEE * 2;
+            const estimatedProfit = estimatedPositionSize * tpDistancePerc;
+            if (estimatedProfit < roundTripFee * 5) {
+                action = ''; // TP not worth the fee — skip
+            }
+        }
+
+        if (action) {
             const chop = calculateChoppinessIndex(candles, 288);
             activeTrades[symbol] = {
                 symbol,
@@ -577,7 +604,9 @@ async function runMegalodon() {
                 pyramidStage: 0,
                 balanceAtEntry: balance,
                 isChoppy: chop > 50,
-                isSqueezeAccelerated: detectSqueeze(candles)
+                isSqueezeAccelerated: detectSqueeze(candles),
+                entryRegime: stats.cachedRegime,
+                isCapitulation: action === 'BUY' ? calculateRSI(candles, 14) < 30 : calculateRSI(candles, 14) > 70 // approx tag
             };
         }
     }
