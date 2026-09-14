@@ -106,6 +106,12 @@ export async function calculateDynamicKelly(symbol: string): Promise<number> {
 
   const kellyFraction = (b * p - q) / b;
 
+  // ENFORCE MINIMUM WIN RATE: Need 35%+ to trade (math breaks below this)
+  if (p < 0.35) {
+    console.warn(`[Kelly] Win rate too low (WR=${(p*100).toFixed(1)}%). Minimum 35% required. Skipping trade.`);
+    return 0;
+  }
+  
   if (kellyFraction <= 0) {
     console.warn(`[Kelly] Negative expectancy detected (WR=${(p*100).toFixed(1)}%, RR=${b.toFixed(2)}). Skipping trade.`);
     return 0; // Negative expectancy → don't trade

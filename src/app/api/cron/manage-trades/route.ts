@@ -209,7 +209,8 @@ export async function GET(req: NextRequest) {
                   // Aggressive Breakeven logic applies once Pyramided
                   const baselineSL = isPyramided ? Math.max(trade.entry_price, chandelierLong) : chandelierLong;
                   newStopLoss = Math.max(trade.stop_loss, baselineSL);
-                  newTakeProfit = currentPrice * 1.5; // Push TP way up
+                  // FIXED: Extend TP relative to original distance, not multiply current price
+                  newTakeProfit = trade.take_profit + (distanceToTp * 0.5);
                   
                   if (!newRationale.includes('ATR_TRAIL')) {
                      newRationale += ' | ATR_TRAIL (Riding the trend)';
@@ -288,7 +289,8 @@ export async function GET(req: NextRequest) {
                   // Aggressive Breakeven logic applies once Pyramided
                   const baselineSL = isPyramided ? Math.min(trade.entry_price, chandelierShort) : chandelierShort;
                   newStopLoss = Math.min(trade.stop_loss, baselineSL);
-                  newTakeProfit = currentPrice * 0.5; // Push TP way down
+                  // FIXED: Extend TP relative to original distance, not multiply current price
+                  newTakeProfit = trade.take_profit - (distanceToTp * 0.5);
                   
                   if (!newRationale.includes('ATR_TRAIL')) {
                      newRationale += ' | ATR_TRAIL (Riding the trend)';
