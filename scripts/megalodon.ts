@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as readline from 'readline';
-import { detectSqueeze, calculateChoppinessIndex, detectCapitulationSync, checkEarlyExit, detectRegime, detectDominantCycleFFT, calculateFisherTransform, calculateApproximateEntropy, calculateZScoreVWAP, calculateHurstExponent, getHurstAdaptiveATRMultiplier, detectLiquiditySweep } from '../src/lib/trading/financial-intelligence';
+import { detectSqueeze, calculateChoppinessIndex, detectCapitulationSync, checkEarlyExit, detectRegime, detectDominantCycleFFT, calculateFisherTransform, calculateApproximateEntropy, calculateZScoreVWAP, calculateHurstExponent, getHurstAdaptiveATRMultiplier, detectLiquiditySweep, detectDeathSpiral } from '../src/lib/trading/financial-intelligence';
 import { calculateGannSquareOf9, calculateTimeCycles } from '../src/lib/trading/gann';
 import { findOrderBlocks } from '../src/lib/trading/ict';
 
@@ -151,7 +151,7 @@ async function runMegalodon() {
     const dotData = await loadCSV('data/dot_15m_history.csv', 'DOT');
 
     console.log("Merging and Synchronizing Timeline...");
-    const START_TIMESTAMP = 1672531200000; // Jan 1, 2023 (To keep the 15m test fast)
+    const START_TIMESTAMP = 1514764800000; // Jan 1, 2018 (6-year backtest)
     const globalTimeline = [...btcData, ...ethData, ...solData, ...linkData, ...adaData, ...bnbData, ...xrpData, ...dogeData, ...avaxData, ...dotData]
         .filter(c => c.timestamp >= START_TIMESTAMP)
         .sort((a, b) => {
@@ -211,6 +211,30 @@ async function runMegalodon() {
         let activeTrade = activeTrades[symbol];
         if (activeTrade) {
             activeTrade.candlesSinceEntry++;
+
+            // ── BLACK SWAN EARLY EXIT (LUNA-type crash detector) ──
+            if (detectDeathSpiral(candles, activeTrade.action)) {
+                // Emergency exit at market price — bypass all SL/TP logic
+                const exitPrice = currentPrice;
+                const effectiveEntry = activeTrade.blendedEntry || activeTrade.entryPrice;
+                const movePerc = activeTrade.action === 'BUY'
+                    ? (exitPrice - effectiveEntry) / effectiveEntry
+                    : (effectiveEntry - exitPrice) / effectiveEntry;
+                const leverage = getDynamicLeverage(activeTrade.balanceAtEntry);
+                const riskPerc = Math.abs(activeTrade.entryPrice - activeTrade.initialSl) / activeTrade.entryPrice;
+                let sz = activeTrade.balanceAtEntry * 0.08 / riskPerc;
+                if (sz > activeTrade.balanceAtEntry * leverage) sz = activeTrade.balanceAtEntry * leverage;
+                const mult = activeTrade.pyramidStage === 0 ? 1 : activeTrade.pyramidStage === 1 ? 2 : activeTrade.pyramidStage === 2 ? 3 : 3.5;
+                const pnl = sz * mult * movePerc;
+                balance += pnl;
+                stats.totalTrades++;
+                if (pnl > 0) stats.wins++;
+                else stats.losses++;
+                delete activeTrades[symbol];
+                lastTradeClosedTime[symbol] = timestamp;
+                console.log(`💀 [DeathSpiral] Emergency exit ${symbol} @ $${exitPrice.toFixed(2)} | PnL: $${pnl.toFixed(2)}`);
+                continue;
+            }
 
             if (balance > stats.peakBalance) stats.peakBalance = balance;
             const drawdown = stats.peakBalance - balance;

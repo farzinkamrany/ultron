@@ -752,3 +752,70 @@ export function detectRegime(candles: any[]): 'TRENDING' | 'RANGING' | 'HIGH_VOL
     if (chop > 55) return 'RANGING';
     return 'NORMAL';
 }
+
+/**
+ * DEATH SPIRAL DETECTOR — Black Swan / LUNA-Type Crash Early Warning
+ *
+ * Fires when ALL three panic signals align simultaneously:
+ *   1. Consecutive red candles (momentum is one-directional)
+ *   2. Volume explosion vs recent average (panic dumping)
+ *   3. Failed recovery (bounce attempts collapse immediately)
+ *
+ * Only call this when INSIDE a LONG trade to decide early exit.
+ * Has no effect on trade entries — only protects open positions.
+ */
+export function detectDeathSpiral(candles: Candle[], positionSide: 'BUY' | 'SELL' = 'BUY'): boolean {
+    if (candles.length < 20) return false;
+
+    const recent12 = candles.slice(-12);
+    const recent6  = candles.slice(-6);
+
+    // ── SIGNAL 1: Consecutive same-direction candles ─────────────────────
+    let consecutiveDown = 0;
+    let consecutiveUp = 0;
+    for (let i = recent12.length - 1; i >= 0; i--) {
+        const c = recent12[i];
+        if (c.close < c.open) { consecutiveDown++; if (consecutiveUp > 0) break; }
+        else if (c.close > c.open) { consecutiveUp++; if (consecutiveDown > 0) break; }
+    }
+
+    // ── SIGNAL 2: Volume explosion (panic selling/buying) ────────────────
+    const baseVol  = recent12.slice(0, 6).reduce((s, c) => s + c.volume, 0) / 6;
+    const panicVol = recent12.slice(6).reduce((s, c) => s + c.volume, 0) / 6;
+    const volumeRatio = baseVol > 0 ? panicVol / baseVol : 1;
+
+    // ── SIGNAL 3: Failed Recovery pattern ────────────────────────────────
+    // A bounce that immediately makes a new lower low = death spiral signal
+    let failedRecoveryCount = 0;
+    for (let i = 2; i < recent6.length; i++) {
+        const prevBounce = recent6[i - 2];
+        const current    = recent6[i];
+        if (prevBounce.close > prevBounce.open && current.close < current.open) {
+            if (current.close < prevBounce.open) failedRecoveryCount++;
+        }
+    }
+
+    // ── TOTAL PRICE MOVE ─────────────────────────────────────────────────
+    const startPrice       = recent12[0].open;
+    const endPrice         = recent12[recent12.length - 1].close;
+    const totalDeclinePerc = (startPrice - endPrice) / startPrice;
+    const totalRisePerc    = (endPrice - startPrice) / startPrice;
+
+    // ── VERDICT ───────────────────────────────────────────────────────────
+    if (positionSide === 'BUY') {
+        return (
+            consecutiveDown >= 5 &&     // 5+ red candles in a row
+            volumeRatio     >= 5.0 &&   // Volume 5x above baseline (panic)
+            totalDeclinePerc >= 0.10 && // -10%+ drop in 12 candles
+            failedRecoveryCount >= 1    // At least one failed bounce
+        );
+    } else {
+        // Short squeeze danger for SELL positions
+        return (
+            consecutiveUp   >= 5 &&
+            volumeRatio     >= 5.0 &&
+            totalRisePerc   >= 0.10 &&
+            failedRecoveryCount >= 1
+        );
+    }
+}

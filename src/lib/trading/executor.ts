@@ -17,7 +17,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { logError } from "@/lib/logger";
 import { calculateDynamicKelly } from "./risk";
-import { Candle, detectRegime } from "./financial-intelligence";
+import { Candle, detectRegime, detectDeathSpiral } from "./financial-intelligence";
 import { evaluateSetup } from "./strategy";
 import { analyzeDerivatives } from "./derivatives";
 import { TradeSignal as SetupSignal } from "./gann";
@@ -265,6 +265,31 @@ export async function runTradingCycle(symbol: string = "BTC/USDT"): Promise<void
       if (totalMargin > liveBalance * 0.5) {
          console.warn("[Risk] Used margin exceeds 50% of account balance.");
          return; 
+      }
+
+      // ── BLACK SWAN GUARD (LUNA-type Death Spiral Monitor) ──
+      // For each open position, check if a death spiral is happening.
+      // If detected: close that position immediately, before the entry logic runs.
+      try {
+        const livePositions = await exchange.fetchPositions();
+        for (const pos of livePositions) {
+          const posSize = Math.abs(parseFloat((pos.contracts || 0).toString()));
+          if (posSize === 0) continue;
+          const posSide: 'BUY' | 'SELL' = (pos.side === 'long') ? 'BUY' : 'SELL';
+          if (detectDeathSpiral(candles15m, posSide)) {
+            console.error(`[DeathSpiral] 💀 DETECTED on ${pos.symbol}! Emergency closing position.`);
+            const closeSide = posSide === 'BUY' ? 'sell' : 'buy';
+            await exchange.createMarketOrder(String(pos.symbol), closeSide, posSize, undefined, { reduceOnly: true });
+            const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID;
+            if (adminChatId) {
+              await sendTelegramMessage(adminChatId,
+                `⚠️ <b>DEATH SPIRAL DETECTED</b> ⚠️\n\n<b>Symbol:</b> ${pos.symbol}\n<b>Action:</b> Emergency Market Close\n<b>Reason:</b> Black Swan crash pattern detected (5+ red candles + 5x volume + failed recovery).\n\nPosition closed immediately to prevent catastrophic loss.`
+              );
+            }
+          }
+        }
+      } catch (guardErr: any) {
+        console.warn('[DeathSpiral Guard] Failed to check positions:', guardErr.message);
       }
 
       await exchange.loadMarkets();
