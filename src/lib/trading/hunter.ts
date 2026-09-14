@@ -275,7 +275,7 @@ export async function huntForSetup(fallbackTargetProfitPerc: number, openSymbols
             entryPrice: candidate.currentPrice,
             targetPrice: candidate.tp,
             stopLoss: finalSL,
-            execution_context: `R:R=${finalRR.toFixed(2)}${gannContext}`
+            execution_context: `R:R=${finalRR.toFixed(2)}${gannContext} | RSI=${rsi.toFixed(1)}`
           };
           break; // Found the best trade, stop checking
         } else {
@@ -318,7 +318,7 @@ export async function huntForSetup(fallbackTargetProfitPerc: number, openSymbols
             entryPrice: candidate.currentPrice,
             targetPrice: candidate.tp,
             stopLoss: finalSL,
-            execution_context: `R:R=${finalRR.toFixed(2)}${gannContext}`
+            execution_context: `R:R=${finalRR.toFixed(2)}${gannContext} | RSI=${rsi.toFixed(1)}`
           };
           break; // Found the best trade, stop checking
         }

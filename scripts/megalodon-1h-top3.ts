@@ -1,3 +1,13 @@
+/**
+ * AGGRESSIVE YEAR 1 BACKTEST: $1K → $50K
+ * - Timeframe: 1H (vs 15m baseline)
+ * - Coins: BTC, ETH, SOL only (vs all 10)
+ * - Leverage: 50x→15x dynamic (vs 20x→2x baseline)
+ * - Volume: Soft 3x confirmation
+ * 
+ * Goal: Test if combined optimizations can reach $50K in 12 months
+ */
+
 import * as fs from 'fs';
 import * as readline from 'readline';
 import { calculateGannSquareOf9 } from '../src/lib/trading/gann';
@@ -16,24 +26,27 @@ interface MultiCandle {
 const INITIAL_CAPITAL = 1000;
 const MAX_LOSS_LIMIT = 900;
 const MAKER_FEE = 0.0004;
-const HARD_POSITION_CAP = 500000; // Realistic orderbook liquidity limit for top 10 coins
+const HARD_POSITION_CAP = 500000;
 
-// SNOWBALL STRATEGY: Dynamic leverage scaling (20x early, 2x late)
+// AGGRESSIVE LEVERAGE FOR YEAR 1 (50x early, declining to 15x)
 function getDynamicLeverage(balance: number): number {
-  if (balance < 5000) return 20;        // Very early = aggressive
-  if (balance < 25000) return 15;       // Early = aggressive
-  if (balance < 50000) return 10;       // Growing = moderate
-  if (balance < 250000) return 5;       // Matured = conservative
-  return 2;                              // Wealthy = very conservative
+  if (balance < 2000) return 50;         // Ultra-aggressive first month (capital = $1K)
+  if (balance < 5000) return 40;         // Still aggressive
+  if (balance < 10000) return 30;        // Aggressive
+  if (balance < 25000) return 25;        // Moderate-aggressive
+  if (balance < 50000) return 20;        // Moderate
+  if (balance < 250000) return 10;       // Conservative
+  return 5;
 }
 
-// Dynamic circuit breaker threshold (relaxed when small, strict when large)
+// Dynamic circuit breaker (more lenient early to allow aggressive growth)
 function getDynamicCircuitBreakerThreshold(peakBalance: number): number {
-  if (peakBalance < 5000) return 0.20;   // Allow -80% when $1K
+  if (peakBalance < 2000) return 0.10;   // Allow -90% when $1K
+  if (peakBalance < 5000) return 0.15;   // Allow -85% when $5K
+  if (peakBalance < 10000) return 0.25;  // Allow -75% when $10K
   if (peakBalance < 25000) return 0.40;  // Allow -60% when $25K
   if (peakBalance < 50000) return 0.60;  // Allow -40% when $50K
-  if (peakBalance < 250000) return 0.70; // Allow -30% when $250K
-  return 0.80;                           // Allow -20% when $1M (protect!)
+  return 0.70;
 }
 
 function calculateATR(candles: MultiCandle[], period: number = 14): number {
@@ -65,7 +78,6 @@ function calculateRSI(candles: MultiCandle[], period: number = 14): number {
     if (candles.length < period + 1) return 50;
     let gains = 0, losses = 0;
     
-    // First period
     for (let i = candles.length - period; i < candles.length; i++) {
         const change = candles[i].close - candles[i-1].close;
         if (change > 0) gains += change;
@@ -104,32 +116,26 @@ async function loadCSV(filePath: string, symbol: string): Promise<MultiCandle[]>
 }
 
 async function runMegalodon() {
-    console.log("Loading Multiple Assets...");
-    const btcData = await loadCSV('data/btc_15m_history.csv', 'BTC');
-    const ethData = await loadCSV('data/eth_15m_history.csv', 'ETH');
-    const solData = await loadCSV('data/sol_15m_history.csv', 'SOL');
-    const linkData = await loadCSV('data/link_15m_history.csv', 'LINK');
-    const adaData = await loadCSV('data/ada_15m_history.csv', 'ADA');
-    const bnbData = await loadCSV('data/bnb_15m_history.csv', 'BNB');
-    const xrpData = await loadCSV('data/xrp_15m_history.csv', 'XRP');
-    const dogeData = await loadCSV('data/doge_15m_history.csv', 'DOGE');
-    const avaxData = await loadCSV('data/avax_15m_history.csv', 'AVAX');
-    const dotData = await loadCSV('data/dot_15m_history.csv', 'DOT');
+    console.log("\n⚡ AGGRESSIVE 1H YEAR 1 BACKTEST (BTC/ETH/SOL only, 50x leverage)");
+    console.log("Loading 1H Data for Top 3 Coins...\n");
     
-    console.log("Merging and Synchronizing Timeline...");
-    const START_TIMESTAMP = 1514764800000; // Jan 1, 2018 (6-year backtest)
-    const globalTimeline = [...btcData, ...ethData, ...solData, ...linkData, ...adaData, ...bnbData, ...xrpData, ...dogeData, ...avaxData, ...dotData]
+    const btcData = await loadCSV('data/btc_1h_history.csv', 'BTC');
+    const ethData = await loadCSV('data/eth_1h_history.csv', 'ETH');
+    const solData = await loadCSV('data/sol_1h_history.csv', 'SOL');
+    
+    console.log(`Merging and Synchronizing Timeline...`);
+    const START_TIMESTAMP = 1514764800000; // Jan 1, 2018
+    const globalTimeline = [...btcData, ...ethData, ...solData]
     .filter(c => c.timestamp >= START_TIMESTAMP)
     .sort((a, b) => {
         if (a.timestamp !== b.timestamp) return a.timestamp - b.timestamp;
-        // Prioritize coins with historically better performance if timestamps match
-        const priority: Record<string, number> = { 'SOL': 1, 'ETH': 2, 'BTC': 3, 'LINK': 4, 'DOGE': 5 };
+        const priority: Record<string, number> = { 'BTC': 1, 'ETH': 2, 'SOL': 3 };
         const pA = priority[a.symbol] || 99;
         const pB = priority[b.symbol] || 99;
         return pA - pB;
     });
     
-    console.log(`Simulation starting with ${globalTimeline.length} total events.\n`);
+    console.log(`Simulation starting with ${globalTimeline.length.toLocaleString()} 1H candles.\n`);
     
     let balance = INITIAL_CAPITAL;
     let consecutiveLosses = 0;
@@ -156,8 +162,7 @@ async function runMegalodon() {
     let lastTradeClosedTime: Record<string, number> = {};
     
     const buffers: Record<string, MultiCandle[]> = {
-        'BTC': [], 'ETH': [], 'SOL': [], 'LINK': [], 'ADA': [],
-        'BNB': [], 'XRP': [], 'DOGE': [], 'AVAX': [], 'DOT': []
+        'BTC': [], 'ETH': [], 'SOL': []
     };
     
     for (let i = 0; i < globalTimeline.length; i++) {
@@ -173,7 +178,9 @@ async function runMegalodon() {
         const date = new Date(timestamp);
         const year = date.getFullYear();
         
-        // TRADE MANAGEMENT (Cross-Margin)
+        // ═══════════════════════════════════════════════════════════
+        // TRADE MANAGEMENT (Exit, Close, Pyramid)
+        // ═══════════════════════════════════════════════════════════
         let activeTrade = activeTrades[symbol];
         if (activeTrade) {
             
@@ -212,7 +219,8 @@ async function runMegalodon() {
                   }
                   const avgVol = volSum / volPeriod;
 
-                  if (currentPrice > macroEma && candle.volume > avgVol * 1.5) {
+                  // SOFT VOLUME CONFIRMATION: 2x average (vs 1.5x baseline)
+                  if (currentPrice > macroEma && candle.volume > avgVol * 2.0) {
                       activeTrade.pyramidStage = 1;
                       activeTrade.pyramidPrice = tp;
                       activeTrade.sl = Math.max(activeTrade.sl, entryPrice);
@@ -246,7 +254,8 @@ async function runMegalodon() {
                   }
                   const avgVol = volSum / volPeriod;
 
-                  if (currentPrice < macroEma && candle.volume > avgVol * 1.5) {
+                  // SOFT VOLUME CONFIRMATION: 2x average
+                  if (currentPrice < macroEma && candle.volume > avgVol * 2.0) {
                       activeTrade.pyramidStage = 1;
                       activeTrade.pyramidPrice = tp;
                       activeTrade.sl = Math.min(activeTrade.sl, entryPrice);
@@ -268,10 +277,10 @@ async function runMegalodon() {
                 let totalEntryVolume = 0;
                 let totalExitVolume = 0;
                 
-                // SNOWBALL STRATEGY: Dynamic leverage based on account growth
+                // AGGRESSIVE LEVERAGE FOR YEAR 1
                 let leverage = getDynamicLeverage(activeTrade.balanceAtEntry);
                 let baseRisk = 0.005;
-                let maxKellyRisk = 0.01; // Max 1% risk per trade
+                let maxKellyRisk = 0.015; // Max 1.5% per trade (vs 1% baseline)
                 
                 let riskMultiplier = baseRisk; 
                 
@@ -291,21 +300,19 @@ async function runMegalodon() {
                 if (activeTrade.isSqueezeAccelerated) riskMultiplier *= 1.5; 
                 else if (activeTrade.isChoppy) riskMultiplier *= 0.5;
                 
-                // --- 1. EXPONENTIAL EQUITY CURVE SMOOTHING ---
+                const drawdownPercent = (stats.peakBalance - balance) / stats.peakBalance * 100;
                 if (drawdownPercent > 2) {
                     riskMultiplier *= Math.pow(0.5, drawdownPercent / 5); 
                 }
                 
-                // --- 2. VOLATILITY-ADJUSTED SIZING (ATR SHIELD) ---
                 const atr = calculateATR(candles, 14);
                 const volRatio = (atr / currentPrice) * 100;
                 const volDiscount = Math.max(1, volRatio / 4);
                 riskMultiplier /= volDiscount;
                 
-                // POSITION CAP: Limit to 5% of account per trade (realistic leverage)
                 let basePositionSize = activeTrade.balanceAtEntry * riskMultiplier / (Math.abs(entryPrice - initialSl) / entryPrice);
                 const maxPositionSize = activeTrade.balanceAtEntry * leverage; 
-                const maxAccountPercent = activeTrade.balanceAtEntry * 0.05; // Hard cap: 5% of account
+                const maxAccountPercent = activeTrade.balanceAtEntry * 0.05;
                 if (basePositionSize > maxPositionSize) basePositionSize = maxPositionSize;
                 if (basePositionSize > maxAccountPercent) basePositionSize = maxAccountPercent;
                 if (basePositionSize > HARD_POSITION_CAP) basePositionSize = HARD_POSITION_CAP;
@@ -317,14 +324,12 @@ async function runMegalodon() {
                    totalExitVolume = basePositionSize;
                 } 
                 else if (activeTrade.pyramidStage === 1) {
-                   // Pyramided: position was doubled when in profit, so PnL is 2x
                    const movePerc = action === 'BUY' ? (exitPrice - entryPrice) / entryPrice : (entryPrice - exitPrice) / entryPrice;
                    rawPnl = (basePositionSize * 2) * movePerc;
                    totalEntryVolume = basePositionSize * 2;
                    totalExitVolume = basePositionSize * 2;
                 }
                 
-                // REALISTIC SLIPPAGE: 0.04% base + small adaptive component (max 0.06% total)
                 const adaptiveSlippage = Math.min(0.0006, ((atr / currentPrice) * 0.1));
                 const entryFee = totalEntryVolume * (MAKER_FEE + adaptiveSlippage * 0.3);
                 const exitFee = totalExitVolume * (MAKER_FEE + adaptiveSlippage);
@@ -353,12 +358,10 @@ async function runMegalodon() {
                    }
                 }
                 
-                // DYNAMIC CIRCUIT BREAKER: Stricter as balance grows (snowball protection)
                 const cbThreshold = getDynamicCircuitBreakerThreshold(stats.peakBalance);
                 const drawdownThreshold = stats.peakBalance * cbThreshold;
                 if (balance < drawdownThreshold && stats.totalTrades > 10) {
                     circuitBreakerActive = true;
-                    if (i % 100 === 0) console.log(`⚠️  CIRCUIT BREAKER (${((1-cbThreshold)*100).toFixed(0)}%): Balance $${balance.toFixed(0)} - Halting trades`);
                 }
                 
                 const half = date.getMonth() < 6 ? 'H1' : 'H2';
@@ -369,7 +372,7 @@ async function runMegalodon() {
                 if (pnl > 0) stats.periods[period].wins++;
                 
                 if (balance < INITIAL_CAPITAL - MAX_LOSS_LIMIT) {
-                  console.log(`\n💥 CIRCUIT BREAKER HIT at ${date.toISOString()}! Balance: $${balance.toFixed(2)}`);
+                  console.log(`💥 CIRCUIT BREAKER: Balance $${balance.toFixed(2)} at ${date.toISOString()}`);
                   break;
                 }
                 lastTradeClosedTime[symbol] = timestamp;
@@ -378,15 +381,17 @@ async function runMegalodon() {
             continue;
         }
         
-        // CACHE HEAVY MATH (Every 4 candles / 1 hour)
+        // ═══════════════════════════════════════════════════════════
+        // ENTRY SIGNALS
+        // ═══════════════════════════════════════════════════════════
+        
         const isHourTick = (timestamp % (1000 * 60 * 60)) === 0;
         if (isHourTick || !stats.cachedRegime) {
             stats.cachedRegime = detectRegime(candles);
         }
         const regime = stats.cachedRegime;
-        const maxConcurrent = regime === 'TRENDING' ? 10 : 3;
+        const maxConcurrent = 3; // Max 3 concurrent trades (top 3 coins)
         
-        // Enforce Smart Circuit Breaker and Time Spacing
         if (circuitBreakerActive) {
             const chop = calculateChoppinessIndex(candles, 288);
             if (chop < 50) {
@@ -399,7 +404,7 @@ async function runMegalodon() {
         
         if (Object.keys(activeTrades).length >= maxConcurrent) continue;
         const lastClose = lastTradeClosedTime[symbol] || 0;
-        if (timestamp - lastClose < 1000 * 60 * 15) continue; // Cooldown
+        if (timestamp - lastClose < 1000 * 60 * 15) continue;
         
         const gann = calculateGannSquareOf9(currentPrice);
         const supports = gann.supports.sort((a, b) => b - a);
@@ -416,7 +421,6 @@ async function runMegalodon() {
         let sl = 0;
         
         const atr = calculateATR(candles);
-        // HURST-ADAPTIVE STOP LOSS: Wider stops in trending markets, tighter in ranging
         const hurstForSL = calculateHurstExponent(candles, 50);
         const atrMultiplier = getHurstAdaptiveATRMultiplier(hurstForSL);
         let dynamicSL = (atr / currentPrice) * atrMultiplier;
@@ -435,8 +439,6 @@ async function runMegalodon() {
         }
         
         if (!action) {
-            const regime = stats.cachedRegime;
-            
             if (regime === 'RANGING') {
                 if (distanceToSupportPerc <= dynamicSL) {
                     const validTP = resistances.find(r => r > currentPrice);
@@ -458,7 +460,6 @@ async function runMegalodon() {
             }
         }
         
-        // MATHEMATICAL FFT CYCLE FILTER & APEN (Cached every 4 candles for Speed)
         if (action && candles.length >= 66) {
             if (isHourTick || !stats.cachedFft) {
                 const fft = detectDominantCycleFFT(candles, 64);
@@ -475,31 +476,25 @@ async function runMegalodon() {
             if (stats.cachedApEn > 1.5) action = ''; 
         }
         
-        // EHLERS FISHER TRANSFORM CONFIRMATION
-        // Only enter if Fisher is aligned (not at extreme opposite side)
         if (action && candles.length >= 12) {
             const { fisher } = calculateFisherTransform(candles, 10);
-            if (action === 'BUY' && fisher > 2.0) action = '';   // Overbought extreme
-            if (action === 'SELL' && fisher < -2.0) action = ''; // Oversold extreme
+            if (action === 'BUY' && fisher > 2.0) action = '';
+            if (action === 'SELL' && fisher < -2.0) action = '';
         }
         
-        // Z-SCORE VWAP: In RANGING markets, only enter at statistical extremes
         if (action && candles.length >= 50) {
             const regime = detectRegime(candles);
             if (regime === 'RANGING') {
                 const { zScore } = calculateZScoreVWAP(candles, 50);
-                // In ranging markets, only buy when oversold and sell when overbought
-                if (action === 'BUY' && zScore > 0.5) action = '';   // Price above VWAP, not yet cheap
-                if (action === 'SELL' && zScore < -0.5) action = ''; // Price below VWAP, not yet expensive
+                if (action === 'BUY' && zScore > 0.5) action = '';
+                if (action === 'SELL' && zScore < -0.5) action = '';
             }
         }
         
-        // MACRO TREND ALIGNMENT FILTER (MTF) - 800 EMA on 15m (equivalent to 50 EMA on 4H)
         if (action && candles.length >= 800) {
             const macroEma = calculateEMA(candles, 800);
-            const weeklyEma = calculateEMA(candles, 672); // Approx 1-week moving average
+            const weeklyEma = calculateEMA(candles, 672);
             
-            // CAPITULATION OVERRIDE (Knife Catcher)
             const rsi = calculateRSI(candles, 14);
             let volSum = 0;
             const volPeriod = 20;
@@ -507,7 +502,7 @@ async function runMegalodon() {
                 volSum += candles[v].volume;
             }
             const avgVol = volSum / volPeriod;
-            const volSpike = candle.volume > avgVol * 3.0; // 300% volume spike
+            const volSpike = candle.volume > avgVol * 3.0;
             
             let override = false;
             if (action === 'BUY' && rsi < 25 && volSpike) override = true;
@@ -517,70 +512,29 @@ async function runMegalodon() {
                 if (action === 'BUY' && currentPrice < macroEma) action = '';
                 if (action === 'SELL' && currentPrice > macroEma) action = '';
                 
-                // Strict Weekly Alignment Filter (Reduce Drawdown)
                 if (action === 'BUY' && currentPrice < weeklyEma) action = '';
                 if (action === 'SELL' && currentPrice > weeklyEma) action = '';
             } else {
-                // If it's a capitulation knife-catch, widen the stop loss slightly to survive the chop
                 sl = action === 'BUY' ? sl * 0.99 : sl * 1.01;
             }
         }
-        // SYNTHETIC FUNDING RATE PROXY (Prevent buying into extreme retail euphoria or selling into panic)
-        // High RSI on higher timeframes usually correlates with extremely positive funding rates
+        
         if (action) {
             const rsi = calculateRSI(candles, 14);
-            if (action === 'BUY' && rsi > 75) {
-                // Euphoria (Funding rate likely > 0.03%) - skip long
-                action = '';
-            } else if (action === 'SELL' && rsi < 25) {
-                // Panic (Funding rate likely < -0.03%) - skip short
-                action = '';
-            }
+            if (action === 'BUY' && rsi > 75) action = '';
+            else if (action === 'SELL' && rsi < 25) action = '';
         }
         
-        // SYNTHETIC BTC DOMINANCE PROXY (Protect Altcoins)
-        if (action === 'BUY' && symbol !== 'BTC' && symbol !== 'ETH') {
-            const btcData = buffers['BTC'];
-            const btcCandle = btcData.find(c => c.timestamp === candle.timestamp);
-            if (btcCandle) {
-                const btcIndex = btcData.indexOf(btcCandle);
-                if (btcIndex >= 20) {
-                    const btcSlice = btcData.slice(0, btcIndex + 1);
-                    const btcRsi = calculateRSI(btcSlice, 14);
-                    const altRsi = calculateRSI(candles, 14);
-                    // If BTC is surging (RSI > 60) but Altcoin is lagging (RSI < 50), BTC.D is rising. Altcoin will bleed.
-                    if (btcRsi > 60 && altRsi < 50) {
-                        action = '';
-                    }
-                }
-            }
-        }
-        
-        // SMART WEEKEND CHOPPINESS FILTER
         if (action) {
-            const dayOfWeek = date.getUTCDay();
-            if (dayOfWeek === 0 || dayOfWeek === 6) {
-                if (!['BTC', 'ETH', 'SOL'].includes(symbol)) {
-                    action = '';
-                } else {
-                    const rr = Math.abs(tp - currentPrice) / Math.abs(currentPrice - sl);
-                    if (rr < 5) action = '';
-                }
-            }
-        }
-        
-        // DIRECTIONAL PARITY SHIELD (Beta-Neutralizer)
-        if (action) {
-            let buyCount = 0; let sellCount = 0;
+            let buyCount = 0, sellCount = 0;
             for (const tr of Object.values(activeTrades)) {
                 if (tr.action === 'BUY') buyCount++;
                 else if (tr.action === 'SELL') sellCount++;
             }
-            if (action === 'BUY' && (buyCount - sellCount) >= 3) action = '';
-            if (action === 'SELL' && (sellCount - buyCount) >= 3) action = '';
+            if (action === 'BUY' && (buyCount - sellCount) >= 2) action = '';
+            if (action === 'SELL' && (sellCount - buyCount) >= 2) action = '';
         }
         
-        // BALANCE CIRCUIT BREAKER: More lenient - allow recovery after 50% loss
         const shouldSkipEntry = balance < (stats.peakBalance * 0.50) && stats.totalTrades > 50;
         
         if (action && !shouldSkipEntry) {
@@ -601,32 +555,60 @@ async function runMegalodon() {
         }
     }
     
-    console.log(`\n============================================`);
-    console.log(`   MEGALODON CROSS-MARGIN BACKTEST (10 COINS)`);
-    console.log(`============================================`);
-    console.log(`Final Balance:    $${balance.toFixed(2)} (Start: $${INITIAL_CAPITAL})`);
-    console.log(`Net Profit:       $${(balance - INITIAL_CAPITAL).toFixed(2)}`);
-    console.log(`Max Drawdown:     $${stats.maxDrawdown.toFixed(2)} (${stats.maxDrawdownPercent.toFixed(2)}%)`);
-    console.log(`Total Fees Paid:  $${stats.totalFeesPaid.toFixed(2)}`);
-    console.log(`Total Trades:     ${stats.totalTrades}`);
-    console.log(`Win Rate:         ${((stats.wins / stats.totalTrades) * 100).toFixed(2)}%`);
-    console.log(`Loss Rate:        ${((stats.losses / stats.totalTrades) * 100).toFixed(2)}%`);
-    console.log(`Break-Evens:      ${((stats.breakEvens / stats.totalTrades) * 100).toFixed(2)}%\n`);
+    // ═══════════════════════════════════════════════════════════
+    // RESULTS SUMMARY
+    // ═══════════════════════════════════════════════════════════
     
-    const sortedPeriods = Object.keys(stats.periods).sort();
-    let runningBalance = INITIAL_CAPITAL;
-    for (const period of sortedPeriods) {
-        const pStats = stats.periods[period];
-        runningBalance += pStats.pnl;
-        console.log(`--- ${period} ---`);
-        console.log(`Trades: ${pStats.trades} | Period PnL: $${pStats.pnl.toFixed(2)} | End Balance: $${runningBalance.toFixed(2)} | Win Rate: ${((pStats.wins / pStats.trades) * 100).toFixed(2)}%\n`);
+    const winRate = stats.totalTrades > 0 ? (stats.wins / stats.totalTrades) * 100 : 0;
+    const profitFactor = stats.grossLoss > 0 ? stats.grossProfit / stats.grossLoss : 0;
+    const roi = ((balance - INITIAL_CAPITAL) / INITIAL_CAPITAL) * 100;
+    
+    console.log(`\n${'='.repeat(90)}`);
+    console.log(`  AGGRESSIVE 1H BACKTEST RESULTS (BTC/ETH/SOL, 50x→15x Leverage)\n`);
+    console.log(`Final Balance:        $${balance.toLocaleString('en-US', {minimumFractionDigits: 2})}`);
+    console.log(`Starting Balance:     $${INITIAL_CAPITAL.toLocaleString()}`);
+    console.log(`Total Profit:         $${(balance - INITIAL_CAPITAL).toLocaleString('en-US', {minimumFractionDigits: 2})}`);
+    console.log(`ROI:                  ${roi.toFixed(1)}%`);
+    console.log(`Multiplier:           ${(balance / INITIAL_CAPITAL).toFixed(2)}x\n`);
+    
+    console.log(`Total Trades:         ${stats.totalTrades}`);
+    console.log(`Wins:                 ${stats.wins}`);
+    console.log(`Losses:               ${stats.losses}`);
+    console.log(`Break-Even:           ${stats.breakEvens}`);
+    console.log(`Win Rate:             ${winRate.toFixed(1)}%`);
+    console.log(`Profit Factor:        ${profitFactor.toFixed(2)}\n`);
+    
+    console.log(`Total Fees Paid:      $${stats.totalFeesPaid.toLocaleString('en-US', {minimumFractionDigits: 2})}`);
+    console.log(`Max Drawdown:         $${stats.maxDrawdown.toLocaleString('en-US', {minimumFractionDigits: 2})} (${stats.maxDrawdownPercent.toFixed(2)}%)`);
+    console.log(`Peak Balance:         $${stats.peakBalance.toLocaleString('en-US', {minimumFractionDigits: 2})}\n`);
+    
+    console.log(`By Coin:`);
+    for (const [sym, data] of Object.entries(stats.symbolStats)) {
+        console.log(`  ${sym.padEnd(4)} - ${data.trades} trades | PnL: $${data.pnl.toLocaleString('en-US', {minimumFractionDigits: 2})}`);
     }
     
-    console.log(`--- SYMBOL BREAKDOWN ---`);
-    for (const sym of Object.keys(stats.symbolStats)) {
-        console.log(`${sym} -> Trades: ${stats.symbolStats[sym].trades} | PnL: $${stats.symbolStats[sym].pnl.toFixed(2)}`);
+    console.log(`\nBy Period:`);
+    for (const [period, data] of Object.entries(stats.periods)) {
+        const winRate = data.trades > 0 ? (data.wins / data.trades * 100).toFixed(1) : '0.0';
+        console.log(`  ${period} - ${data.trades} trades | Win Rate: ${winRate}% | PnL: $${data.pnl.toLocaleString('en-US', {minimumFractionDigits: 2})}`);
     }
-    console.log(`============================================\n`);
+    
+    console.log(`${'='.repeat(90)}\n`);
+    
+    // Check if we hit $50K goal
+    if (balance >= 50000) {
+        console.log(`✅ YEAR 1 $50K GOAL HIT! 🎉\n`);
+        console.log(`You can now:`);
+        console.log(`  1. Withdraw $1K (original capital) - SAFE ✅`);
+        console.log(`  2. Withdraw $49K (profit buffer) - SAFE ✅`);
+        console.log(`  3. Keep remainder for pure profit scaling\n`);
+    } else {
+        const percentToGoal = (balance / 50000) * 100;
+        console.log(`⚠️ Did not reach $50K goal. Status: ${percentToGoal.toFixed(1)}% of target\n`);
+        console.log(`Current: $${balance.toLocaleString('en-US', {minimumFractionDigits: 2})}`);
+        console.log(`Need:    $50,000`);
+        console.log(`Gap:     $${(50000 - balance).toLocaleString('en-US', {minimumFractionDigits: 2})}\n`);
+    }
 }
 
 runMegalodon().catch(console.error);
