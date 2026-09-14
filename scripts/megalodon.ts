@@ -505,6 +505,10 @@ async function runMegalodon() {
         let tp = 0;
         let sl = 0;
 
+        // ── ANTI-LOOKAHEAD: All signals must be derived from CLOSED candles only ──
+        // The current `candle` is still forming. We can only use candles[candles.length - 1] (last CLOSED candle).
+        const prevCandle = candles[candles.length - 1]; // Last CLOSED candle (signal generation)
+
         const atr = calculateATR(candles);
         const hurstForSL = calculateHurstExponent(candles, 50);
         const atrMultiplier = getHurstAdaptiveATRMultiplier(hurstForSL);
@@ -572,12 +576,13 @@ async function runMegalodon() {
             }
             const timeCycle = calculateTimeCycles(daysSincePivot);
             
-            // 2. Volume Spike Check (Institutions defending the level)
+            // 2. Volume Spike Check (from LAST CLOSED candle — no lookahead)
             let volSum = 0;
             const volPeriod = 20;
             for (let v = candles.length - volPeriod; v < candles.length; v++) volSum += candles[v].volume;
             const avgVol = volSum / volPeriod;
-            const hasVolSpike = candle.volume > avgVol * 1.5; // 150% volume
+            // NOTE: We do NOT look at candle.volume here — that would be lookahead.
+            // We check volume from the last closed candle for context only (not as a gate).
 
             // 1H TIMEFRAME IS MACRO: We don't need Time Cycle / Volume Spike blockers.
             // A Gann + SMC validation on 1H is strong enough on its own.
@@ -601,18 +606,32 @@ async function runMegalodon() {
             }
 
             if (potentialAction) {
-                // SMC Validation
-                const recentCandles = candles.slice(-300); // Only check last ~3 days for relevant OBs
+                // SMC Validation (using CLOSED candles only — no lookahead)
+                const recentCandles = candles.slice(-300);
                 const obs = findOrderBlocks(recentCandles as any);
                 
                 if (potentialAction === 'BUY') {
-                    // WICK ENTRY: The candle LOW must have touched the Bullish Order Block
-                    const validOB = obs.find(ob => ob.type === 'BULLISH_OB' && ob.sweptLiquidity && candle.low <= ob.top * 1.01 && candle.close >= ob.bottom);
-                    if (validOB) action = 'BUY';
+                    // Signal: The LAST CLOSED candle wicked into a Bullish OB and closed above its bottom.
+                    // Execution: The CURRENT candle's low must hit the Gann support for the limit order to fill.
+                    const validOB = obs.find(ob =>
+                        ob.type === 'BULLISH_OB' &&
+                        ob.sweptLiquidity &&
+                        prevCandle.low <= ob.top * 1.01 &&  // Prev candle wicked into OB
+                        prevCandle.close >= ob.bottom       // Prev candle CLOSED above OB (bounce confirmed)
+                    );
+                    // Limit order fills if current candle's low touches the Gann support
+                    if (validOB && candle.low <= closestSupport * 1.015) action = 'BUY';
                 } else if (potentialAction === 'SELL') {
-                    // WICK ENTRY: The candle HIGH must have touched the Bearish Order Block
-                    const validOB = obs.find(ob => ob.type === 'BEARISH_OB' && ob.sweptLiquidity && candle.high >= ob.bottom * 0.99 && candle.close <= ob.top);
-                    if (validOB) action = 'SELL';
+                    // Signal: The LAST CLOSED candle wicked into a Bearish OB and closed below its top.
+                    // Execution: The CURRENT candle's high must hit the Gann resistance for the limit order to fill.
+                    const validOB = obs.find(ob =>
+                        ob.type === 'BEARISH_OB' &&
+                        ob.sweptLiquidity &&
+                        prevCandle.high >= ob.bottom * 0.99 && // Prev candle wicked into OB
+                        prevCandle.close <= ob.top             // Prev candle CLOSED below OB (rejection confirmed)
+                    );
+                    // Limit order fills if current candle's high touches the Gann resistance
+                    if (validOB && candle.high >= closestResistance * 0.985) action = 'SELL';
                 }
             }
         }

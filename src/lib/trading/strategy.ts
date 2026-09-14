@@ -35,9 +35,17 @@ export async function evaluateSetup(
     regime: string = 'NORMAL',
     marketContext?: { fundingRate?: number; btcDominanceTrend?: 'UP' | 'DOWN' | 'FLAT'; accountBalance?: number }
 ): Promise<TradeSignal> {
-    const gann = calculateGannSquareOf9(currentPrice);
-    const supports = gann.supports.sort((a, b) => b - a);
-    const resistances = gann.resistances.sort((a, b) => a - b);
+    // MACRO PIVOT: Calculate Gann levels from the absolute low/high of the data (matches megalodon backtest)
+    let absoluteLow = Infinity;
+    let absoluteHigh = -Infinity;
+    for (const c of candles) {
+        if (c.low < absoluteLow) absoluteLow = c.low;
+        if (c.high > absoluteHigh) absoluteHigh = c.high;
+    }
+    const macroPivotPrice = regime !== 'RANGING' ? absoluteLow : absoluteHigh;
+    const gann = calculateGannSquareOf9(macroPivotPrice, currentPrice);
+    const supports = gann.supports.sort((a, b) => b - a).filter(s => s < currentPrice);
+    const resistances = gann.resistances.sort((a, b) => a - b).filter(r => r > currentPrice);
     
     if (supports.length === 0 || resistances.length === 0) {
         return { symbol, action: 'HOLD', entryPrice: currentPrice, takeProfit: 0, stopLoss: 0, reason: 'No Gann levels found.' };
@@ -45,6 +53,8 @@ export async function evaluateSetup(
     
     const closestSupport = supports[0];
     const closestResistance = resistances[0];
+    // For wick-entry simulation: check if current price candle wicked into the Gann level
+    const prevCandle = candles[candles.length - 1]; // Last CLOSED candle (anti-lookahead)
     const distanceToSupportPerc = (currentPrice - closestSupport) / currentPrice;
     const distanceToResPerc = (closestResistance - currentPrice) / currentPrice;
     
@@ -64,8 +74,10 @@ export async function evaluateSetup(
     }
     
     const atr = calculateATR(candles);
-    let dynamicSL = (atr / currentPrice) * 1.5; 
-    if (dynamicSL < 0.003) dynamicSL = 0.003; 
+    const hurstMult = 1.5; // ATR multiplier (matches megalodon)
+    let dynamicSL = (atr / currentPrice) * hurstMult; 
+    if (dynamicSL < 0.015) dynamicSL = 0.015; // Floor 1.5%
+    if (dynamicSL > 0.05) dynamicSL = 0.05;   // Ceiling 5%
     
     const capitulation = await detectCapitulation(candles, symbol, 200);
     if (capitulation === 'BULLISH') {
@@ -132,17 +144,29 @@ export async function evaluateSetup(
         }
     }
     
-    // SMC VALIDATION (Mandatory unless Capitulation)
+    // SMC VALIDATION (Mandatory unless Capitulation) — ANTI-LOOKAHEAD: uses prevCandle
     if (action !== 'HOLD' && !rationale.includes('Capitulation')) {
         const recentCandles = candles.slice(-300);
         const obs = findOrderBlocks(recentCandles);
         let smcPassed = false;
         
         if (action === 'BUY') {
-            const validOB = obs.find(ob => ob.type === 'BULLISH_OB' && ob.sweptLiquidity && currentPrice <= ob.top * 1.015 && currentPrice >= ob.bottom * 0.985);
+            // Signal: prevCandle wicked into a Bullish OB and closed above its bottom (bounce confirmed)
+            const validOB = obs.find(ob =>
+                ob.type === 'BULLISH_OB' &&
+                ob.sweptLiquidity &&
+                prevCandle.low <= ob.top * 1.01 &&
+                prevCandle.close >= ob.bottom
+            );
             if (validOB) smcPassed = true;
         } else if (action === 'SELL') {
-            const validOB = obs.find(ob => ob.type === 'BEARISH_OB' && ob.sweptLiquidity && currentPrice >= ob.bottom * 0.985 && currentPrice <= ob.top * 1.015);
+            // Signal: prevCandle wicked into a Bearish OB and closed below its top (rejection confirmed)
+            const validOB = obs.find(ob =>
+                ob.type === 'BEARISH_OB' &&
+                ob.sweptLiquidity &&
+                prevCandle.high >= ob.bottom * 0.99 &&
+                prevCandle.close <= ob.top
+            );
             if (validOB) smcPassed = true;
         }
         
