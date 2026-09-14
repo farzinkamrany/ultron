@@ -362,11 +362,10 @@ export async function runTradingCycle(symbol: string = "BTC/USDT"): Promise<void
       
       const oppositeSide = side === "buy" ? "sell" : "buy";
       try {
-        // Stop-Limit instead of Stop-Market (0.2% limit buffer)
-        const slLimitPrice = oppositeSide === "sell" ? signal.stopLoss * 0.998 : signal.stopLoss * 1.002;
-        await exchange.createOrder(signal.symbol, 'limit', oppositeSide, amount, slLimitPrice, { triggerPrice: signal.stopLoss, reduceOnly: true });
+        // FIXED: Stop-Market instead of Stop-Limit to ensure execution during flash crashes
+        await exchange.createOrder(signal.symbol, 'market', oppositeSide, amount, undefined, { triggerPrice: signal.stopLoss, reduceOnly: true });
       } catch (slError: any) {
-        // FATAL: The market order went through but the stop loss failed. NAKED POSITION!
+        // FATAL: The entry order went through but the stop loss failed. NAKED POSITION!
         console.error(`[CRITICAL SHIELD] Failed to set Stop Loss for ${signal.symbol}. Panic closing naked position. Error: ${slError.message}`);
         try {
           await exchange.createMarketOrder(signal.symbol, oppositeSide, amount);
@@ -377,8 +376,12 @@ export async function runTradingCycle(symbol: string = "BTC/USDT"): Promise<void
         throw new Error(`Execution aborted: Failed to secure position with Stop Loss. Panic closed to prevent liquidation.`);
       }
       
-      // ❌ HUMAN EMOTION REMOVED: No Hard Take-Profit order. 
-      // A machine doesn't say "I'm satisfied with this profit." It trails the Stop-Loss until the trend dies.
+      try {
+        // FIXED: Hard Take-Profit Limit order to catch wicks (syncs Live exactly with Backtest)
+        await exchange.createOrder(signal.symbol, 'limit', oppositeSide, amount, signal.takeProfit, { reduceOnly: true });
+      } catch (tpError: any) {
+        console.warn(`[WARNING] Failed to set initial Take Profit for ${signal.symbol}: ${tpError.message}. Cron will manage it.`);
+      }
       
       // 2. SUPABASE LOGGING
       const { error } = await supabase.from("paper_trades").insert({

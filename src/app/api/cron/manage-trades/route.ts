@@ -355,22 +355,35 @@ export async function GET(req: NextRequest) {
       // 4. Update the DB & Exchange
       if (newStatus !== trade.status || newStopLoss !== trade.stop_loss || newTakeProfit !== trade.take_profit || newRationale !== trade.rationale) {
         
-        // ❌ FIX: Live Exchange Trailing Stop Execution
-        if (tradeMode === 'MICRO' && newStopLoss !== trade.stop_loss && newStatus === trade.status) {
+        // ❌ FIX: Live Exchange Trailing Stop & TP Execution
+        if (tradeMode === 'MICRO' && newStatus === trade.status) {
           try {
             const side = (trade.position_type === 'BUY' || trade.position_type === 'LONG') ? 'sell' : 'buy';
-            // Create NEW trailing stop-loss FIRST (Stop-Limit with 0.2% buffer)
-            const slLimitPrice = side === 'sell' ? newStopLoss * 0.998 : newStopLoss * 1.002;
-            const newSLOrder = await exchange.createOrder(symbol, 'limit', side, contracts, slLimitPrice, { triggerPrice: newStopLoss, reduceOnly: true });
             
-            // Cancel old stop-loss only if creation succeeded
-            const openOrders = await exchange.fetchOpenOrders(symbol);
-            for (const o of openOrders) {
-               if (o.id && o.id !== newSLOrder.id) await exchange.cancelOrder(o.id, symbol);
+            // 1. UPDATE STOP LOSS (Stop-Market)
+            if (newStopLoss !== trade.stop_loss) {
+              const newSLOrder = await exchange.createOrder(symbol, 'market', side, contracts, undefined, { triggerPrice: newStopLoss, reduceOnly: true });
+              // Cancel old stop-loss
+              const openOrders = await exchange.fetchOpenOrders(symbol);
+              for (const o of openOrders) {
+                 if (o.id && o.id !== newSLOrder.id && o.type === 'stop') await exchange.cancelOrder(o.id, symbol);
+              }
+              console.log(`[Manage Trades] Trailed Stop Loss for ${trade.symbol} to ${newStopLoss}`);
             }
-            console.log(`[Manage Trades] Trailed Stop Loss for ${trade.symbol} to ${newStopLoss}`);
+
+            // 2. UPDATE TAKE PROFIT (Limit)
+            if (newTakeProfit !== trade.take_profit) {
+              const newTPOrder = await exchange.createOrder(symbol, 'limit', side, contracts, newTakeProfit, { reduceOnly: true });
+              // Cancel old take-profit
+              const openOrders = await exchange.fetchOpenOrders(symbol);
+              for (const o of openOrders) {
+                 if (o.id && o.id !== newTPOrder.id && o.type === 'limit') await exchange.cancelOrder(o.id, symbol);
+              }
+              console.log(`[Manage Trades] Extended Take Profit for ${trade.symbol} to ${newTakeProfit}`);
+            }
+
           } catch (err) {
-            console.error(`[Manage Trades] Failed to trail Hyperliquid order for ${trade.symbol}`, err);
+            console.error(`[Manage Trades] Failed to update Hyperliquid orders for ${trade.symbol}`, err);
           }
         }
 
