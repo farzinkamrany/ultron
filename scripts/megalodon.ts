@@ -16,7 +16,8 @@ interface MultiCandle {
 
 const INITIAL_CAPITAL = 1000;
 const MAX_LOSS_LIMIT = 900;
-const MAKER_FEE = 0.0000; // 0.00% Hyperliquid Maker fee
+const MAKER_FEE = 0.0000; // 0.00% Hyperliquid Maker fee (Limit orders)
+const TAKER_FEE = 0.00035; // 0.035% Hyperliquid Taker fee (Market orders, SL, Trailing SL)
 const HARD_POSITION_CAP = 500000; // Realistic orderbook liquidity limit for top 10 coins
 
 // SNOWBALL STRATEGY: Dynamic leverage scaling (20x early, 2x late)
@@ -215,7 +216,7 @@ async function runMegalodon() {
             // ── BLACK SWAN EARLY EXIT (LUNA-type crash detector) ──
             if (detectDeathSpiral(candles, activeTrade.action)) {
                 // Emergency exit at market price — bypass all SL/TP logic
-                const exitPrice = currentPrice;
+                const exitPrice = activeTrade.action === 'BUY' ? currentPrice * 0.9995 : currentPrice * 1.0005; // 0.05% slippage on emergency exit
                 const effectiveEntry = activeTrade.blendedEntry || activeTrade.entryPrice;
                 const movePerc = activeTrade.action === 'BUY'
                     ? (exitPrice - effectiveEntry) / effectiveEntry
@@ -225,8 +226,16 @@ async function runMegalodon() {
                 let sz = activeTrade.balanceAtEntry * 0.08 / riskPerc;
                 if (sz > activeTrade.balanceAtEntry * leverage) sz = activeTrade.balanceAtEntry * leverage;
                 const mult = activeTrade.pyramidStage === 0 ? 1 : activeTrade.pyramidStage === 1 ? 2 : activeTrade.pyramidStage === 2 ? 3 : 3.5;
-                const pnl = sz * mult * movePerc;
+                const totalPositionSize = sz * mult;
+                const rawPnl = totalPositionSize * movePerc;
+                
+                // Emergency Exit is a Market Order (Taker Fee)
+                const entryFee = totalPositionSize * MAKER_FEE;
+                const exitFee = totalPositionSize * TAKER_FEE;
+                const pnl = rawPnl - entryFee - exitFee;
+                
                 balance += pnl;
+                stats.totalFeesPaid += (entryFee + exitFee);
                 stats.totalTrades++;
                 if (pnl > 0) stats.wins++;
                 else stats.losses++;
@@ -444,12 +453,18 @@ async function runMegalodon() {
                 totalEntryVolume = totalPositionSize;
                 totalExitVolume = totalPositionSize;
 
-                // REALISTIC SLIPPAGE: 0.04% base + small adaptive component (max 0.06% total)
-                const currentAtr = calculateATR(candles);
-                // Using Limit Orders on Gann Supports: 0 Slippage
-                const adaptiveSlippage = 0; 
+                // REALISTIC SLIPPAGE & FEES:
+                // Entry is always Limit Order (Maker = 0%)
                 const entryFee = totalEntryVolume * MAKER_FEE;
-                const exitFee = totalExitVolume * MAKER_FEE;
+                
+                // Exit Fee: If we hit TP, it's a Maker Limit order. Otherwise (SL/Trailing Stop/Time Exit), it's a Taker Market order.
+                let exitFee = 0;
+                if (exitPrice === activeTrade.tp) {
+                    exitFee = totalExitVolume * MAKER_FEE;
+                } else {
+                    exitFee = totalExitVolume * TAKER_FEE;
+                }
+                
                 pnl = rawPnl - entryFee - exitFee;
 
                 balance += pnl;
