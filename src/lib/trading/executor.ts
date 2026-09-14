@@ -164,14 +164,30 @@ export async function runTradingCycle(symbol: string = "BTC/USDT"): Promise<void
 
   // Fetch Micro-Structure Data (Funding Rates & BTC.D)
   const derivs = await analyzeDerivatives(symbol);
+  // Fetch Account Balance for Weekend Filter logic
+  let liveBalance = 1000;
+  if (mode === "LIVE" || mode === "MICRO") {
+    try {
+      const exchange = new ccxt.hyperliquid({
+        walletAddress: process.env.HYPERLIQUID_WALLET_ADDRESS,
+        privateKey: process.env.HYPERLIQUID_PRIVATE_KEY,
+      });
+      const balanceInfo = await exchange.fetchBalance();
+      liveBalance = balanceInfo['USDC']?.free || balanceInfo['USDT']?.free || 1000;
+    } catch(e) {
+      console.warn("[Risk] Failed to fetch live balance for strategy evaluation");
+    }
+  }
+
   const marketContext = { 
       fundingRate: derivs.fundingRate, 
-      btcDominanceTrend: derivs.btcDominanceTrend
+      btcDominanceTrend: derivs.btcDominanceTrend,
+      accountBalance: liveBalance
   };
 
   // Engine Evaluation
-  // Pass 1H candles to Strategy evaluation (Megalodon Backtest match)
-  const signal = await evaluateSetup(symbol, livePrice, candles1h, candles1h, regime, marketContext);
+  // Pass 15M candles to Strategy evaluation (Matches $5.2M Backtest)
+  const signal = await evaluateSetup(symbol, livePrice, candles15m, candles1h, regime, marketContext);
   console.log(`[Quant Engine] Setup evaluated: ${signal.action}. Reason: ${signal.reason || 'Valid setup'}`);
   
   if (signal.action === "HOLD") return;
@@ -241,7 +257,7 @@ export async function runTradingCycle(symbol: string = "BTC/USDT"): Promise<void
     const exchange = buildExchange();
     try {
       const balanceInfo = await exchange.fetchBalance();
-      const liveBalance = balanceInfo['USDC']?.free || balanceInfo['USDT']?.free || 1000;
+      liveBalance = balanceInfo['USDC']?.free || balanceInfo['USDT']?.free || 1000;
 
       // Kill Switch (3% daily loss) removed: the bot has no feelings and should keep trading.
 

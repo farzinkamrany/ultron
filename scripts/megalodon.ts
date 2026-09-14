@@ -592,6 +592,14 @@ async function runMegalodon() {
                 sl = shortSL;
             }
 
+            // WEEKEND FILTER (Conditional: Only apply when balance is large to protect compounded gains, keep grinding when small)
+            if (potentialAction && balance >= 100000) {
+                const dayOfWeek = new Date(candle.timestamp).getUTCDay(); // 0 = Sunday, 6 = Saturday
+                if (dayOfWeek === 0 || dayOfWeek === 6) {
+                    potentialAction = '';
+                }
+            }
+
             if (potentialAction) {
                 // SMC Validation
                 const recentCandles = candles.slice(-300); // Only check last ~3 days for relevant OBs

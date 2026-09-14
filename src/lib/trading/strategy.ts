@@ -33,7 +33,7 @@ export async function evaluateSetup(
     candles: any[], 
     macroCandles: any[], 
     regime: string = 'NORMAL',
-    marketContext?: { fundingRate?: number; btcDominanceTrend?: 'UP' | 'DOWN' | 'FLAT' }
+    marketContext?: { fundingRate?: number; btcDominanceTrend?: 'UP' | 'DOWN' | 'FLAT'; accountBalance?: number }
 ): Promise<TradeSignal> {
     const gann = calculateGannSquareOf9(currentPrice);
     const supports = gann.supports.sort((a, b) => b - a);
@@ -53,6 +53,15 @@ export async function evaluateSetup(
     let sl = 0;
     let rationale = '';
     let executionType: 'MARKET' | 'LIMIT' = 'MARKET';
+    
+    // CONDITIONAL WEEKEND FILTER: Only applied if balance >= $100k
+    const currentBalance = marketContext?.accountBalance || 0;
+    if (currentBalance >= 100000) {
+        const dayOfWeek = new Date().getUTCDay(); // 0 = Sunday, 6 = Saturday
+        if (dayOfWeek === 0 || dayOfWeek === 6) {
+            return { symbol, action: 'HOLD', entryPrice: currentPrice, takeProfit: 0, stopLoss: 0, reason: 'Weekend Filter Active (Balance >= $100k)' };
+        }
+    }
     
     const atr = calculateATR(candles);
     let dynamicSL = (atr / currentPrice) * 1.5; 

@@ -7,9 +7,9 @@ import { CTOConfig } from '../ai';
 import { detectMarketRegime } from './risk';
 import { calculateChoppinessIndex } from './financial-intelligence';
 
-// ============ PHASE 1: MACRO SNIPER (1H) - Gann + SMC Precision Edge ============
+// ============ PHASE 1: MACRO SNIPER (15M) - Gann + SMC Precision Edge + 24H Cooldown ============
 const BEAST_MODE_SYMBOLS = ['BTC/USDC:USDC', 'ETH/USDC:USDC', 'SOL/USDC:USDC', 'LINK/USDC:USDC', 'ADA/USDC:USDC', 'BNB/USDC:USDC', 'XRP/USDC:USDC', 'DOGE/USDC:USDC', 'AVAX/USDC:USDC', 'DOT/USDC:USDC'];
-const BEAST_MODE_TF = '1h';
+const BEAST_MODE_TF = '15m';
 
 export interface HuntResult {
   symbol: string;
