@@ -127,8 +127,8 @@ export async function huntForSetup(fallbackTargetProfitPerc: number, openSymbols
     for (const candidate of candidates) {
       try {
         // Fetch dynamic timeframe candles based on the regime
-        // Increased from 250 to 850 to calculate EMA 800 (4H Macro Trend)
-        const ohlcv = await exchange.fetchOHLCV(candidate.asset, targetTF, undefined, 850);
+        // Increased to 3000 to properly calculate EMA 800 (4H Macro Trend)
+        const ohlcv = await exchange.fetchOHLCV(candidate.asset, targetTF, undefined, 3000);
         if (!ohlcv || ohlcv.length === 0) continue;
 
         let macroOhlcv;
