@@ -1,5 +1,6 @@
 import { calculateGannSquareOf9, calculateTimeCycles, calculateGannAngles, calculateDownwardGannAngles, calculateCosmicAlignment, TradeSignal } from './gann';
 import { detectLiquiditySweep, detectRegime, detectCapitulation, detectDominantCycleFFT } from './financial-intelligence';
+import { findOrderBlocks } from './ict';
 
 export function calculateATR(candles: any[], period: number = 14): number {
     if (candles.length < 2) return 0;
@@ -98,7 +99,7 @@ export async function evaluateSetup(
             }
         } else {
             if (distanceToSupportPerc <= dynamicSL) {
-                const validTP = resistances.find(r => (r - currentPrice) / (currentPrice - closestSupport * (1 - dynamicSL)) >= 1.5);
+                const validTP = resistances.find(r => (r - currentPrice) / (currentPrice - closestSupport * (1 - dynamicSL)) >= 2.0);
                 if (validTP) { 
                     action = 'BUY'; 
                     tp = validTP; 
@@ -109,7 +110,7 @@ export async function evaluateSetup(
                 }
             } 
             else if (distanceToResPerc <= dynamicSL) {
-                const validTP = supports.find(s => (currentPrice - s) / (closestResistance * (1 + dynamicSL) - currentPrice) >= 1.5);
+                const validTP = supports.find(s => (currentPrice - s) / (closestResistance * (1 + dynamicSL) - currentPrice) >= 2.0);
                 if (validTP) { 
                     action = 'SELL'; 
                     tp = validTP; 
@@ -122,18 +123,25 @@ export async function evaluateSetup(
         }
     }
     
-    // MACRO TREND ALIGNMENT FILTER (MTF)
-    // Filter out setups that fight the 1H macro trend (EMA 50)
-    if (action !== 'HOLD' && macroCandles && macroCandles.length >= 50) {
-        const macroEma50 = calculateEMA(macroCandles, 50);
-        if (action === 'BUY' && currentPrice < macroEma50) {
+    // SMC VALIDATION (Mandatory unless Capitulation)
+    if (action !== 'HOLD' && !rationale.includes('Capitulation')) {
+        const recentCandles = candles.slice(-300);
+        const obs = findOrderBlocks(recentCandles);
+        let smcPassed = false;
+        
+        if (action === 'BUY') {
+            const validOB = obs.find(ob => ob.type === 'BULLISH_OB' && ob.sweptLiquidity && currentPrice <= ob.top * 1.015 && currentPrice >= ob.bottom * 0.985);
+            if (validOB) smcPassed = true;
+        } else if (action === 'SELL') {
+            const validOB = obs.find(ob => ob.type === 'BEARISH_OB' && ob.sweptLiquidity && currentPrice >= ob.bottom * 0.985 && currentPrice <= ob.top * 1.015);
+            if (validOB) smcPassed = true;
+        }
+        
+        if (!smcPassed) {
             action = 'HOLD';
-            rationale = 'Rejected: Fighting Macro Downtrend (Price < 1H EMA50)';
-        } else if (action === 'SELL' && currentPrice > macroEma50) {
-            action = 'HOLD';
-            rationale = 'Rejected: Fighting Macro Uptrend (Price > 1H EMA50)';
+            rationale = 'Rejected: No valid Swept Liquidity Order Block nearby (SMC)';
         } else {
-            rationale += ' | Macro Trend Aligned';
+            rationale += ' | SMC Swept OB Validated';
         }
     }
     

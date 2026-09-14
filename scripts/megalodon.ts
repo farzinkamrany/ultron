@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as readline from 'readline';
 import { detectSqueeze, calculateChoppinessIndex, detectCapitulationSync, checkEarlyExit, detectRegime, detectDominantCycleFFT, calculateFisherTransform, calculateApproximateEntropy, calculateZScoreVWAP, calculateHurstExponent, getHurstAdaptiveATRMultiplier, detectLiquiditySweep } from '../src/lib/trading/financial-intelligence';
-import { calculateGannSquareOf9 } from '../src/lib/trading/gann';
+import { calculateGannSquareOf9, calculateTimeCycles } from '../src/lib/trading/gann';
 import { findOrderBlocks } from '../src/lib/trading/ict';
 
 interface MultiCandle {
@@ -16,16 +16,15 @@ interface MultiCandle {
 
 const INITIAL_CAPITAL = 1000;
 const MAX_LOSS_LIMIT = 900;
-const MAKER_FEE = 0.0004;
+const MAKER_FEE = 0.0000; // 0.00% Hyperliquid Maker fee
 const HARD_POSITION_CAP = 500000; // Realistic orderbook liquidity limit for top 10 coins
 
 // SNOWBALL STRATEGY: Dynamic leverage scaling (20x early, 2x late)
 function getDynamicLeverage(balance: number): number {
-    if (balance < 5000) return 20;        // Very early = aggressive
-    if (balance < 25000) return 15;       // Early = aggressive
-    if (balance < 50000) return 10;       // Growing = moderate
-    if (balance < 250000) return 5;       // Matured = conservative
-    return 2;                              // Wealthy = very conservative
+    if (balance < 5000) return 20; // Hyper-Aggressive (0 -> 5k)
+    if (balance < 20000) return 10; // Snowballing (5k -> 20k)
+    if (balance < 50000) return 5; // Securing the bag (20k -> 50k)
+    return 2; // Institutional safety
 }
 
 // Dynamic circuit breaker threshold (relaxed when small, strict when large)
@@ -106,8 +105,40 @@ async function loadCSV(filePath: string, symbol: string): Promise<MultiCandle[]>
     return data;
 }
 
+async function loadAndResampleTo1H(filePath: string, symbol: string): Promise<MultiCandle[]> {
+    const data15m = await loadCSV(filePath, symbol);
+    const data1h: MultiCandle[] = [];
+    
+    let currentHourCandle: MultiCandle | null = null;
+    
+    for (const c of data15m) {
+        const hourTimestamp = Math.floor(c.timestamp / 3600000) * 3600000;
+        
+        if (!currentHourCandle || currentHourCandle.timestamp !== hourTimestamp) {
+            if (currentHourCandle) data1h.push(currentHourCandle);
+            currentHourCandle = {
+                symbol: c.symbol,
+                timestamp: hourTimestamp,
+                open: c.open,
+                high: c.high,
+                low: c.low,
+                close: c.close,
+                volume: c.volume
+            };
+        } else {
+            currentHourCandle.high = Math.max(currentHourCandle.high, c.high);
+            currentHourCandle.low = Math.min(currentHourCandle.low, c.low);
+            currentHourCandle.close = c.close;
+            currentHourCandle.volume += c.volume;
+        }
+    }
+    if (currentHourCandle) data1h.push(currentHourCandle);
+    
+    return data1h;
+}
+
 async function runMegalodon() {
-    console.log("Loading Multiple Assets...");
+    console.log("Loading Multiple Assets (15M TIMEFRAME)...");
     const btcData = await loadCSV('data/btc_15m_history.csv', 'BTC');
     const ethData = await loadCSV('data/eth_15m_history.csv', 'ETH');
     const solData = await loadCSV('data/sol_15m_history.csv', 'SOL');
@@ -120,7 +151,7 @@ async function runMegalodon() {
     const dotData = await loadCSV('data/dot_15m_history.csv', 'DOT');
 
     console.log("Merging and Synchronizing Timeline...");
-    const START_TIMESTAMP = 1514764800000; // Jan 1, 2018 (6-year backtest)
+    const START_TIMESTAMP = 1672531200000; // Jan 1, 2023 (To keep the 15m test fast)
     const globalTimeline = [...btcData, ...ethData, ...solData, ...linkData, ...adaData, ...bnbData, ...xrpData, ...dogeData, ...avaxData, ...dotData]
         .filter(c => c.timestamp >= START_TIMESTAMP)
         .sort((a, b) => {
@@ -149,7 +180,7 @@ async function runMegalodon() {
         maxDrawdownPercent: 0,
         peakBalance: INITIAL_CAPITAL,
         periods: {} as Record<string, { trades: number, wins: number, pnl: number }>,
-        symbolStats: {} as Record<string, { trades: number, pnl: number }>,
+        symbolStats: {} as Record<string, { trades: number, pnl: number, consecutiveLosses: number }>,
         cachedRegime: '' as any,
         cachedFft: 0 as any,
         cachedApEn: 0 as any
@@ -249,24 +280,24 @@ async function runMegalodon() {
                         if (currentR >= 2.0 && pyramidStage === 0) {
                             activeTrade.pyramidStage = 1;
                             activeTrade.pyramidPrice = currentPrice;
-                            // Add 100% size (average entry becomes exactly midpoint)
-                            activeTrade.blendedEntry = (entryPrice + currentPrice) / 2;
+                            // Add 100% size (equal dollar amount). Average entry is the harmonic mean.
+                            activeTrade.blendedEntry = 2 / (1/entryPrice + 1/currentPrice);
                             const lockPrice = entryPrice + Math.abs(entryPrice - initialSl);
                             activeTrade.sl = Math.max(activeTrade.sl, lockPrice);
                         }
                         if (currentR >= 4.0 && pyramidStage === 1) {
                             activeTrade.pyramidStage = 2;
                             activeTrade.pyramidPrice = currentPrice;
-                            // Add another 100% of base size (total 3x)
-                            activeTrade.blendedEntry = (activeTrade.blendedEntry * 2 + currentPrice) / 3;
+                            // Add another 100% of base size (total 3x).
+                            activeTrade.blendedEntry = 3 / (2/activeTrade.blendedEntry + 1/currentPrice);
                             const lockPrice = entryPrice + (Math.abs(entryPrice - initialSl) * 3);
                             activeTrade.sl = Math.max(activeTrade.sl, lockPrice);
                         }
                         if (currentR >= 6.0 && pyramidStage === 2) {
                             activeTrade.pyramidStage = 3;
                             activeTrade.pyramidPrice = currentPrice;
-                            // Add another 50% of base size (total 3.5x)
-                            activeTrade.blendedEntry = (activeTrade.blendedEntry * 3 + currentPrice * 0.5) / 3.5;
+                            // Add another 50% of base size (total 3.5x).
+                            activeTrade.blendedEntry = 3.5 / (3/activeTrade.blendedEntry + 0.5/currentPrice);
                             const lockPrice = entryPrice + (Math.abs(entryPrice - initialSl) * 5);
                             activeTrade.sl = Math.max(activeTrade.sl, lockPrice);
                         }
@@ -320,21 +351,21 @@ async function runMegalodon() {
                         if (currentR >= 2.0 && pyramidStage === 0) {
                             activeTrade.pyramidStage = 1;
                             activeTrade.pyramidPrice = currentPrice;
-                            activeTrade.blendedEntry = (entryPrice + currentPrice) / 2;
+                            activeTrade.blendedEntry = 2 / (1/entryPrice + 1/currentPrice);
                             const lockPrice = entryPrice - Math.abs(initialSl - entryPrice);
                             activeTrade.sl = Math.min(activeTrade.sl, lockPrice);
                         }
                         if (currentR >= 4.0 && pyramidStage === 1) {
                             activeTrade.pyramidStage = 2;
                             activeTrade.pyramidPrice = currentPrice;
-                            activeTrade.blendedEntry = (activeTrade.blendedEntry * 2 + currentPrice) / 3;
+                            activeTrade.blendedEntry = 3 / (2/activeTrade.blendedEntry + 1/currentPrice);
                             const lockPrice = entryPrice - (Math.abs(initialSl - entryPrice) * 3);
                             activeTrade.sl = Math.min(activeTrade.sl, lockPrice);
                         }
                         if (currentR >= 6.0 && pyramidStage === 2) {
                             activeTrade.pyramidStage = 3;
                             activeTrade.pyramidPrice = currentPrice;
-                            activeTrade.blendedEntry = (activeTrade.blendedEntry * 3 + currentPrice * 0.5) / 3.5;
+                            activeTrade.blendedEntry = 3.5 / (3/activeTrade.blendedEntry + 0.5/currentPrice);
                             const lockPrice = entryPrice - (Math.abs(initialSl - entryPrice) * 5);
                             activeTrade.sl = Math.min(activeTrade.sl, lockPrice);
                         }
@@ -347,10 +378,14 @@ async function runMegalodon() {
                 let totalEntryVolume = 0;
                 let totalExitVolume = 0;
 
-                // SNOWBALL STRATEGY: Dynamic leverage based on account growth
+                // 50K HYPER-GROWTH Scaling Risk Curve
                 let leverage = getDynamicLeverage(activeTrade.balanceAtEntry);
-                let baseRisk = 0.03; // True Hunter: 3% risk on swing trades
-                let maxKellyRisk = 0.05; // Max 5% risk per trade
+                let baseRisk = 0.03; 
+                if (activeTrade.balanceAtEntry < 10000) baseRisk = 0.08;
+                else if (activeTrade.balanceAtEntry < 30000) baseRisk = 0.05;
+                else baseRisk = 0.03;
+
+                let maxKellyRisk = 0.10;
 
                 let riskMultiplier = baseRisk;
 
@@ -387,9 +422,10 @@ async function runMegalodon() {
 
                 // REALISTIC SLIPPAGE: 0.04% base + small adaptive component (max 0.06% total)
                 const currentAtr = calculateATR(candles);
-                const adaptiveSlippage = Math.min(0.0006, ((currentAtr / currentPrice) * 0.1));
-                const entryFee = totalEntryVolume * (MAKER_FEE + adaptiveSlippage * 0.3);
-                const exitFee = totalExitVolume * (MAKER_FEE + adaptiveSlippage);
+                // Using Limit Orders on Gann Supports: 0 Slippage
+                const adaptiveSlippage = 0; 
+                const entryFee = totalEntryVolume * MAKER_FEE;
+                const exitFee = totalExitVolume * MAKER_FEE;
                 pnl = rawPnl - entryFee - exitFee;
 
                 balance += pnl;
@@ -502,22 +538,55 @@ async function runMegalodon() {
         if (closestSupport > 0 && closestResistance < Infinity) {
             const longTP = closestResistance;
             const longSL = closestSupport * (1 - dynamicSL);
-            const longRR = (longTP - currentPrice) / (currentPrice - longSL);
+            // WICK ENTRY: The live bot enters at closestSupport. RR should be calculated from entry.
+            const longRR = (longTP - closestSupport) / (closestSupport - longSL);
 
             const shortTP = closestSupport;
             const shortSL = closestResistance * (1 + dynamicSL);
-            const shortRR = (currentPrice - shortTP) / (shortSL - currentPrice);
+            const shortRR = (closestResistance - shortTP) / (shortSL - closestResistance);
 
-            const distanceToSupportPerc = (currentPrice - closestSupport) / currentPrice;
-            const distanceToResPerc = (closestResistance - currentPrice) / currentPrice;
+            // WICK ENTRY SIMULATION:
+            // Instead of calculating distance from the CLOSE, we check if the LOW/HIGH hit the Gann level during the candle.
+            // We also ensure the candle OPENED above support / below resistance to confirm it's a bounce.
+            let distanceToSupportPerc = 1; // Default to NO ENTRY
+            let distanceToResPerc = 1;
+
+            if (candle.open > closestSupport && candle.low <= closestSupport * 1.015) {
+                distanceToSupportPerc = 0; // Hit!
+            }
+            
+            if (candle.open < closestResistance && candle.high >= closestResistance * 0.985) {
+                distanceToResPerc = 0; // Hit!
+            }
 
             let potentialAction = '';
             const gannTolerance = 0.015; // 1.5% tolerance for Gann entry
-            if (longRR >= 1.5 && distanceToSupportPerc <= gannTolerance) {
+            
+            // TIME CYCLE & VOLUME FILTER (Sniper Mode)
+            // 1. Time Cycle Check
+            let daysSincePivot = 0;
+            // Approximate days since macro pivot by finding its index
+            const pivotIndex = candles.findIndex(c => c.low === macroPivotPrice || c.high === macroPivotPrice);
+            if (pivotIndex !== -1) {
+                daysSincePivot = (candles.length - 1 - pivotIndex) / 24; // 1H intervals to days
+            }
+            const timeCycle = calculateTimeCycles(daysSincePivot);
+            
+            // 2. Volume Spike Check (Institutions defending the level)
+            let volSum = 0;
+            const volPeriod = 20;
+            for (let v = candles.length - volPeriod; v < candles.length; v++) volSum += candles[v].volume;
+            const avgVol = volSum / volPeriod;
+            const hasVolSpike = candle.volume > avgVol * 1.5; // 150% volume
+
+            // 1H TIMEFRAME IS MACRO: We don't need Time Cycle / Volume Spike blockers.
+            // A Gann + SMC validation on 1H is strong enough on its own.
+            // Reduced RR to 2.0 to catch more swings without being overly greedy.
+            if (longRR >= 2.0 && distanceToSupportPerc <= gannTolerance) {
                 potentialAction = 'BUY';
                 tp = longTP;
                 sl = longSL;
-            } else if (shortRR >= 1.5 && distanceToResPerc <= gannTolerance) {
+            } else if (shortRR >= 2.0 && distanceToResPerc <= gannTolerance) {
                 potentialAction = 'SELL';
                 tp = shortTP;
                 sl = shortSL;
@@ -525,14 +594,16 @@ async function runMegalodon() {
 
             if (potentialAction) {
                 // SMC Validation
-                const recentCandles = candles.slice(-300);
+                const recentCandles = candles.slice(-300); // Only check last ~3 days for relevant OBs
                 const obs = findOrderBlocks(recentCandles as any);
                 
                 if (potentialAction === 'BUY') {
-                    const validOB = obs.find(ob => ob.type === 'BULLISH_OB' && ob.sweptLiquidity && currentPrice <= ob.top * 1.005 && currentPrice >= ob.bottom * 0.995);
+                    // WICK ENTRY: The candle LOW must have touched the Bullish Order Block
+                    const validOB = obs.find(ob => ob.type === 'BULLISH_OB' && ob.sweptLiquidity && candle.low <= ob.top * 1.01 && candle.close >= ob.bottom);
                     if (validOB) action = 'BUY';
                 } else if (potentialAction === 'SELL') {
-                    const validOB = obs.find(ob => ob.type === 'BEARISH_OB' && ob.sweptLiquidity && currentPrice >= ob.bottom * 0.995 && currentPrice <= ob.top * 1.005);
+                    // WICK ENTRY: The candle HIGH must have touched the Bearish Order Block
+                    const validOB = obs.find(ob => ob.type === 'BEARISH_OB' && ob.sweptLiquidity && candle.high >= ob.bottom * 0.99 && candle.close <= ob.top);
                     if (validOB) action = 'SELL';
                 }
             }
@@ -668,7 +739,7 @@ async function runMegalodon() {
             activeTrades[symbol] = {
                 symbol,
                 action,
-                entryPrice: currentPrice,
+                entryPrice: action === 'BUY' ? closestSupport : closestResistance,
                 entryTime: timestamp,
                 sl,
                 initialSl: sl,

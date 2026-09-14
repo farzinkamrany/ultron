@@ -159,7 +159,7 @@ export async function runTradingCycle(symbol: string = "BTC/USDT"): Promise<void
   
   // Regime-Based Concurrency
   const regime = detectRegime(candles1h);
-  const maxConcurrentTrades = regime === 'TRENDING' ? 8 : 3;
+  const maxConcurrentTrades = 3; // Strict risk control
   console.log(`[Regime] Current Market Regime: ${regime}. Max Concurrency set to ${maxConcurrentTrades}.`);
 
   // Fetch Micro-Structure Data (Funding Rates & BTC.D)
@@ -170,7 +170,8 @@ export async function runTradingCycle(symbol: string = "BTC/USDT"): Promise<void
   };
 
   // Engine Evaluation
-  const signal = await evaluateSetup(symbol, livePrice, candles15m, candles1h, regime, marketContext);
+  // Pass 1H candles to Strategy evaluation (Megalodon Backtest match)
+  const signal = await evaluateSetup(symbol, livePrice, candles1h, candles1h, regime, marketContext);
   console.log(`[Quant Engine] Setup evaluated: ${signal.action}. Reason: ${signal.reason || 'Valid setup'}`);
   
   if (signal.action === "HOLD") return;
@@ -187,7 +188,7 @@ export async function runTradingCycle(symbol: string = "BTC/USDT"): Promise<void
     return;
   }
 
-  const cooldownLimit = new Date(Date.now() - 15 * 60 * 1000).toISOString(); // 15-minute cooldown (Machine speed, no human fear)
+  const cooldownLimit = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(); // 24-hour cooldown (Megalodon Choppiness protection)
   const { data: recentTrades } = await supabase
     .from("paper_trades")
     .select("*")
@@ -265,7 +266,11 @@ export async function runTradingCycle(symbol: string = "BTC/USDT"): Promise<void
         return;
       }
       
-      let kellyPercent = await calculateDynamicKelly(signal.symbol);
+      // 50K HYPER-GROWTH Scaling Risk Curve
+      let kellyPercent = 0.03; 
+      if (liveBalance < 10000) kellyPercent = 0.08;
+      else if (liveBalance < 30000) kellyPercent = 0.05;
+      else kellyPercent = 0.03;
       
       // --- EQUITY CURVE DRAWDOWN BRAKE (ALWAYS ACTIVE) ---
       const STATE_FILE = path.join(process.cwd(), 'data', 'bot_state.json');

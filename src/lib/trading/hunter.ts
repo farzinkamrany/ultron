@@ -7,9 +7,9 @@ import { CTOConfig } from '../ai';
 import { detectMarketRegime } from './risk';
 import { calculateChoppinessIndex } from './financial-intelligence';
 
-// ============ PHASE 1: SNOWBALL (15m) - Maximum Volatility (Best Risk/Reward) ============
+// ============ PHASE 1: MACRO SNIPER (1H) - Gann + SMC Precision Edge ============
 const BEAST_MODE_SYMBOLS = ['BTC/USDC:USDC', 'ETH/USDC:USDC', 'SOL/USDC:USDC', 'LINK/USDC:USDC', 'ADA/USDC:USDC', 'BNB/USDC:USDC', 'XRP/USDC:USDC', 'DOGE/USDC:USDC', 'AVAX/USDC:USDC', 'DOT/USDC:USDC'];
-const BEAST_MODE_TF = '15m';
+const BEAST_MODE_TF = '1h';
 
 export interface HuntResult {
   symbol: string;
@@ -236,19 +236,7 @@ export async function huntForSetup(fallbackTargetProfitPerc: number, openSymbols
         const obs = findOrderBlocks(candles);
 
         if (candidate.action === 'BUY') {
-          if (trend === 'DOWN' || candidate.currentPrice < ema672) {
-             if (rsi < 25 && volSpike) {
-                console.log(`[Hunter] CAPITULATION OVERRIDE ${candidate.asset} BUY: Catching the knife (RSI: ${rsi.toFixed(1)}, Vol: 3x).`);
-                candidate.closestSupport *= 0.99; // widen SL to survive chop
-             } else {
-                console.log(`[Hunter] Rejected ${candidate.asset} BUY: Counter-trend (Price below EMA 800 / EMA 672).`);
-                continue;
-             }
-          }
-          if (isReversalWindow) {
-             console.log(`[Hunter] Rejected ${candidate.asset} BUY: TIME REVERSAL ACTIVE.`);
-             continue;
-          }
+          // EMA and Time Reversal blockers removed for 1H timeframe
           if (downwardAngles.position.includes('BELOW 2x1')) {
             console.log(`[Hunter] Rejected ${candidate.asset} BUY: Freefall downward angle.`);
             continue;
@@ -257,7 +245,7 @@ export async function huntForSetup(fallbackTargetProfitPerc: number, openSymbols
           const finalSL = candidate.closestSupport - atrPadding;
           const finalRR = (candidate.tp - candidate.currentPrice) / (candidate.currentPrice - finalSL);
 
-          if (finalRR < 1.5) {
+          if (finalRR < 2.0) {
              console.log(`[Hunter] Rejected ${candidate.asset} BUY: R:R dropped to ${finalRR.toFixed(2)} after ATR padding.`);
              continue;
           }
@@ -265,8 +253,12 @@ export async function huntForSetup(fallbackTargetProfitPerc: number, openSymbols
           if (upwardAngles.position.includes('ABOVE')) gannContext += ' | Upward Gann Angle';
           if (cosmos.planetaryAspect) gannContext += ` | ${cosmos.planetaryAspect}`;
 
-          const validOB = obs.find(ob => ob.type === 'BULLISH_OB' && ob.sweptLiquidity && !ob.mitigated && candidate.currentPrice <= ob.top * 1.001 && candidate.currentPrice >= ob.bottom * 0.999);
-          if (validOB) gannContext += ' | SMC_OB_Swept_Mitigated';
+          const validOB = obs.find(ob => ob.type === 'BULLISH_OB' && ob.sweptLiquidity && !ob.mitigated && candidate.currentPrice <= ob.top * 1.015 && candidate.currentPrice >= ob.bottom * 0.985);
+          if (!validOB) {
+              console.log(`[Hunter] Rejected ${candidate.asset} BUY: No Swept Liquidity Order Block nearby (SMC).`);
+              continue;
+          }
+          gannContext += ' | SMC_OB_Swept_Mitigated';
           
           // Execute based on mathematical Gann edge (Matching the Backtest)
           bestTrade = {
@@ -279,19 +271,7 @@ export async function huntForSetup(fallbackTargetProfitPerc: number, openSymbols
           };
           break; // Found the best trade, stop checking
         } else {
-          if (trend === 'UP' || candidate.currentPrice > ema672) {
-             if (rsi > 75 && volSpike) {
-                console.log(`[Hunter] CAPITULATION OVERRIDE ${candidate.asset} SELL: Shorting euphoria (RSI: ${rsi.toFixed(1)}, Vol: 3x).`);
-                candidate.closestResistance *= 1.01; // widen SL to survive chop
-             } else {
-                console.log(`[Hunter] Rejected ${candidate.asset} SELL: Counter-trend (Price above EMA 800 / EMA 672).`);
-                continue;
-             }
-          }
-          if (isReversalWindow) {
-             console.log(`[Hunter] Rejected ${candidate.asset} SELL: TIME REVERSAL ACTIVE.`);
-             continue;
-          }
+          // EMA and Time Reversal blockers removed for 1H timeframe
           if (upwardAngles.position.includes('ABOVE 2x1')) {
             console.log(`[Hunter] Rejected ${candidate.asset} SELL: Extreme Bullish upward angle.`);
             continue;
@@ -300,7 +280,7 @@ export async function huntForSetup(fallbackTargetProfitPerc: number, openSymbols
           const finalSL = candidate.closestResistance + atrPadding;
           const finalRR = (candidate.currentPrice - candidate.tp) / (finalSL - candidate.currentPrice);
 
-          if (finalRR < 1.5) {
+          if (finalRR < 2.0) {
              console.log(`[Hunter] Rejected ${candidate.asset} SELL: R:R dropped to ${finalRR.toFixed(2)} after ATR padding.`);
              continue;
           }
@@ -308,8 +288,12 @@ export async function huntForSetup(fallbackTargetProfitPerc: number, openSymbols
           if (downwardAngles.position.includes('BELOW')) gannContext += ' | Downward Gann Angle';
           if (cosmos.planetaryAspect) gannContext += ` | ${cosmos.planetaryAspect}`;
 
-          const validOB = obs.find(ob => ob.type === 'BEARISH_OB' && ob.sweptLiquidity && !ob.mitigated && candidate.currentPrice >= ob.bottom * 0.999 && candidate.currentPrice <= ob.top * 1.001);
-          if (validOB) gannContext += ' | SMC_OB_Swept_Mitigated';
+          const validOB = obs.find(ob => ob.type === 'BEARISH_OB' && ob.sweptLiquidity && !ob.mitigated && candidate.currentPrice >= ob.bottom * 0.985 && candidate.currentPrice <= ob.top * 1.015);
+          if (!validOB) {
+              console.log(`[Hunter] Rejected ${candidate.asset} SELL: No Swept Liquidity Order Block nearby (SMC).`);
+              continue;
+          }
+          gannContext += ' | SMC_OB_Swept_Mitigated';
 
           // Execute based on mathematical Gann edge (Matching the Backtest)
           bestTrade = {
