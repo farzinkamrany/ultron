@@ -246,25 +246,18 @@ async function runMegalodon() {
                     const riskDistance = entryPrice - initialSl;
                     const currentR = (currentPrice - entryPrice) / riskDistance;
 
-                    // ── DONCHIAN TRAILING STOP (No Fixed Target) ──
-                    const lookback = 20;
-                    if (candles.length > lookback) {
-                        let donchianStop = activeTrade.sl;
-                        if (activeTrade.action === 'BUY') {
-                            // Trailing Stop is the lowest low of the last 20 candles
-                            let lowestLow = Infinity;
-                            for (let i = candles.length - lookback; i < candles.length; i++) {
-                                if (candles[i].low < lowestLow) lowestLow = candles[i].low;
-                            }
-                            activeTrade.sl = Math.max(activeTrade.sl, lowestLow - (lowestLow * 0.01));
-                        } else {
-                            // Trailing Stop is the highest high of the last 20 candles
-                            let highestHigh = -Infinity;
-                            for (let i = candles.length - lookback; i < candles.length; i++) {
-                                if (candles[i].high > highestHigh) highestHigh = candles[i].high;
-                            }
-                            activeTrade.sl = Math.min(activeTrade.sl, highestHigh + (highestHigh * 0.01));
-                        }
+                    // ── STEP-TRAILING (Locking Profits) ──
+                    if (currentR >= 1.0) {
+                        activeTrade.sl = Math.max(activeTrade.sl, entryPrice + (entryPrice - initialSl) * 0.2); // Lock small profit
+                    }
+                    if (currentR >= 2.0) {
+                        activeTrade.sl = Math.max(activeTrade.sl, entryPrice + (entryPrice - initialSl) * 1.0); // Lock 1R
+                    }
+                    if (currentR >= 3.0) {
+                        activeTrade.sl = Math.max(activeTrade.sl, entryPrice + (entryPrice - initialSl) * 2.0); // Lock 2R
+                    }
+                    if (currentR >= 4.0) {
+                        activeTrade.sl = Math.max(activeTrade.sl, entryPrice + (entryPrice - initialSl) * 3.0); // Lock 3R
                     }
 
                     // ── AGGRESSIVE PYRAMIDING (Add 100% size) ──
@@ -297,6 +290,20 @@ async function runMegalodon() {
                 else if (entryRegime !== 'RANGING' && !activeTrade.isCapitulation) {
                     const riskDistance = initialSl - entryPrice;
                     const currentR = (entryPrice - currentPrice) / riskDistance;
+
+                    // ── STEP-TRAILING FOR SHORTS (Locking Profits) ──
+                    if (currentR >= 1.0) {
+                        activeTrade.sl = Math.min(activeTrade.sl, entryPrice - (initialSl - entryPrice) * 0.2); // Lock small profit
+                    }
+                    if (currentR >= 2.0) {
+                        activeTrade.sl = Math.min(activeTrade.sl, entryPrice - (initialSl - entryPrice) * 1.0); // Lock 1R
+                    }
+                    if (currentR >= 3.0) {
+                        activeTrade.sl = Math.min(activeTrade.sl, entryPrice - (initialSl - entryPrice) * 2.0); // Lock 2R
+                    }
+                    if (currentR >= 4.0) {
+                        activeTrade.sl = Math.min(activeTrade.sl, entryPrice - (initialSl - entryPrice) * 3.0); // Lock 3R
+                    }
 
                     // ── AGGRESSIVE PYRAMIDING FOR SHORTS ──
                     if (currentR >= 2.0 && pyramidStage === 0) {
