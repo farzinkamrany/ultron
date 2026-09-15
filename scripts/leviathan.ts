@@ -60,13 +60,49 @@ function calculateLowestLow(candles: MultiCandle[], period: number): number {
     return lowest;
 }
 
-async function loadCSV(filePath: string, symbol: string): Promise<MultiCandle[]> {
+// Load and resample directly from stream (Highly Optimized)
+async function loadAndResampleTo4H(filePath: string, symbol: string): Promise<MultiCandle[]> {
     const fileStream = fs.createReadStream(filePath);
     const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
 
-    const data: MultiCandle[] = [];
+    const data4h: MultiCandle[] = [];
+    let currentCandle: MultiCandle | null = null;
+    const FOUR_HOURS = 4 * 3600 * 1000;
     let isHeader = true;
 
+    for await (const line of rl) {
+        if (isHeader) { isHeader = false; continue; }
+        const [tsStr, openStr, highStr, lowStr, closeStr, volStr] = line.split(',');
+        
+        const timestamp = parseInt(tsStr);
+        const open = parseFloat(openStr);
+        const high = parseFloat(highStr);
+        const low = parseFloat(lowStr);
+        const close = parseFloat(closeStr);
+        const volume = parseFloat(volStr);
+
+        const periodTimestamp = Math.floor(timestamp / FOUR_HOURS) * FOUR_HOURS;
+
+        if (!currentCandle || currentCandle.timestamp !== periodTimestamp) {
+            if (currentCandle) data4h.push(currentCandle);
+            currentCandle = { symbol, timestamp: periodTimestamp, open, high, low, close, volume };
+        } else {
+            if (high > currentCandle.high) currentCandle.high = high;
+            if (low < currentCandle.low) currentCandle.low = low;
+            currentCandle.close = close;
+            currentCandle.volume += volume;
+        }
+    }
+    if (currentCandle) data4h.push(currentCandle);
+    return data4h;
+}
+
+// Direct 15m loader if needed
+async function loadCSV15m(filePath: string, symbol: string): Promise<MultiCandle[]> {
+    const fileStream = fs.createReadStream(filePath);
+    const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
+    const data: MultiCandle[] = [];
+    let isHeader = true;
     for await (const line of rl) {
         if (isHeader) { isHeader = false; continue; }
         const [timestamp, open, high, low, close, volume] = line.split(',');
@@ -83,29 +119,6 @@ async function loadCSV(filePath: string, symbol: string): Promise<MultiCandle[]>
     return data;
 }
 
-// Resample 15m data to 4H for Trend Following
-async function loadAndResampleTo4H(filePath: string, symbol: string): Promise<MultiCandle[]> {
-    const data15m = await loadCSV(filePath, symbol);
-    const data4h: MultiCandle[] = [];
-    let currentCandle: MultiCandle | null = null;
-    const FOUR_HOURS = 4 * 3600 * 1000;
-
-    for (const c of data15m) {
-        const periodTimestamp = Math.floor(c.timestamp / FOUR_HOURS) * FOUR_HOURS;
-        if (!currentCandle || currentCandle.timestamp !== periodTimestamp) {
-            if (currentCandle) data4h.push(currentCandle);
-            currentCandle = { ...c, timestamp: periodTimestamp };
-        } else {
-            currentCandle.high = Math.max(currentCandle.high, c.high);
-            currentCandle.low = Math.min(currentCandle.low, c.low);
-            currentCandle.close = c.close;
-            currentCandle.volume += c.volume;
-        }
-    }
-    if (currentCandle) data4h.push(currentCandle);
-    return data4h;
-}
-
 async function runLeviathan() {
     console.log("Loading Assets and Resampling to 4H...");
     const symbols = ['BTC', 'ETH', 'SOL', 'LINK', 'ADA', 'DOGE', 'BNB', 'XRP', 'DOT', 'AVAX'];
@@ -114,7 +127,9 @@ async function runLeviathan() {
     for (const sym of symbols) {
         try {
             const data = await loadAndResampleTo4H(`data/${sym.toLowerCase()}_15m_history.csv`, sym);
-            allData.push(...data);
+            for (let i = 0; i < data.length; i++) {
+                allData.push(data[i]);
+            }
         } catch (e) {
             console.log(`Failed to load ${sym}`);
         }
