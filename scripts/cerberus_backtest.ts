@@ -41,10 +41,10 @@ async function loadCSV(filePath: string, symbol: string): Promise<MultiCandle[]>
 }
 
 async function runCerberusBacktest() {
-    console.log("Loading 1H Data for CERBERUS (Pairs Trader)...");
+    console.log("Loading 30m Data for CERBERUS (Pairs Trader)...");
     
-    const btcData = await loadCSV('data/btc_1h_history.csv', 'BTC');
-    const ethData = await loadCSV('data/eth_1h_history.csv', 'ETH');
+    const btcData = await loadCSV('data/btc_30m_history.csv', 'BTC');
+    const ethData = await loadCSV('data/eth_30m_history.csv', 'ETH');
     
     // Create a dictionary for quick ETH lookup by timestamp
     const ethMap = new Map<number, MultiCandle>();
@@ -61,7 +61,7 @@ async function runCerberusBacktest() {
     }
 
     globalTimeline.sort((a, b) => a.timestamp - b.timestamp);
-    console.log(`Loaded ${globalTimeline.length} perfectly aligned 1H candles. Starting Statistical Arbitrage simulation...\n`);
+    console.log(`Loaded ${globalTimeline.length} perfectly aligned 30m candles. Starting Statistical Arbitrage simulation...\n`);
 
     let balance = INITIAL_CAPITAL;
     let peakBalance = balance;
