@@ -13,7 +13,7 @@ interface MultiCandle {
 
 const INITIAL_CAPITAL = 1000;
 const RISK_PER_TRADE = 0.05; // 5% Risk per trade
-const HARD_POSITION_CAP = 50000; // 50k max position size for liquidity
+const HARD_POSITION_CAP = 5000000; // 5M max position size for liquidity
 const MAX_LEVERAGE = 5; // 5x max leverage on altcoins
 const TAKER_FEE = 0.00035; // 0.035% market order fee
 
