@@ -13,9 +13,10 @@ interface MultiCandle {
 
 const INITIAL_CAPITAL = 1000;
 const RISK_PER_TRADE = 0.05; // 5% Risk per trade
-const HARD_POSITION_CAP = 5000000; // 5M max position size for liquidity
-const MAX_LEVERAGE = 5; // 5x max leverage on altcoins
+const HARD_POSITION_CAP = 500000; // 500k realistic max position size
+const MAX_LEVERAGE = 3; // 3x max leverage per trade (15x max total for 5 trades)
 const TAKER_FEE = 0.00035; // 0.035% market order fee
+const SLIPPAGE = 0.001; // 0.1% slippage for realistic execution
 
 function calculateEMA(candles: MultiCandle[], period: number): number {
     if (candles.length < period) return candles[candles.length - 1].close;
@@ -43,18 +44,18 @@ function calculateATR(candles: MultiCandle[], period: number = 14): number {
 }
 
 function calculateHighestHigh(candles: MultiCandle[], period: number): number {
-    if (candles.length < period) return Infinity;
     let highest = -Infinity;
-    for (let i = candles.length - period; i < candles.length; i++) {
+    const start = Math.max(0, candles.length - period);
+    for (let i = start; i < candles.length; i++) {
         if (candles[i].high > highest) highest = candles[i].high;
     }
     return highest;
 }
 
 function calculateLowestLow(candles: MultiCandle[], period: number): number {
-    if (candles.length < period) return -Infinity;
     let lowest = Infinity;
-    for (let i = candles.length - period; i < candles.length; i++) {
+    const start = Math.max(0, candles.length - period);
+    for (let i = start; i < candles.length; i++) {
         if (candles[i].low < lowest) lowest = candles[i].low;
     }
     return lowest;
@@ -97,28 +98,6 @@ async function loadAndResampleTo4H(filePath: string, symbol: string): Promise<Mu
     return data4h;
 }
 
-// Direct 15m loader if needed
-async function loadCSV15m(filePath: string, symbol: string): Promise<MultiCandle[]> {
-    const fileStream = fs.createReadStream(filePath);
-    const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
-    const data: MultiCandle[] = [];
-    let isHeader = true;
-    for await (const line of rl) {
-        if (isHeader) { isHeader = false; continue; }
-        const [timestamp, open, high, low, close, volume] = line.split(',');
-        data.push({
-            symbol,
-            timestamp: parseInt(timestamp),
-            open: parseFloat(open),
-            high: parseFloat(high),
-            low: parseFloat(low),
-            close: parseFloat(close),
-            volume: parseFloat(volume)
-        });
-    }
-    return data;
-}
-
 async function runLeviathan() {
     console.log("Loading Assets and Resampling to 4H...");
     const symbols = ['BTC', 'ETH', 'SOL', 'LINK', 'ADA', 'DOGE', 'BNB', 'XRP', 'DOT', 'AVAX'];
@@ -151,6 +130,13 @@ async function runLeviathan() {
     let maxBalance = INITIAL_CAPITAL;
     let maxDrawdown = 0;
 
+    let lastYear = new Date(allData[0].timestamp).getUTCFullYear();
+    let yearlyStartBalance = INITIAL_CAPITAL;
+    const yearlyResults: Record<number, any> = {};
+    
+    let currentPeakTime = allData[0].timestamp;
+    let maxUnderwaterDuration = 0; // in milliseconds
+
     for (const candle of allData) {
         const { symbol, timestamp, close, high, low, open } = candle;
         buffers[symbol].push(candle);
@@ -160,7 +146,6 @@ async function runLeviathan() {
         if (candles.length < 200) continue;
 
         const ema200 = calculateEMA(candles, 200);
-        const ema20 = calculateEMA(candles, 20);
         const atr = calculateATR(candles, 14);
         
         // 20-period (approx 3 days) Donchian Channel
@@ -176,7 +161,7 @@ async function runLeviathan() {
                 trade.sl = Math.max(trade.sl, trailStop);
                 
                 if (low <= trade.sl) {
-                    const exitPrice = Math.min(trade.sl, open); // Slippage simulation
+                    const exitPrice = Math.min(trade.sl, open) * (1 - SLIPPAGE); // Slippage on sell
                     const riskDistancePerc = Math.abs(trade.entryPrice - trade.initialSl) / trade.entryPrice;
                     let positionSize = (balance * RISK_PER_TRADE) / riskDistancePerc;
                     
@@ -199,7 +184,7 @@ async function runLeviathan() {
                 trade.sl = Math.min(trade.sl, trailStop);
                 
                 if (high >= trade.sl) {
-                    const exitPrice = Math.max(trade.sl, open);
+                    const exitPrice = Math.max(trade.sl, open) * (1 + SLIPPAGE); // Slippage on buy-to-cover
                     const riskDistancePerc = Math.abs(trade.initialSl - trade.entryPrice) / trade.entryPrice;
                     let positionSize = (balance * RISK_PER_TRADE) / riskDistancePerc;
                     
@@ -225,30 +210,58 @@ async function runLeviathan() {
             if (close > ema200 && close > highest20) {
                 activeTrades[symbol] = {
                     action: 'BUY',
-                    entryPrice: close,
-                    initialSl: lowest20 - atr,
-                    sl: lowest20 - atr
+                    entryPrice: close * (1 + SLIPPAGE), // Slippage on buy
+                    initialSl: calculateLowestLow(candles.slice(0, -1), 10) - atr,
+                    sl: calculateLowestLow(candles.slice(0, -1), 10) - atr
                 };
             } else if (close < ema200 && close < lowest20) {
                 activeTrades[symbol] = {
                     action: 'SELL',
-                    entryPrice: close,
-                    initialSl: highest20 + atr,
-                    sl: highest20 + atr
+                    entryPrice: close * (1 - SLIPPAGE), // Slippage on short
+                    initialSl: calculateHighestHigh(candles.slice(0, -1), 10) + atr,
+                    sl: calculateHighestHigh(candles.slice(0, -1), 10) + atr
                 };
             }
         }
 
-        if (balance > maxBalance) maxBalance = balance;
+        if (balance > maxBalance) {
+            maxBalance = balance;
+            maxUnderwaterDuration = Math.max(maxUnderwaterDuration, timestamp - currentPeakTime);
+            currentPeakTime = timestamp;
+        } else {
+            maxUnderwaterDuration = Math.max(maxUnderwaterDuration, timestamp - currentPeakTime);
+        }
+        
         const drawdown = (maxBalance - balance) / maxBalance;
         if (drawdown > maxDrawdown) maxDrawdown = drawdown;
+        
+        const currentYear = new Date(timestamp).getUTCFullYear();
+        if (currentYear > lastYear) {
+            yearlyResults[lastYear] = {
+                endBalance: balance,
+                profitPct: ((balance - yearlyStartBalance) / yearlyStartBalance) * 100
+            };
+            
+            lastYear = currentYear;
+            yearlyStartBalance = balance;
+        }
     }
+    
+    yearlyResults[lastYear] = {
+        endBalance: balance,
+        profitPct: ((balance - yearlyStartBalance) / yearlyStartBalance) * 100
+    };
 
-    console.log(`\n=== LEVIATHAN TREND FOLLOWER (4H) ===`);
+    console.log(`\n=== LEVIATHAN TREND FOLLOWER (4H COMPOUNDING) ===`);
     console.log(`Final Balance: $${balance.toFixed(2)}`);
     console.log(`Total Trades: ${totalTrades}`);
     console.log(`Win Rate: ${((wins / totalTrades) * 100).toFixed(2)}%`);
     console.log(`Max Drawdown: ${(maxDrawdown * 100).toFixed(2)}%`);
+    console.log(`Max Underwater Duration: ${(maxUnderwaterDuration / (1000 * 60 * 60 * 24 * 30)).toFixed(1)} months`);
+    console.log(`\n--- ANNUAL BREAKDOWN ---`);
+    for (const year in yearlyResults) {
+        console.log(`Year ${year}: $${yearlyResults[year].endBalance.toFixed(2)} (${yearlyResults[year].profitPct.toFixed(2)}%)`);
+    }
 }
 
 runLeviathan().catch(console.error);
