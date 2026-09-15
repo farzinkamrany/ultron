@@ -9,7 +9,10 @@
     "fetch-history": "node --max-old-space-size=8192 node_modules/tsx/dist/cli.mjs scripts/fetch-history.ts",
     "backtest": "node --max-old-space-size=8192 node_modules/tsx/dist/cli.mjs scripts/megalodon.ts",
     "backtest:pool": "node --max-old-space-size=8192 node_modules/tsx/dist/cli.mjs scripts/portfolio-backtest.ts",
-    "paper": "node --max-old-space-size=8192 node_modules/tsx/dist/cli.mjs scripts/paper-trade.ts"
+    "paper": "node --max-old-space-size=8192 node_modules/tsx/dist/cli.mjs scripts/paper-trade.ts",
+    "hydra": "node --max-old-space-size=8192 node_modules/tsx/dist/cli.mjs scripts/hydra_backtest.ts",
+    "megalodon": "node --max-old-space-size=8192 node_modules/tsx/dist/cli.mjs scripts/megalodon.ts",
+    "leviathan": "node --max-old-space-size=8192 node_modules/tsx/dist/cli.mjs scripts/leviathan.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
