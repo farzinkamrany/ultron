@@ -144,10 +144,16 @@ async function runMegalodon() {
     const linkData = await loadCSV('data/link_15m_history.csv', 'LINK');
     const adaData = await loadCSV('data/ada_15m_history.csv', 'ADA');
     const dogeData = await loadCSV('data/doge_15m_history.csv', 'DOGE');
+    const btcData = await loadCSV('data/btc_15m_history.csv', 'BTC');
+    const ethData = await loadCSV('data/eth_15m_history.csv', 'ETH');
+    const bnbData = await loadCSV('data/bnb_15m_history.csv', 'BNB');
+    const xrpData = await loadCSV('data/xrp_15m_history.csv', 'XRP');
+    const dotData = await loadCSV('data/dot_15m_history.csv', 'DOT');
+    const avaxData = await loadCSV('data/avax_15m_history.csv', 'AVAX');
 
     console.log("Merging and Synchronizing Timeline...");
     const START_TIMESTAMP = 1514764800000; // Jan 1, 2018 (6-year backtest)
-    const globalTimeline = [...solData, ...linkData, ...adaData, ...dogeData]
+    const globalTimeline = [...solData, ...linkData, ...adaData, ...dogeData, ...btcData, ...ethData, ...bnbData, ...xrpData, ...dotData, ...avaxData]
         .filter(c => c.timestamp >= START_TIMESTAMP)
         .sort((a, b) => {
             if (a.timestamp !== b.timestamp) return a.timestamp - b.timestamp;
@@ -185,7 +191,8 @@ async function runMegalodon() {
     let lastTradeClosedTime: Record<string, number> = {};
 
     const buffers: Record<string, MultiCandle[]> = {
-        'SOL': [], 'LINK': [], 'ADA': [], 'DOGE': []
+        'SOL': [], 'LINK': [], 'ADA': [], 'DOGE': [],
+        'BTC': [], 'ETH': [], 'BNB': [], 'XRP': [], 'DOT': [], 'AVAX': []
     };
 
     for (let i = 0; i < globalTimeline.length; i++) {
@@ -497,7 +504,7 @@ async function runMegalodon() {
         }
         const regime = stats.cachedRegime;
     // Trade Capacity
-    const maxConcurrent = 3;
+    const maxConcurrent = 5;
 
         // Global circuit breaker removed in favor of symbol-specific risk slashing
 
