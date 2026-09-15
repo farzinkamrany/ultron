@@ -137,7 +137,7 @@ export async function GET(req: NextRequest) {
 
     const FEE_RATE = 0.0012; // 0.12% offset
     const updates = [];
-    const newTradesToInsert: any[] = [];
+    let pyramidedTradesCount = 0;
 
     for (const trade of openTrades) {
       const dbSymbol = trade.symbol;
@@ -151,6 +151,7 @@ export async function GET(req: NextRequest) {
       let newStopLoss = trade.stop_loss;
       let newTakeProfit = trade.take_profit;
       let newRationale = trade.rationale || '';
+      const originalEntry = trade.entry_price;
       let pnl = 0;
       let closedAt = null;
 
@@ -209,8 +210,11 @@ export async function GET(req: NextRequest) {
                   // Aggressive Breakeven logic applies once Pyramided
                   const baselineSL = isPyramided ? Math.max(trade.entry_price, chandelierLong) : chandelierLong;
                   newStopLoss = Math.max(trade.stop_loss, baselineSL);
-                  // FIXED: Extend TP relative to original distance, not multiply current price
-                  newTakeProfit = trade.take_profit + (distanceToTp * 0.5);
+                  // FIXED: Extend TP only ONCE to prevent runaway
+                  if (!trade.rationale?.includes('TP_EXTENDED')) {
+                      newTakeProfit = trade.take_profit + (distanceToTp * 0.5);
+                      if (!newRationale.includes('TP_EXTENDED')) newRationale += ' | TP_EXTENDED';
+                  }
                   
                   if (!newRationale.includes('ATR_TRAIL')) {
                      newRationale += ' | ATR_TRAIL (Riding the trend)';
@@ -222,7 +226,9 @@ export async function GET(req: NextRequest) {
                   
                   if (!isPyramided && volSpike && trendAligned) {
                      newRationale += ' | PYRAMID_SCALE_IN';
-                     newStopLoss = Math.max(newStopLoss, trade.entry_price); // INSTANT BREAKEVEN
+                     const avgEntry = (trade.entry_price + currentPrice) / 2;
+                     trade.entry_price = avgEntry; // Update parent's entry to reflect actual Average Entry
+                     newStopLoss = Math.max(newStopLoss, avgEntry); // INSTANT BREAKEVEN at true average entry
                      
                      if (tradeMode === 'MICRO') {
                        try {
@@ -234,9 +240,10 @@ export async function GET(req: NextRequest) {
                            const newSLOrder = await exchange.createOrder(symbol, 'limit', 'sell', contracts * 2, slLimitPrice, { triggerPrice: newStopLoss, reduceOnly: true });
                            const openOrders = await exchange.fetchOpenOrders(symbol);
                            for (const o of openOrders) {
-                             if (o.id && o.id !== newSLOrder.id) await exchange.cancelOrder(o.id, symbol);
+                             if (o.id && o.id !== newSLOrder.id && o.type === 'stop') await exchange.cancelOrder(o.id, symbol);
                            }
                            console.log(`[Pyramid] Scaled into LONG ${symbol} x2 @ ${currentPrice}`);
+                           contracts = contracts * 2; // FIX: Update local size for final global TP/SL sync
                          } catch (slError: any) {
                            console.error(`[CRITICAL SHIELD] Failed SL, reverting Pyramid. Error: ${slError.message}`);
                            await exchange.createMarketOrder(symbol, 'sell', contracts);
@@ -247,16 +254,7 @@ export async function GET(req: NextRequest) {
                        }
                      }
                      
-                     newTradesToInsert.push({
-                       symbol: trade.symbol,
-                       position_type: 'BUY',
-                       entry_price: currentPrice,
-                       stop_loss: newStopLoss,
-                       take_profit: newTakeProfit,
-                       status: 'OPEN',
-                       pnl: 0,
-                       rationale: `PYRAMID child of trade ${trade.id} | ATR_TRAIL`,
-                     });
+                     pyramidedTradesCount++;
                   }
                 } else {
                   newStopLoss = trade.take_profit - (distanceToTp * 0.2);
@@ -289,8 +287,11 @@ export async function GET(req: NextRequest) {
                   // Aggressive Breakeven logic applies once Pyramided
                   const baselineSL = isPyramided ? Math.min(trade.entry_price, chandelierShort) : chandelierShort;
                   newStopLoss = Math.min(trade.stop_loss, baselineSL);
-                  // FIXED: Extend TP relative to original distance, not multiply current price
-                  newTakeProfit = trade.take_profit - (distanceToTp * 0.5);
+                  // FIXED: Extend TP only ONCE to prevent runaway
+                  if (!trade.rationale?.includes('TP_EXTENDED')) {
+                      newTakeProfit = trade.take_profit - (distanceToTp * 0.5);
+                      if (!newRationale.includes('TP_EXTENDED')) newRationale += ' | TP_EXTENDED';
+                  }
                   
                   if (!newRationale.includes('ATR_TRAIL')) {
                      newRationale += ' | ATR_TRAIL (Riding the trend)';
@@ -302,7 +303,9 @@ export async function GET(req: NextRequest) {
                   
                   if (!isPyramided && volSpike && trendAligned) {
                      newRationale += ' | PYRAMID_SCALE_IN';
-                     newStopLoss = Math.min(newStopLoss, trade.entry_price); // INSTANT BREAKEVEN
+                     const avgEntry = (trade.entry_price + currentPrice) / 2;
+                     trade.entry_price = avgEntry; // Update parent's entry to reflect actual Average Entry
+                     newStopLoss = Math.min(newStopLoss, avgEntry); // INSTANT BREAKEVEN at true average entry
                      
                      if (tradeMode === 'MICRO') {
                        try {
@@ -314,9 +317,10 @@ export async function GET(req: NextRequest) {
                            const newSLOrder = await exchange.createOrder(symbol, 'limit', 'buy', contracts * 2, slLimitPrice, { triggerPrice: newStopLoss, reduceOnly: true });
                            const openOrders = await exchange.fetchOpenOrders(symbol);
                            for (const o of openOrders) {
-                             if (o.id && o.id !== newSLOrder.id) await exchange.cancelOrder(o.id, symbol);
+                             if (o.id && o.id !== newSLOrder.id && o.type === 'stop') await exchange.cancelOrder(o.id, symbol);
                            }
                            console.log(`[Pyramid] Scaled into SHORT ${symbol} x2 @ ${currentPrice}`);
+                           contracts = contracts * 2; // FIX: Update local size for final global TP/SL sync
                          } catch (slError: any) {
                            console.error(`[CRITICAL SHIELD] Failed SL, reverting Pyramid. Error: ${slError.message}`);
                            await exchange.createMarketOrder(symbol, 'buy', contracts);
@@ -327,16 +331,7 @@ export async function GET(req: NextRequest) {
                        }
                      }
                      
-                     newTradesToInsert.push({
-                       symbol: trade.symbol,
-                       position_type: 'SELL',
-                       entry_price: currentPrice,
-                       stop_loss: newStopLoss,
-                       take_profit: newTakeProfit,
-                       status: 'OPEN',
-                       pnl: 0,
-                       rationale: `PYRAMID child of trade ${trade.id} | ATR_TRAIL`,
-                     });
+                     pyramidedTradesCount++;
                   }
                 } else {
                   newStopLoss = trade.take_profit + (distanceToTp * 0.2);
@@ -353,7 +348,8 @@ export async function GET(req: NextRequest) {
       }
 
       // 4. Update the DB & Exchange
-      if (newStatus !== trade.status || newStopLoss !== trade.stop_loss || newTakeProfit !== trade.take_profit || newRationale !== trade.rationale) {
+      // Include trade.entry_price check to ensure Pyramided trades persist their new Average Entry
+      if (newStatus !== trade.status || newStopLoss !== trade.stop_loss || newTakeProfit !== trade.take_profit || newRationale !== trade.rationale || trade.entry_price !== originalEntry) {
         
         // ❌ FIX: Live Exchange Trailing Stop & TP Execution
         if (tradeMode === 'MICRO' && newStatus === trade.status) {
@@ -392,6 +388,7 @@ export async function GET(req: NextRequest) {
             .from('paper_trades')
             .update({
               status: newStatus,
+              entry_price: trade.entry_price,
               stop_loss: newStopLoss,
               take_profit: newTakeProfit,
               rationale: newRationale,
@@ -405,24 +402,19 @@ export async function GET(req: NextRequest) {
 
     await Promise.all(updates);
     
-    if (newTradesToInsert.length > 0) {
-      const { error: insertError } = await supabase.from('paper_trades').insert(newTradesToInsert);
-      if (insertError) {
-        console.error("[Manage Trades] Failed to insert Pyramiding trades:", insertError);
-      } else {
-        const chatId = process.env.TELEGRAM_CHAT_ID;
-        if (chatId) {
-          const msg = `🔥 **هرم‌سازی نامتقارن (Asymmetric Scale-In)** 🔥\n\n` + 
-            `سیستم وارد فاز هرم‌سازی شد و پوزیشن جدیدی با استفاده از سود بازنشده (Unrealized PnL) باز کرد!\n` +
-            `تعداد پوزیشن‌های هرمیِ باز شده: ${newTradesToInsert.length}\n` +
-            `سیستم تمام ریسک اولیه را صفر کرد و در حالِ بلعیدنِ روند با سود خودش است! 🚀`;
-          await sendTelegramMessage(chatId, msg);
-        }
+    if (pyramidedTradesCount > 0) {
+      const chatId = process.env.TELEGRAM_CHAT_ID;
+      if (chatId) {
+        const msg = `🔥 **هرم‌سازی نامتقارن (Asymmetric Scale-In)** 🔥\n\n` + 
+          `سیستم وارد فاز هرم‌سازی شد و پوزیشن موجود را با استفاده از سود بازنشده (Unrealized PnL) افزایش داد!\n` +
+          `تعداد معاملات هرمیِ آپدیت شده: ${pyramidedTradesCount}\n` +
+          `سیستم تمام ریسک اولیه را صفر کرد و در حالِ بلعیدنِ روند با سود خودش است! 🚀`;
+        await sendTelegramMessage(chatId, msg);
       }
     }
 
     return NextResponse.json({ 
-      message: `Managed ${openTrades.length} trades. Updated ${updates.length}. Pyramided ${newTradesToInsert.length}.` 
+      message: `Managed ${openTrades.length} trades. Updated ${updates.length}. Pyramided ${pyramidedTradesCount}.` 
     });
   } catch (error: any) {
     console.error('[Manage Trades Error]:', error);

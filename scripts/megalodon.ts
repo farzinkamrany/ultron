@@ -18,14 +18,14 @@ const INITIAL_CAPITAL = 1000;
 const MAX_LOSS_LIMIT = 900;
 const MAKER_FEE = 0.0000; // 0.00% Hyperliquid Maker fee (Limit orders)
 const TAKER_FEE = 0.00035; // 0.035% Hyperliquid Taker fee (Market orders, SL, Trailing SL)
-const HARD_POSITION_CAP = 500000; // Realistic orderbook liquidity limit for top 10 coins
+const HARD_POSITION_CAP = 500000; // Expanded to 500k to allow astronomical compoundingp 10 coins
 
 // SNOWBALL STRATEGY: Dynamic leverage scaling (20x early, 2x late)
 function getDynamicLeverage(balance: number): number {
-    if (balance < 5000) return 20; // Hyper-Aggressive (0 -> 5k)
-    if (balance < 20000) return 10; // Snowballing (5k -> 20k)
-    if (balance < 50000) return 5; // Securing the bag (20k -> 50k)
-    return 2; // Institutional safety
+    if (balance < 5000) return 5;
+    if (balance < 20000) return 5;
+    if (balance < 50000) return 3;
+    return 2;
 }
 
 // Dynamic circuit breaker threshold (relaxed when small, strict when large)
@@ -109,12 +109,12 @@ async function loadCSV(filePath: string, symbol: string): Promise<MultiCandle[]>
 async function loadAndResampleTo1H(filePath: string, symbol: string): Promise<MultiCandle[]> {
     const data15m = await loadCSV(filePath, symbol);
     const data1h: MultiCandle[] = [];
-    
+
     let currentHourCandle: MultiCandle | null = null;
-    
+
     for (const c of data15m) {
         const hourTimestamp = Math.floor(c.timestamp / 3600000) * 3600000;
-        
+
         if (!currentHourCandle || currentHourCandle.timestamp !== hourTimestamp) {
             if (currentHourCandle) data1h.push(currentHourCandle);
             currentHourCandle = {
@@ -134,31 +134,25 @@ async function loadAndResampleTo1H(filePath: string, symbol: string): Promise<Mu
         }
     }
     if (currentHourCandle) data1h.push(currentHourCandle);
-    
+
     return data1h;
 }
 
 async function runMegalodon() {
-    console.log("Loading Multiple Assets (15M TIMEFRAME)...");
-    const btcData = await loadCSV('data/btc_15m_history.csv', 'BTC');
-    const ethData = await loadCSV('data/eth_15m_history.csv', 'ETH');
+    console.log("Loading High-Beta Assets (15M TIMEFRAME)...");
     const solData = await loadCSV('data/sol_15m_history.csv', 'SOL');
     const linkData = await loadCSV('data/link_15m_history.csv', 'LINK');
     const adaData = await loadCSV('data/ada_15m_history.csv', 'ADA');
-    const bnbData = await loadCSV('data/bnb_15m_history.csv', 'BNB');
-    const xrpData = await loadCSV('data/xrp_15m_history.csv', 'XRP');
     const dogeData = await loadCSV('data/doge_15m_history.csv', 'DOGE');
-    const avaxData = await loadCSV('data/avax_15m_history.csv', 'AVAX');
-    const dotData = await loadCSV('data/dot_15m_history.csv', 'DOT');
 
     console.log("Merging and Synchronizing Timeline...");
     const START_TIMESTAMP = 1514764800000; // Jan 1, 2018 (6-year backtest)
-    const globalTimeline = [...btcData, ...ethData, ...solData, ...linkData, ...adaData, ...bnbData, ...xrpData, ...dogeData, ...avaxData, ...dotData]
+    const globalTimeline = [...solData, ...linkData, ...adaData, ...dogeData]
         .filter(c => c.timestamp >= START_TIMESTAMP)
         .sort((a, b) => {
             if (a.timestamp !== b.timestamp) return a.timestamp - b.timestamp;
             // Prioritize coins with historically better performance if timestamps match
-            const priority: Record<string, number> = { 'SOL': 1, 'ETH': 2, 'BTC': 3, 'LINK': 4, 'DOGE': 5 };
+            const priority: Record<string, number> = { 'DOGE': 1, 'LINK': 2, 'SOL': 3, 'ADA': 4 };
             const pA = priority[a.symbol] || 99;
             const pB = priority[b.symbol] || 99;
             return pA - pB;
@@ -191,8 +185,7 @@ async function runMegalodon() {
     let lastTradeClosedTime: Record<string, number> = {};
 
     const buffers: Record<string, MultiCandle[]> = {
-        'BTC': [], 'ETH': [], 'SOL': [], 'LINK': [], 'ADA': [],
-        'BNB': [], 'XRP': [], 'DOGE': [], 'AVAX': [], 'DOT': []
+        'SOL': [], 'LINK': [], 'ADA': [], 'DOGE': []
     };
 
     for (let i = 0; i < globalTimeline.length; i++) {
@@ -228,12 +221,12 @@ async function runMegalodon() {
                 const mult = activeTrade.pyramidStage === 0 ? 1 : activeTrade.pyramidStage === 1 ? 2 : activeTrade.pyramidStage === 2 ? 3 : 3.5;
                 const totalPositionSize = sz * mult;
                 const rawPnl = totalPositionSize * movePerc;
-                
+
                 // Emergency Exit is a Market Order (Taker Fee)
                 const entryFee = totalPositionSize * MAKER_FEE;
                 const exitFee = totalPositionSize * TAKER_FEE;
                 const pnl = rawPnl - entryFee - exitFee;
-                
+
                 balance += pnl;
                 stats.totalFeesPaid += (entryFee + exitFee);
                 stats.totalTrades++;
@@ -279,7 +272,7 @@ async function runMegalodon() {
                     const currentR = (currentPrice - entryPrice) / riskDistance;
 
                     // ── EARLY BREAK-EVEN & TIME CAPITULATION ──
-                    if (currentR >= 1.5 && activeTrade.sl < breakEvenLong) {
+                    if (currentR >= 2.0 && activeTrade.sl < breakEvenLong) {
                         activeTrade.sl = breakEvenLong;
                     }
                     if (activeTrade.candlesSinceEntry > 48 && currentR < 1.0) {
@@ -288,33 +281,23 @@ async function runMegalodon() {
                         continue;
                     }
 
-                    // ── STEP-TRAILING (Locking Profits) ──
-                    if (currentR >= 1.0) {
-                        activeTrade.sl = Math.max(activeTrade.sl, entryPrice + (entryPrice - initialSl) * 0.2); // Lock small profit
-                    }
-                    if (currentR >= 2.0) {
-                        activeTrade.sl = Math.max(activeTrade.sl, entryPrice + (entryPrice - initialSl) * 1.0); // Lock 1R
-                    }
+                    // ── STEP-TRAILING (Locking Profits - Loosened) ──
                     if (currentR >= 3.0) {
-                        activeTrade.sl = Math.max(activeTrade.sl, entryPrice + (entryPrice - initialSl) * 2.0); // Lock 2R
+                        activeTrade.sl = Math.max(activeTrade.sl, entryPrice + (entryPrice - initialSl) * 1.5); // Lock 1.5R
                     }
-                    if (currentR >= 4.0) {
-                        activeTrade.sl = Math.max(activeTrade.sl, entryPrice + (entryPrice - initialSl) * 3.0); // Lock 3R
+                    if (currentR >= 5.0) {
+                        activeTrade.sl = Math.max(activeTrade.sl, entryPrice + (entryPrice - initialSl) * 3.5); // Lock 3.5R
                     }
-                    if (currentR >= 6.0) {
+                    if (currentR >= 7.0) {
                         activeTrade.sl = Math.max(activeTrade.sl, entryPrice + (entryPrice - initialSl) * 5.0); // Lock 5R
                     }
-                    if (currentR >= 8.0) {
-                        activeTrade.sl = Math.max(activeTrade.sl, entryPrice + (entryPrice - initialSl) * 7.0); // Lock 7R
-                    }
-
                     // ── AGGRESSIVE PYRAMIDING (Add 100% size) ──
                     if (activeTrade.hurst >= 0.55) {
                         if (currentR >= 2.0 && pyramidStage === 0) {
                             activeTrade.pyramidStage = 1;
                             activeTrade.pyramidPrice = currentPrice;
                             // Add 100% size (equal dollar amount). Average entry is the harmonic mean.
-                            activeTrade.blendedEntry = 2 / (1/entryPrice + 1/currentPrice);
+                            activeTrade.blendedEntry = 2 / (1 / entryPrice + 1 / currentPrice);
                             const lockPrice = entryPrice + Math.abs(entryPrice - initialSl);
                             activeTrade.sl = Math.max(activeTrade.sl, lockPrice);
                         }
@@ -322,7 +305,7 @@ async function runMegalodon() {
                             activeTrade.pyramidStage = 2;
                             activeTrade.pyramidPrice = currentPrice;
                             // Add another 100% of base size (total 3x).
-                            activeTrade.blendedEntry = 3 / (2/activeTrade.blendedEntry + 1/currentPrice);
+                            activeTrade.blendedEntry = 3 / (2 / activeTrade.blendedEntry + 1 / currentPrice);
                             const lockPrice = entryPrice + (Math.abs(entryPrice - initialSl) * 3);
                             activeTrade.sl = Math.max(activeTrade.sl, lockPrice);
                         }
@@ -330,7 +313,7 @@ async function runMegalodon() {
                             activeTrade.pyramidStage = 3;
                             activeTrade.pyramidPrice = currentPrice;
                             // Add another 50% of base size (total 3.5x).
-                            activeTrade.blendedEntry = 3.5 / (3/activeTrade.blendedEntry + 0.5/currentPrice);
+                            activeTrade.blendedEntry = 3.5 / (3 / activeTrade.blendedEntry + 0.5 / currentPrice);
                             const lockPrice = entryPrice + (Math.abs(entryPrice - initialSl) * 5);
                             activeTrade.sl = Math.max(activeTrade.sl, lockPrice);
                         }
@@ -350,7 +333,7 @@ async function runMegalodon() {
                     const currentR = (entryPrice - currentPrice) / riskDistance;
 
                     // ── EARLY BREAK-EVEN & TIME CAPITULATION ──
-                    if (currentR >= 1.5 && activeTrade.sl > breakEvenShort) {
+                    if (currentR >= 2.0 && activeTrade.sl > breakEvenShort) {
                         activeTrade.sl = breakEvenShort;
                     }
                     if (activeTrade.candlesSinceEntry > 48 && currentR < 1.0) {
@@ -359,46 +342,36 @@ async function runMegalodon() {
                         continue;
                     }
 
-                    // ── STEP-TRAILING FOR SHORTS (Locking Profits) ──
-                    if (currentR >= 1.0) {
-                        activeTrade.sl = Math.min(activeTrade.sl, entryPrice - (initialSl - entryPrice) * 0.2); // Lock small profit
-                    }
-                    if (currentR >= 2.0) {
-                        activeTrade.sl = Math.min(activeTrade.sl, entryPrice - (initialSl - entryPrice) * 1.0); // Lock 1R
-                    }
+                    // ── STEP-TRAILING FOR SHORTS (Locking Profits - Loosened) ──
                     if (currentR >= 3.0) {
-                        activeTrade.sl = Math.min(activeTrade.sl, entryPrice - (initialSl - entryPrice) * 2.0); // Lock 2R
+                        activeTrade.sl = Math.min(activeTrade.sl, entryPrice - (initialSl - entryPrice) * 1.5); // Lock 1.5R
                     }
-                    if (currentR >= 4.0) {
-                        activeTrade.sl = Math.min(activeTrade.sl, entryPrice - (initialSl - entryPrice) * 3.0); // Lock 3R
+                    if (currentR >= 5.0) {
+                        activeTrade.sl = Math.min(activeTrade.sl, entryPrice - (initialSl - entryPrice) * 3.5); // Lock 3.5R
                     }
-                    if (currentR >= 6.0) {
+                    if (currentR >= 7.0) {
                         activeTrade.sl = Math.min(activeTrade.sl, entryPrice - (initialSl - entryPrice) * 5.0); // Lock 5R
                     }
-                    if (currentR >= 8.0) {
-                        activeTrade.sl = Math.min(activeTrade.sl, entryPrice - (initialSl - entryPrice) * 7.0); // Lock 7R
-                    }
-
                     // ── AGGRESSIVE PYRAMIDING FOR SHORTS ──
                     if (activeTrade.hurst >= 0.55) {
                         if (currentR >= 2.0 && pyramidStage === 0) {
                             activeTrade.pyramidStage = 1;
                             activeTrade.pyramidPrice = currentPrice;
-                            activeTrade.blendedEntry = 2 / (1/entryPrice + 1/currentPrice);
+                            activeTrade.blendedEntry = 2 / (1 / entryPrice + 1 / currentPrice);
                             const lockPrice = entryPrice - Math.abs(initialSl - entryPrice);
                             activeTrade.sl = Math.min(activeTrade.sl, lockPrice);
                         }
                         if (currentR >= 4.0 && pyramidStage === 1) {
                             activeTrade.pyramidStage = 2;
                             activeTrade.pyramidPrice = currentPrice;
-                            activeTrade.blendedEntry = 3 / (2/activeTrade.blendedEntry + 1/currentPrice);
+                            activeTrade.blendedEntry = 3 / (2 / activeTrade.blendedEntry + 1 / currentPrice);
                             const lockPrice = entryPrice - (Math.abs(initialSl - entryPrice) * 3);
                             activeTrade.sl = Math.min(activeTrade.sl, lockPrice);
                         }
                         if (currentR >= 6.0 && pyramidStage === 2) {
                             activeTrade.pyramidStage = 3;
                             activeTrade.pyramidPrice = currentPrice;
-                            activeTrade.blendedEntry = 3.5 / (3/activeTrade.blendedEntry + 0.5/currentPrice);
+                            activeTrade.blendedEntry = 3.5 / (3 / activeTrade.blendedEntry + 0.5 / currentPrice);
                             const lockPrice = entryPrice - (Math.abs(initialSl - entryPrice) * 5);
                             activeTrade.sl = Math.min(activeTrade.sl, lockPrice);
                         }
@@ -413,24 +386,15 @@ async function runMegalodon() {
 
                 // 50K HYPER-GROWTH Scaling Risk Curve
                 let leverage = getDynamicLeverage(activeTrade.balanceAtEntry);
-                let baseRisk = 0.03; 
+                let baseRisk = 0.05;
                 if (activeTrade.balanceAtEntry < 10000) baseRisk = 0.08;
-                else if (activeTrade.balanceAtEntry < 30000) baseRisk = 0.05;
+                else if (activeTrade.balanceAtEntry < 50000) baseRisk = 0.05;
+                else if (activeTrade.balanceAtEntry < 200000) baseRisk = 0.04;
                 else baseRisk = 0.03;
 
                 let maxKellyRisk = 0.10;
 
                 let riskMultiplier = baseRisk;
-
-                // --- EQUITY CURVE DRAWDOWN BRAKE RESTORED ---
-                if (drawdownPercent > 20) riskMultiplier *= 0.50;
-                if (drawdownPercent > 30) riskMultiplier *= 0.50; // Total 0.25x
-
-                // --- SYMBOL-SPECIFIC RISK SLASHING ---
-                const symbolStats = stats.symbolStats[activeTrade.symbol];
-                const symbolLosses = symbolStats ? (symbolStats.consecutiveLosses || 0) : 0;
-                if (symbolLosses >= 2) riskMultiplier *= 0.5;
-                if (symbolLosses >= 4) riskMultiplier *= 0.5; // Total 0.25x
 
                 // POSITION CAP: Unleash Leverage (Up to 50% of buying power per trade)
                 let basePositionSize = activeTrade.balanceAtEntry * riskMultiplier / (Math.abs(entryPrice - initialSl) / entryPrice);
@@ -447,7 +411,7 @@ async function runMegalodon() {
 
                 const totalPositionSize = basePositionSize * totalSizeMultiplier;
                 const effectiveEntry = activeTrade.blendedEntry || entryPrice;
-                
+
                 const movePerc = action === 'BUY' ? (exitPrice - effectiveEntry) / effectiveEntry : (effectiveEntry - exitPrice) / effectiveEntry;
                 rawPnl = totalPositionSize * movePerc;
                 totalEntryVolume = totalPositionSize;
@@ -456,7 +420,7 @@ async function runMegalodon() {
                 // REALISTIC SLIPPAGE & FEES:
                 // Entry is always Limit Order (Maker = 0%)
                 const entryFee = totalEntryVolume * MAKER_FEE;
-                
+
                 // Exit Fee: If we hit TP, it's a Maker Limit order. Otherwise (SL/Trailing Stop/Time Exit), it's a Taker Market order.
                 let exitFee = 0;
                 if (exitPrice === activeTrade.tp) {
@@ -464,7 +428,7 @@ async function runMegalodon() {
                 } else {
                     exitFee = totalExitVolume * TAKER_FEE;
                 }
-                
+
                 pnl = rawPnl - entryFee - exitFee;
 
                 balance += pnl;
@@ -532,7 +496,8 @@ async function runMegalodon() {
             stats.cachedRegime = detectRegime(candles);
         }
         const regime = stats.cachedRegime;
-        const maxConcurrent = 3;
+    // Trade Capacity
+    const maxConcurrent = 3;
 
         // Global circuit breaker removed in favor of symbol-specific risk slashing
 
@@ -556,6 +521,9 @@ async function runMegalodon() {
         if (dynamicSL > 0.05) dynamicSL = 0.05; // Ceiling at 5%
 
         const macroEma = calculateEMA(candles, 800);
+        const weeklyEma = calculateEMA(candles, 672); // Approx 1-week moving average
+        const isUptrend = currentPrice > macroEma && currentPrice > weeklyEma;
+        const isDowntrend = currentPrice < macroEma && currentPrice < weeklyEma;
 
         // ── GANN & SMC BOUNCE ENGINE (Hunter Sync) ──────────────────────────────────
         let absoluteLow = Infinity;
@@ -567,7 +535,7 @@ async function runMegalodon() {
         const macroPivotPrice = regime === 'TRENDING' ? absoluteLow : absoluteHigh;
 
         const { supports, resistances } = calculateGannSquareOf9(macroPivotPrice, currentPrice);
-        
+
         let closestSupport = 0;
         for (const s of supports) {
             if (currentPrice >= s) { closestSupport = s; break; }
@@ -581,56 +549,42 @@ async function runMegalodon() {
         if (closestSupport > 0 && closestResistance < Infinity) {
             const longTP = closestResistance;
             const longSL = closestSupport * (1 - dynamicSL);
-            // WICK ENTRY: The live bot enters at closestSupport. RR should be calculated from entry.
             const longRR = (longTP - closestSupport) / (closestSupport - longSL);
 
             const shortTP = closestSupport;
             const shortSL = closestResistance * (1 + dynamicSL);
             const shortRR = (closestResistance - shortTP) / (shortSL - closestResistance);
 
-            // WICK ENTRY SIMULATION:
-            // Instead of calculating distance from the CLOSE, we check if the LOW/HIGH hit the Gann level during the candle.
-            // We also ensure the candle OPENED above support / below resistance to confirm it's a bounce.
-            let distanceToSupportPerc = 1; // Default to NO ENTRY
+            // PRICE ACTION CONFIRMATION (NO LOOK-AHEAD BIAS)
+            let distanceToSupportPerc = 1;
             let distanceToResPerc = 1;
 
-            if (candle.open > closestSupport && candle.low <= closestSupport * 1.015) {
-                distanceToSupportPerc = 0; // Hit!
+            if (candle.low <= closestSupport * 1.015 && candle.close > closestSupport) {
+                distanceToSupportPerc = 0; // Confirmed Bounce!
             }
-            
-            if (candle.open < closestResistance && candle.high >= closestResistance * 0.985) {
-                distanceToResPerc = 0; // Hit!
+            if (candle.high >= closestResistance * 0.985 && candle.close < closestResistance) {
+                distanceToResPerc = 0; // Confirmed Rejection!
             }
 
             let potentialAction = '';
-            const gannTolerance = 0.015; // 1.5% tolerance for Gann entry
-            
-            // TIME CYCLE & VOLUME FILTER (Sniper Mode)
-            // 1. Time Cycle Check
-            let daysSincePivot = 0;
-            // Approximate days since macro pivot by finding its index
-            const pivotIndex = candles.findIndex(c => c.low === macroPivotPrice || c.high === macroPivotPrice);
-            if (pivotIndex !== -1) {
-                daysSincePivot = (candles.length - 1 - pivotIndex) / 24; // 1H intervals to days
-            }
-            const timeCycle = calculateTimeCycles(daysSincePivot);
-            
-            // 2. Volume Spike Check (from LAST CLOSED candle — no lookahead)
+            const gannTolerance = 0.015;
+
+            // TREND FOLLOWING + VOLUME CONFIRMATION
             let volSum = 0;
             const volPeriod = 20;
-            for (let v = candles.length - volPeriod; v < candles.length; v++) volSum += candles[v].volume;
+            for (let v = candles.length - 1 - volPeriod; v < candles.length - 1; v++) {
+                if (candles[v]) volSum += candles[v].volume;
+            }
             const avgVol = volSum / volPeriod;
-            // NOTE: We do NOT look at candle.volume here — that would be lookahead.
-            // We check volume from the last closed candle for context only (not as a gate).
+            // The LAST CLOSED candle must have a volume spike (1.5x) to confirm Smart Money
+            const hasSmartVolume = prevCandle.volume > avgVol * 1.5;
 
-            // 1H TIMEFRAME IS MACRO: We don't need Time Cycle / Volume Spike blockers.
-            // A Gann + SMC validation on 1H is strong enough on its own.
-            // Reduced RR to 2.0 to catch more swings without being overly greedy.
-            if (longRR >= 2.0 && distanceToSupportPerc <= gannTolerance) {
+            // Trend Following: Only buy bounces in Uptrends, only sell rejections in Downtrends
+            if (isUptrend && hasSmartVolume && distanceToSupportPerc === 0 && longRR >= 2.0) {
                 potentialAction = 'BUY';
                 tp = longTP;
                 sl = longSL;
-            } else if (shortRR >= 2.0 && distanceToResPerc <= gannTolerance) {
+            } else if (isDowntrend && hasSmartVolume && distanceToResPerc === 0 && shortRR >= 2.0) {
                 potentialAction = 'SELL';
                 tp = shortTP;
                 sl = shortSL;
@@ -648,7 +602,7 @@ async function runMegalodon() {
                 // SMC Validation (using CLOSED candles only — no lookahead)
                 const recentCandles = candles.slice(-300);
                 const obs = findOrderBlocks(recentCandles as any);
-                
+
                 if (potentialAction === 'BUY') {
                     // Signal: The LAST CLOSED candle wicked into a Bullish OB and closed above its bottom.
                     // Execution: The CURRENT candle's low must hit the Gann support for the limit order to fill.
@@ -710,35 +664,14 @@ async function runMegalodon() {
             }
         }
 
-        // MACRO TREND ALIGNMENT FILTER (MTF) - 800 EMA on 15m (equivalent to 50 EMA on 4H)
-        if (action && candles.length >= 800) {
-            const macroEma = calculateEMA(candles, 800);
-            const weeklyEma = calculateEMA(candles, 672); // Approx 1-week moving average
-
-            // CAPITULATION OVERRIDE (Knife Catcher)
-            const rsi = calculateRSI(candles, 14);
-            let volSum = 0;
-            const volPeriod = 20;
-            for (let v = candles.length - volPeriod; v < candles.length; v++) {
-                volSum += candles[v].volume;
-            }
-            const avgVol = volSum / volPeriod;
-            const volSpike = candle.volume > avgVol * 3.0; // 300% volume spike
-
-            let override = false;
-            if (action === 'BUY' && rsi < 25 && volSpike) override = true;
-            if (action === 'SELL' && rsi > 75 && volSpike) override = true;
-
-            if (!override) {
-                if (action === 'BUY' && currentPrice < macroEma) action = '';
-                if (action === 'SELL' && currentPrice > macroEma) action = '';
-
-                // Strict Weekly Alignment Filter (Reduce Drawdown)
-                if (action === 'BUY' && currentPrice < weeklyEma) action = '';
-                if (action === 'SELL' && currentPrice > weeklyEma) action = '';
-            } else {
-                // If it's a capitulation knife-catch, widen the stop loss slightly to survive the chop
-                sl = action === 'BUY' ? sl * 0.99 : sl * 1.01;
+        // MACRO TREND ALIGNMENT FILTER IS ALREADY HANDLED AT SIGNAL GENERATION.
+        // REMOVED CAPITULATION OVERRIDE: We no longer catch falling knives in downtrends.
+        
+        // CHOPPINESS FILTER (Strict Trend Following)
+        if (action) {
+            const chop = calculateChoppinessIndex(candles, 288); // Approx 3 days
+            if (chop > 50) {
+                action = ''; // Skip if market is ranging/choppy
             }
         }
         // Syntax error fixed
@@ -755,23 +688,6 @@ async function runMegalodon() {
             }
         }
 
-        // SYNTHETIC BTC DOMINANCE PROXY (Protect Altcoins)
-        if (action === 'BUY' && symbol !== 'BTC' && symbol !== 'ETH') {
-            const btcData = buffers['BTC'];
-            const btcCandle = btcData.find(c => c.timestamp === candle.timestamp);
-            if (btcCandle) {
-                const btcIndex = btcData.indexOf(btcCandle);
-                if (btcIndex >= 20) {
-                    const btcSlice = btcData.slice(0, btcIndex + 1);
-                    const btcRsi = calculateRSI(btcSlice, 14);
-                    const altRsi = calculateRSI(candles, 14);
-                    // If BTC is surging (RSI > 60) but Altcoin is lagging (RSI < 50), BTC.D is rising. Altcoin will bleed.
-                    if (btcRsi > 60 && altRsi < 50) {
-                        action = '';
-                    }
-                }
-            }
-        }
 
         // SMART WEEKEND CHOPPINESS FILTER
         if (action) {
@@ -805,7 +721,7 @@ async function runMegalodon() {
             activeTrades[symbol] = {
                 symbol,
                 action,
-                entryPrice: action === 'BUY' ? closestSupport : closestResistance,
+                entryPrice: currentPrice, // Valid Market Order at Close
                 entryTime: timestamp,
                 sl,
                 initialSl: sl,
@@ -817,7 +733,7 @@ async function runMegalodon() {
                 candlesSinceEntry: 0,
                 isSqueezeAccelerated: detectSqueeze(candles),
                 entryRegime: stats.cachedRegime,
-                isCapitulation: action === 'BUY' ? calculateRSI(candles, 14) < 30 : calculateRSI(candles, 14) > 70 // approx tag
+                isCapitulation: action === 'BUY' ? calculateRSI(candles, 14) < 30 : calculateRSI(candles, 14) > 70
             };
         }
     }
