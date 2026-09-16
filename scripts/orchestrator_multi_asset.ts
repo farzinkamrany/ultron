@@ -16,9 +16,8 @@ const TAKER_FEE = 0.00035;
 const MAKER_FEE = -0.0001;
 const SLIPPAGE = 0.001;
 const MAX_CONCURRENT_MARKETS = 10;
-const LEVERAGE = 3.0;
 const MAX_CAPITAL_PER_SLOT = 500000;
-const ALLOCATION_PER_SLOT = 0.20; // 20% per slot — proven optimal
+// We now use dynamic weights based on regime. Max 10% total allocation per symbol to ensure max 100% portfolio usage across 10 coins. // 20% per slot — proven optimal
 
 const SYMBOLS = ['BTC', 'ETH', 'SOL', 'LINK', 'ADA', 'DOGE', 'BNB', 'XRP', 'DOT', 'AVAX'];
 const START_TIMESTAMP = 1514764800000; // 2018
@@ -52,19 +51,21 @@ function calculateATR(candles: MultiCandle[], period: number = 14): number {
     return trSum / period;
 }
 
-function calculateHighestHigh(candles: MultiCandle[], period: number): number {
+function calculateHighestHigh(candles: MultiCandle[], period: number, offset: number = 0): number {
     let highest = -Infinity;
-    const start = Math.max(0, candles.length - period);
-    for (let i = start; i < candles.length; i++) {
+    const start = Math.max(0, candles.length - period - offset);
+    const end = candles.length - offset;
+    for (let i = start; i < end; i++) {
         if (candles[i].high > highest) highest = candles[i].high;
     }
     return highest;
 }
 
-function calculateLowestLow(candles: MultiCandle[], period: number): number {
+function calculateLowestLow(candles: MultiCandle[], period: number, offset: number = 0): number {
     let lowest = Infinity;
-    const start = Math.max(0, candles.length - period);
-    for (let i = start; i < candles.length; i++) {
+    const start = Math.max(0, candles.length - period - offset);
+    const end = candles.length - offset;
+    for (let i = start; i < end; i++) {
         if (candles[i].low < lowest) lowest = candles[i].low;
     }
     return lowest;
@@ -149,6 +150,9 @@ class SymbolState {
     // Leviathan State
     public leviathanTrade: any = null;
 
+    // Megalodon State
+    public megalodonTrade: any = null;
+
     public symbol: string;
     constructor(symbol: string) { this.symbol = symbol; }
 }
@@ -177,17 +181,21 @@ async function runMultiAssetOrchestrator() {
 
     let globalBalance = INITIAL_CAPITAL;
     let peakBalance = globalBalance;
+    let peakRealizedBalance = INITIAL_CAPITAL; // for true realized drawdown
 
     let stats = {
         behemothProfit: 0,
         leviathanProfit: 0,
+        megalodonProfit: 0,
         leviathanTrades: 0,
+        megalodonTrades: 0,
         leviathanWins: 0,
         leviathanPartialTPs: 0,
         switchesToBehemoth: 0,
         switchesToLeviathan: 0,
         maxDrawdown: 0,
-        velocityBlocks: 0, // grids blocked by fast-drop filter
+        maxRealizedDrawdown: 0,
+        velocityBlocks: 0,
     };
 
     const states: Record<string, SymbolState> = {};
@@ -209,7 +217,7 @@ async function runMultiAssetOrchestrator() {
             state.current4HCandle = { ...candle, timestamp: periodTimestamp };
         } else if (state.current4HCandle.timestamp !== periodTimestamp) {
             state.buffer4H.push({...state.current4HCandle});
-            if (state.buffer4H.length > 300) state.buffer4H.shift();
+            if (state.buffer4H.length > 1000) state.buffer4H.shift(); // 1000 candles required for EMA800
             state.current4HCandle = { ...candle, timestamp: periodTimestamp };
             candleClosed4H = true;
         } else {
@@ -221,13 +229,11 @@ async function runMultiAssetOrchestrator() {
 
         let activeMarkets = 0;
         for (const sym in states) {
-            if (states[sym].gridActive || states[sym].leviathanTrade) activeMarkets++;
+            if (states[sym].gridActive || states[sym].leviathanTrade || states[sym].megalodonTrade) activeMarkets++;
         }
 
-        const capitalPerSlot = Math.min(globalBalance * ALLOCATION_PER_SLOT, MAX_CAPITAL_PER_SLOT);
-
         // ============================================================
-        // 2. REGIME DETECTION (ADX with hysteresis — proven working)
+        // 2. REGIME DETECTION (ADX with hysteresis)
         // ============================================================
         if (candleClosed4H && state.buffer4H.length > 50) {
             const adx4H = calculateADX(state.buffer4H, 14);
@@ -248,6 +254,16 @@ async function runMultiAssetOrchestrator() {
             }
         }
 
+        // 🧠 DYNAMIC CAPITAL ALLOCATION (Orchestrator v4 Aggressive)
+        // Total allocation per symbol is strictly 10% to prevent exceeding 100% global balance.
+        const behemothWeight = state.currentRegime === 'RANGE' ? 0.08 : 0.01;
+        const leviathanWeight = state.currentRegime === 'TREND' ? 0.06 : 0.02;
+        const megalodonWeight = state.currentRegime === 'TREND' ? 0.03 : 0.00;
+
+        const behemothCapital = Math.min(globalBalance * behemothWeight, MAX_CAPITAL_PER_SLOT);
+        const leviathanCapital = Math.min(globalBalance * leviathanWeight, MAX_CAPITAL_PER_SLOT);
+        const megalodonCapital = Math.min(globalBalance * megalodonWeight, MAX_CAPITAL_PER_SLOT);
+
         // ============================================================
         // 3. BEHEMOTH — ATR-Adaptive Grid + Velocity Shock Filter
         // ============================================================
@@ -258,32 +274,30 @@ async function runMultiAssetOrchestrator() {
             : 0;
         const fallingKnife = priceVelocity < -0.04;
 
-        if (state.currentRegime === 'RANGE' && !state.leviathanTrade) {
-            if (!state.gridActive && activeMarkets < MAX_CONCURRENT_MARKETS
-                && state.buffer4H.length > 20 && !fallingKnife) {
+        if (!state.gridActive && state.buffer4H.length > 20 && !fallingKnife) {
 
-                state.grid = [];
-                state.positionCoins = 0;
-                state.avgEntryPrice = 0;
+            state.grid = [];
+            state.positionCoins = 0;
+            state.avgEntryPrice = 0;
 
-                // ATR-Adaptive Range: 2.5× ATR, clamped 4%–12%
-                const atr4H = calculateATR(state.buffer4H, 14);
-                const atrPct = atr4H / candle.close;
-                const dynamicRange = Math.min(Math.max(atrPct * 2.5, 0.04), 0.12);
+            // ATR-Adaptive Range: 2.5× ATR, clamped 4%–12%
+            const atr4H = calculateATR(state.buffer4H, 14);
+            const atrPct = atr4H / candle.close;
+            const dynamicRange = Math.min(Math.max(atrPct * 2.5, 0.04), 0.12);
 
-                const upperBound = candle.close * (1 + dynamicRange);
-                const lowerBound = candle.close * (1 - dynamicRange);
-                state.gridStep = (upperBound - lowerBound) / state.GRID_LEVELS;
-                state.orderSizeUSD = (capitalPerSlot * LEVERAGE) / (state.GRID_LEVELS / 2);
+            const upperBound = candle.close * (1 + dynamicRange);
+            const lowerBound = candle.close * (1 - dynamicRange);
+            state.gridStep = (upperBound - lowerBound) / state.GRID_LEVELS;
+            state.orderSizeUSD = behemothCapital / (state.GRID_LEVELS / 2); // Spot mode, no leverage multiplier
 
-                for (let j = 0; j <= state.GRID_LEVELS; j++) {
-                    const p = lowerBound + (j * state.gridStep);
-                    if (p < candle.close) state.grid.push({ price: p, type: 'BUY', active: true });
-                    else state.grid.push({ price: p, type: 'SELL', active: true });
-                }
-                state.gridActive = true;
+            for (let j = 0; j <= state.GRID_LEVELS; j++) {
+                const p = lowerBound + (j * state.gridStep);
+                if (p < candle.close) state.grid.push({ price: p, type: 'BUY', active: true });
+                else state.grid.push({ price: p, type: 'SELL', active: true });
+            }
+            state.gridActive = true;
 
-            } else if (state.gridActive) {
+        } else if (state.gridActive) {
                 // Count velocity blocks separately when grid is already open (no effect, just monitoring)
                 if (fallingKnife) stats.velocityBlocks++;
 
@@ -332,33 +346,18 @@ async function runMultiAssetOrchestrator() {
                     state.realizedGridPnl = 0;
                 }
             }
-        } else {
-            if (state.gridActive) {
-                if (state.positionCoins !== 0) {
-                    const exitValue = state.positionCoins * candle.close;
-                    state.realizedGridPnl -= exitValue * TAKER_FEE;
-                    state.positionCoins = 0;
-                    state.avgEntryPrice = 0;
-                }
-                state.gridActive = false;
-                globalBalance += state.realizedGridPnl;
-                stats.behemothProfit += state.realizedGridPnl;
-                state.realizedGridPnl = 0;
-            }
-        }
 
         // ============================================================
-        // 4. LEVIATHAN — RSI + EMA Cross + Partial TP (BTC only)
+        // 4. LEVIATHAN — RSI + EMA Cross + Partial TP (ALL COINS)
         // ============================================================
-        if (state.currentRegime === 'TREND' && state.buffer4H.length > 200
-            && !state.gridActive && candle.symbol === 'BTC') {
+        if (state.buffer4H.length > 200) {
 
             const ema50  = calculateEMA(state.buffer4H, 50);
             const ema200 = calculateEMA(state.buffer4H, 200);
             const atr    = calculateATR(state.buffer4H, 14);
             const rsi    = calculateRSI(state.buffer4H, 14);
-            const highest20 = calculateHighestHigh(state.buffer4H.slice(0, -1), 20);
-            const lowest20  = calculateLowestLow(state.buffer4H.slice(0, -1), 20);
+            const highest20 = calculateHighestHigh(state.buffer4H, 20, 1);
+            const lowest20  = calculateLowestLow(state.buffer4H, 20, 1);
 
             if (state.leviathanTrade) {
                 const trade = state.leviathanTrade;
@@ -389,7 +388,7 @@ async function runMultiAssetOrchestrator() {
                 }
 
                 if (trade.action === 'BUY') {
-                    const trailStop = calculateLowestLow(state.buffer4H.slice(0, -1), 10) - atr * 1.5;
+                    const trailStop = calculateLowestLow(state.buffer4H, 10, 1) - atr * 1.5;
                     trade.sl = Math.max(trade.sl, trailStop);
                     if (candle.low <= trade.sl) {
                         const exitPrice = Math.min(trade.sl, candle.open) * (1 - SLIPPAGE);
@@ -401,7 +400,7 @@ async function runMultiAssetOrchestrator() {
                         state.leviathanTrade = null;
                     }
                 } else {
-                    const trailStop = calculateHighestHigh(state.buffer4H.slice(0, -1), 10) + atr * 1.5;
+                    const trailStop = calculateHighestHigh(state.buffer4H, 10, 1) + atr * 1.5;
                     trade.sl = Math.min(trade.sl, trailStop);
                     if (candle.high >= trade.sl) {
                         const exitPrice = Math.max(trade.sl, candle.open) * (1 + SLIPPAGE);
@@ -414,29 +413,95 @@ async function runMultiAssetOrchestrator() {
                     }
                 }
             }
-            else if (candleClosed4H && activeMarkets < MAX_CONCURRENT_MARKETS) {
+            else if (candleClosed4H) {
                 // Entry: EMA50/200 cross + RSI confirmation + breakout
                 const bullSignal = ema50 > ema200 && rsi > 45 && rsi < 72 && candle.close > highest20;
                 const bearSignal = ema50 < ema200 && rsi < 55 && rsi > 28 && candle.close < lowest20;
 
                 if (bullSignal) {
+                    const sl = calculateLowestLow(state.buffer4H, 10, 1) - atr * 1.5;
+                    const riskDist = Math.max(Math.abs(candle.close - sl) / candle.close, 0.01);
+                    const riskAmount = globalBalance * 0.01; // Risk 1% of total portfolio per trade
+                    let posSize = riskAmount / riskDist;
+                    posSize = Math.min(posSize, leviathanCapital * 3); // Max 3x leverage on allocated capital
+                    
                     state.leviathanTrade = {
                         action: 'BUY',
                         entryPrice: candle.close * (1 + SLIPPAGE),
-                        sl: calculateLowestLow(state.buffer4H.slice(0, -1), 10) - atr * 1.5,
-                        positionSize: capitalPerSlot * LEVERAGE,
+                        sl: sl,
+                        positionSize: posSize,
                         partialTaken: false
                     };
                     stats.leviathanTrades++;
                 } else if (bearSignal) {
+                    const sl = calculateHighestHigh(state.buffer4H, 10, 1) + atr * 1.5;
+                    const riskDist = Math.max(Math.abs(sl - candle.close) / candle.close, 0.01);
+                    const riskAmount = globalBalance * 0.01;
+                    let posSize = riskAmount / riskDist;
+                    posSize = Math.min(posSize, leviathanCapital * 3);
+
                     state.leviathanTrade = {
                         action: 'SELL',
                         entryPrice: candle.close * (1 - SLIPPAGE),
-                        sl: calculateHighestHigh(state.buffer4H.slice(0, -1), 10) + atr * 1.5,
-                        positionSize: capitalPerSlot * LEVERAGE,
+                        sl: sl,
+                        positionSize: posSize,
                         partialTaken: false
                     };
                     stats.leviathanTrades++;
+                }
+            }
+        }
+
+        // ============================================================
+        // 5. MEGALODON — MACRO TREND (EMA 800)
+        // ============================================================
+        if (state.buffer4H.length > 800) {
+            const ema800 = calculateEMA(state.buffer4H, 800);
+            const atr = calculateATR(state.buffer4H, 14);
+
+            if (state.megalodonTrade) {
+                const trade = state.megalodonTrade;
+                if (trade.action === 'BUY') {
+                    const trailStop = ema800 - atr * 3;
+                    trade.sl = Math.max(trade.sl, trailStop);
+                    if (candle.low <= trade.sl) {
+                        const exitPrice = Math.min(trade.sl, candle.open) * (1 - SLIPPAGE);
+                        const quantity  = trade.positionSize / trade.entryPrice;
+                        const pnl = ((exitPrice - trade.entryPrice) * quantity) - (trade.positionSize * TAKER_FEE * 2);
+                        globalBalance += pnl;
+                        stats.megalodonProfit += pnl;
+                        state.megalodonTrade = null;
+                    }
+                } else {
+                    const trailStop = ema800 + atr * 3;
+                    trade.sl = Math.min(trade.sl, trailStop);
+                    if (candle.high >= trade.sl) {
+                        const exitPrice = Math.max(trade.sl, candle.open) * (1 + SLIPPAGE);
+                        const quantity  = trade.positionSize / trade.entryPrice;
+                        const pnl = ((trade.entryPrice - exitPrice) * quantity) - (trade.positionSize * TAKER_FEE * 2);
+                        globalBalance += pnl;
+                        stats.megalodonProfit += pnl;
+                        state.megalodonTrade = null;
+                    }
+                }
+            } else if (candleClosed4H) {
+                // Enter only if price breaks far enough from EMA800 (2%) to avoid chop
+                if (candle.close > ema800 * 1.02) {
+                    state.megalodonTrade = {
+                        action: 'BUY',
+                        entryPrice: candle.close * (1 + SLIPPAGE),
+                        sl: ema800 - atr * 3,
+                        positionSize: megalodonCapital * 2 // 2x leverage for macro trend
+                    };
+                    stats.megalodonTrades++;
+                } else if (candle.close < ema800 * 0.98) {
+                    state.megalodonTrade = {
+                        action: 'SELL',
+                        entryPrice: candle.close * (1 - SLIPPAGE),
+                        sl: ema800 + atr * 3,
+                        positionSize: megalodonCapital * 2
+                    };
+                    stats.megalodonTrades++;
                 }
             }
         }
@@ -455,11 +520,22 @@ async function runMultiAssetOrchestrator() {
                     : (st.leviathanTrade.entryPrice - candle.close) * (st.leviathanTrade.positionSize / st.leviathanTrade.entryPrice);
                 currentEquity += unrealized;
             }
+            if (st.megalodonTrade) {
+                const unrealized = st.megalodonTrade.action === 'BUY'
+                    ? (candle.close - st.megalodonTrade.entryPrice) * (st.megalodonTrade.positionSize / st.megalodonTrade.entryPrice)
+                    : (st.megalodonTrade.entryPrice - candle.close) * (st.megalodonTrade.positionSize / st.megalodonTrade.entryPrice);
+                currentEquity += unrealized;
+            }
         }
 
         if (currentEquity > peakBalance) peakBalance = currentEquity;
         const dd = (peakBalance - currentEquity) / peakBalance * 100;
         if (dd > stats.maxDrawdown) stats.maxDrawdown = dd;
+
+        // ✅ TRUE realized drawdown: based only on cash in hand
+        if (globalBalance > peakRealizedBalance) peakRealizedBalance = globalBalance;
+        const realizedDD = (peakRealizedBalance - globalBalance) / peakRealizedBalance * 100;
+        if (realizedDD > stats.maxRealizedDrawdown) stats.maxRealizedDrawdown = realizedDD;
 
         const currentYear = new Date(candle.timestamp).getUTCFullYear();
         if (currentYear > lastYear) {
@@ -488,15 +564,20 @@ async function runMultiAssetOrchestrator() {
         : 'N/A';
 
     console.log(`\n============================================================`);
-    console.log(` 🧠 ULTRON ORCHESTRATOR v2.1 (Smart Edition — Stable)`);
+    console.log(` 🧠 ULTRON ORCHESTRATOR v4.0 (Aggressive Fund - Megalodon)`);
     console.log(`============================================================`);
+    console.log(`Mode:                   Dynamic Regime Weighting (Max 100% alloc)`);
     console.log(`Final Equity:           $${globalBalance.toFixed(2)} (Start: $${INITIAL_CAPITAL})`);
     console.log(`Net Profit:             $${(globalBalance - INITIAL_CAPITAL).toFixed(2)}`);
-    console.log(`Max Drawdown:           ${stats.maxDrawdown.toFixed(2)}%`);
+    console.log(`------------------------------------------------------------`);
+    console.log(`✅ REAL Drawdown:         ${stats.maxRealizedDrawdown.toFixed(2)}% (realized cash only)`);
+    console.log(`📊 MTM Drawdown:          ${stats.maxDrawdown.toFixed(2)}% (includes paper losses — misleading)`);
     console.log(`------------------------------------------------------------`);
     console.log(`Behemoth Grid Profit:   $${stats.behemothProfit.toFixed(2)}`);
     console.log(`Leviathan Profit:       $${stats.leviathanProfit.toFixed(2)}`);
+    console.log(`Megalodon Profit:       $${stats.megalodonProfit.toFixed(2)}`);
     console.log(`Leviathan Trades:       ${stats.leviathanTrades} | Win Rate: ${winRate}%`);
+    console.log(`Megalodon Trades:       ${stats.megalodonTrades}`);
     console.log(`Leviathan Partial TPs:  ${stats.leviathanPartialTPs}x`);
     console.log(`💨 Velocity Blocks:     ${stats.velocityBlocks} (fast-drop shield)`);
     console.log(`------------------------------------------------------------`);
