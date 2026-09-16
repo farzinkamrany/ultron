@@ -421,9 +421,9 @@ async function runMultiAssetOrchestrator() {
                 if (bullSignal) {
                     const sl = calculateLowestLow(state.buffer4H, 10, 1) - atr * 1.5;
                     const riskDist = Math.max(Math.abs(candle.close - sl) / candle.close, 0.01);
-                    const riskAmount = globalBalance * 0.01; // Risk 1% of total portfolio per trade
+                    const riskAmount = globalBalance * 0.04; // Risk 4% of total portfolio per trade (Hyper Aggressive)
                     let posSize = riskAmount / riskDist;
-                    posSize = Math.min(posSize, leviathanCapital * 3); // Max 3x leverage on allocated capital
+                    posSize = Math.min(posSize, leviathanCapital * 5); // Max 5x leverage on allocated capital
                     
                     state.leviathanTrade = {
                         action: 'BUY',
@@ -436,9 +436,9 @@ async function runMultiAssetOrchestrator() {
                 } else if (bearSignal) {
                     const sl = calculateHighestHigh(state.buffer4H, 10, 1) + atr * 1.5;
                     const riskDist = Math.max(Math.abs(sl - candle.close) / candle.close, 0.01);
-                    const riskAmount = globalBalance * 0.01;
+                    const riskAmount = globalBalance * 0.04; // Risk 4% of total portfolio per trade (Hyper Aggressive)
                     let posSize = riskAmount / riskDist;
-                    posSize = Math.min(posSize, leviathanCapital * 3);
+                    posSize = Math.min(posSize, leviathanCapital * 5);
 
                     state.leviathanTrade = {
                         action: 'SELL',
@@ -491,7 +491,7 @@ async function runMultiAssetOrchestrator() {
                         action: 'BUY',
                         entryPrice: candle.close * (1 + SLIPPAGE),
                         sl: ema800 - atr * 3,
-                        positionSize: megalodonCapital * 2 // 2x leverage for macro trend
+                        positionSize: megalodonCapital * 5 // 5x leverage for macro trend (Hyper Aggressive)
                     };
                     stats.megalodonTrades++;
                 } else if (candle.close < ema800 * 0.98) {
@@ -499,7 +499,7 @@ async function runMultiAssetOrchestrator() {
                         action: 'SELL',
                         entryPrice: candle.close * (1 - SLIPPAGE),
                         sl: ema800 + atr * 3,
-                        positionSize: megalodonCapital * 2
+                        positionSize: megalodonCapital * 5
                     };
                     stats.megalodonTrades++;
                 }
