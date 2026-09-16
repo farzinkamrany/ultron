@@ -12,10 +12,45 @@ interface MultiCandle {
 }
 
 const INITIAL_CAPITAL = 1000;
-const GRID_RANGE_PERCENT = 0.15; // 15% up and down from starting price
-const GRID_LEVELS = 50; // 50 levels total
-const MAKER_FEE = -0.0001; // -0.01% (Rebate for providing liquidity, Binance Post-Only)
-const LEVERAGE = 3; // 3x leverage
+const GRID_RANGE_PERCENT = 0.05; // Tighter grid: 5% up and down
+const GRID_LEVELS = 40; // 40 levels
+const MAKER_FEE = -0.0001; // -0.01% Rebate
+const TAKER_FEE = 0.0004; // 0.04% Market exit fee
+const LEVERAGE = 3;
+
+function calculateADX(candles: MultiCandle[], period: number = 14): number {
+    if (candles.length < period * 2) return 0;
+    
+    let plusDM = 0;
+    let minusDM = 0;
+    let tr = 0;
+    
+    for (let i = candles.length - period; i < candles.length; i++) {
+        const upMove = candles[i].high - candles[i-1].high;
+        const downMove = candles[i-1].low - candles[i].low;
+        
+        if (upMove > downMove && upMove > 0) plusDM += upMove;
+        if (downMove > upMove && downMove > 0) minusDM += downMove;
+        
+        const high = candles[i].high;
+        const low = candles[i].low;
+        const prevClose = candles[i-1].close;
+        tr += Math.max(high - low, Math.abs(high - prevClose), Math.abs(low - prevClose));
+    }
+    
+    if (tr === 0) return 0;
+    
+    const plusDI = (plusDM / tr) * 100;
+    const minusDI = (minusDM / tr) * 100;
+    
+    let dxSum = 0;
+    for (let i = candles.length - period; i < candles.length; i++) {
+        const dx = Math.abs(plusDI - minusDI) / (plusDI + minusDI) * 100;
+        dxSum += isNaN(dx) ? 0 : dx;
+    }
+    
+    return dxSum / period;
+}
 
 async function loadCSV(filePath: string, symbol: string): Promise<MultiCandle[]> {
     if (!fs.existsSync(filePath)) return [];
@@ -41,10 +76,17 @@ async function loadCSV(filePath: string, symbol: string): Promise<MultiCandle[]>
     return data;
 }
 
+interface GridLevel {
+    price: number;
+    type: 'BUY' | 'SELL';
+    active: boolean;
+}
+
 async function runBehemothBacktest() {
-    console.log("Loading 5-Minute Data for BEHEMOTH Grid Trader...");
+    const dataFile = process.argv[2] || 'data/btc_5m_history.csv';
+    console.log(`Loading Data from ${dataFile} for BEHEMOTH (Smart Grid)...`);
     
-    const btcData = await loadCSV('data/btc_5m_history.csv', 'BTC');
+    const btcData = await loadCSV(dataFile, 'BTC');
     
     // We test 2022 (Bear market / Ranging)
     const START_TIMESTAMP = 1640995200000; // Jan 1, 2022
@@ -54,7 +96,7 @@ async function runBehemothBacktest() {
         .filter(c => c.timestamp >= START_TIMESTAMP && c.timestamp <= END_TIMESTAMP)
         .sort((a, b) => a.timestamp - b.timestamp);
 
-    console.log(`Loaded ${globalTimeline.length} candles (5m). Starting Grid simulation...\n`);
+    console.log(`Loaded ${globalTimeline.length} candles (5m). Starting Smart Grid simulation...\n`);
 
     if (globalTimeline.length === 0) {
         console.log("No data found for 2022. Exiting.");
@@ -67,56 +109,108 @@ async function runBehemothBacktest() {
     let stats = {
         totalTrades: 0,
         feesEarned: 0,
-        maxDrawdown: 0
+        maxDrawdown: 0,
+        recenters: 0,
+        killSwitches: 0
     };
 
-    // Initialize Grid
-    const startPrice = globalTimeline[0].open;
-    const upperBound = startPrice * (1 + GRID_RANGE_PERCENT);
-    const lowerBound = startPrice * (1 - GRID_RANGE_PERCENT);
-    const gridStep = (upperBound - lowerBound) / GRID_LEVELS;
-    
-    const orderSizeUSD = (balance * LEVERAGE) / (GRID_LEVELS / 2); // Allocate leverage across half the grid
-
-    interface GridLevel {
-        price: number;
-        type: 'BUY' | 'SELL';
-        active: boolean; // Is the limit order active on the book?
-    }
-
     let grid: GridLevel[] = [];
-    
-    // Create grid levels
-    for (let i = 0; i <= GRID_LEVELS; i++) {
-        const p = lowerBound + (i * gridStep);
-        if (p < startPrice) {
-            grid.push({ price: p, type: 'BUY', active: true });
-        } else {
-            grid.push({ price: p, type: 'SELL', active: true });
+    let upperBound = 0;
+    let lowerBound = 0;
+    let gridStep = 0;
+    let orderSizeUSD = 0;
+    let positionCoins = 0;
+    let realizedPnl = 0;
+    let gridActive = false;
+
+    function buildGrid(currentPrice: number, currentEquity: number) {
+        grid = [];
+        upperBound = currentPrice * (1 + GRID_RANGE_PERCENT);
+        lowerBound = currentPrice * (1 - GRID_RANGE_PERCENT);
+        gridStep = (upperBound - lowerBound) / GRID_LEVELS;
+        
+        // Compound interest: Allocate leverage based on CURRENT equity
+        orderSizeUSD = (currentEquity * LEVERAGE) / (GRID_LEVELS / 2); 
+
+        for (let i = 0; i <= GRID_LEVELS; i++) {
+            const p = lowerBound + (i * gridStep);
+            if (p < currentPrice) {
+                grid.push({ price: p, type: 'BUY', active: true });
+            } else {
+                grid.push({ price: p, type: 'SELL', active: true });
+            }
         }
+        gridActive = true;
     }
 
-    let positionCoins = 0; // Current held asset
-    let realizedPnl = 0;
+    function killGrid(currentPrice: number) {
+        // Close all positions at market price
+        if (positionCoins !== 0) {
+            const exitValue = positionCoins * currentPrice;
+            const fee = exitValue * TAKER_FEE;
+            realizedPnl -= fee;
+            stats.feesEarned -= fee;
+            positionCoins = 0; 
+        }
+        gridActive = false;
+        grid = [];
+    }
+
+    let buffer: MultiCandle[] = [];
+
+    // Initialize first grid
+    buildGrid(globalTimeline[0].open, balance);
 
     for (let i = 0; i < globalTimeline.length; i++) {
         const candle = globalTimeline[i];
-        
-        // Check which grid levels were hit during this 5-minute candle wick
+        buffer.push(candle);
+        if (buffer.length > 100) buffer.shift();
+
+        // 1. Calculate ADX for Regime Filter
+        let adx = 0;
+        if (buffer.length >= 24) {
+            adx = calculateADX(buffer, 24); // 24 * 5m = 2 hour ADX
+        }
+
+        const currentEquity = balance + realizedPnl + (positionCoins * candle.close - (positionCoins * (grid[0]?.price || candle.close))); // Rough equity
+
+        // 2. Kill-Switch (Trend Detection)
+        if (adx > 30 && gridActive) {
+            // Trend started! Kill the grid to avoid liquidation.
+            killGrid(candle.close);
+            stats.killSwitches++;
+            continue;
+        }
+
+        // 3. Reactivate Grid when Market is Ranging
+        if (adx < 25 && !gridActive) {
+            buildGrid(candle.close, currentEquity);
+        }
+
+        if (!gridActive) continue;
+
+        // 4. Dynamic Recentering (Price Escapes Grid)
+        if (candle.close > upperBound || candle.close < lowerBound) {
+            killGrid(candle.close); // Close at market
+            stats.recenters++;
+            if (adx < 25) {
+                buildGrid(candle.close, currentEquity); // Immediately redraw
+            }
+            continue;
+        }
+
+        // 5. Grid Execution
         for (const level of grid) {
             if (!level.active) continue;
 
             if (level.type === 'BUY' && candle.low <= level.price) {
-                // Buy Limit Hit
                 const coinsBought = orderSizeUSD / level.price;
                 positionCoins += coinsBought;
                 
-                // Earn Rebate
                 const rebate = orderSizeUSD * Math.abs(MAKER_FEE);
                 realizedPnl += rebate;
                 stats.feesEarned += rebate;
                 
-                // Deactivate this buy level, activate the sell level above it
                 level.active = false;
                 const sellLevelIndex = grid.findIndex(g => g.price > level.price);
                 if (sellLevelIndex !== -1) grid[sellLevelIndex].active = true;
@@ -124,21 +218,17 @@ async function runBehemothBacktest() {
                 stats.totalTrades++;
             } 
             else if (level.type === 'SELL' && candle.high >= level.price) {
-                // Sell Limit Hit
                 if (positionCoins > 0) {
                     const coinsSold = orderSizeUSD / level.price;
                     positionCoins -= coinsSold;
                     
-                    // The difference between the grid step is pure profit
                     const profit = (gridStep / level.price) * orderSizeUSD;
                     realizedPnl += profit;
                     
-                    // Earn Rebate
                     const rebate = orderSizeUSD * Math.abs(MAKER_FEE);
                     realizedPnl += rebate;
                     stats.feesEarned += rebate;
                     
-                    // Deactivate this sell level, activate the buy level below it
                     level.active = false;
                     const buyLevelIndex = grid.slice().reverse().findIndex(g => g.price < level.price);
                     if (buyLevelIndex !== -1) grid[grid.length - 1 - buyLevelIndex].active = true;
@@ -148,25 +238,15 @@ async function runBehemothBacktest() {
             }
         }
         
-        // Track equity (Realized PnL + Unrealized PnL of held coins)
-        const unrealizedPnl = positionCoins * candle.close - (positionCoins * startPrice); // simplified
-        const currentEquity = balance + realizedPnl + unrealizedPnl;
-        
         if (currentEquity > peakBalance) peakBalance = currentEquity;
         const dd = (peakBalance - currentEquity) / peakBalance * 100;
         if (dd > stats.maxDrawdown) stats.maxDrawdown = dd;
-        
-        // Dynamic re-centering of grid if price escapes
-        if (candle.close > upperBound * 1.05 || candle.close < lowerBound * 0.95) {
-            // Price escaped the grid too far, re-center the grid (take a small loss/gain and restart)
-            // For simplicity in this backtest, we just stop trading if it escapes entirely
-        }
     }
 
     const finalEquity = balance + realizedPnl + (positionCoins * globalTimeline[globalTimeline.length - 1].close);
 
     console.log(`============================================`);
-    console.log(`   BEHEMOTH GRID TRADER (5M) BACKTEST`);
+    console.log(`   BEHEMOTH SMART GRID (5M) BACKTEST`);
     console.log(`   Data: BTC (Year 2022 - Bear Market)`);
     console.log(`============================================`);
     console.log(`Final Equity:     $${finalEquity.toFixed(2)} (Start: $${INITIAL_CAPITAL})`);
@@ -174,6 +254,8 @@ async function runBehemothBacktest() {
     console.log(`Max Drawdown:     ${stats.maxDrawdown.toFixed(2)}%`);
     console.log(`Total Rebates:    $${stats.feesEarned.toFixed(2)}`);
     console.log(`Total Trades:     ${stats.totalTrades}`);
+    console.log(`Grid Recenters:   ${stats.recenters}`);
+    console.log(`Kill-Switches:    ${stats.killSwitches}`);
     console.log(`============================================\n`);
 }
 

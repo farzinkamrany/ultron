@@ -145,9 +145,10 @@ async function loadCSV(filePath: string): Promise<Candle[]> {
 }
 
 async function runHydra() {
-    console.log("Loading 1H Data for HYDRA (Mean Reversion)...");
+    const dataFile = process.argv[2] || 'data/btc_1h_history.csv';
+    console.log(`Loading Data from ${dataFile} for HYDRA (Mean Reversion)...`);
     
-    const allData = await loadCSV('data/btc_1h_history.csv');
+    const allData = await loadCSV(dataFile);
     // Sort just in case
     allData.sort((a, b) => a.timestamp - b.timestamp);
     
