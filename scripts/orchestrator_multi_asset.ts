@@ -254,11 +254,11 @@ async function runMultiAssetOrchestrator() {
             }
         }
 
-        // 🧠 DYNAMIC CAPITAL ALLOCATION (Orchestrator v4 Aggressive)
-        // Total allocation per symbol is strictly 10% to prevent exceeding 100% global balance.
-        const behemothWeight = state.currentRegime === 'RANGE' ? 0.08 : 0.01;
-        const leviathanWeight = state.currentRegime === 'TREND' ? 0.06 : 0.02;
-        const megalodonWeight = state.currentRegime === 'TREND' ? 0.03 : 0.00;
+        // 🧠 DYNAMIC CAPITAL ALLOCATION (Orchestrator v5 Swing Trading)
+        // We increase total allocation to 15% per symbol (1.5x global portfolio leverage)
+        const behemothWeight = state.currentRegime === 'RANGE' ? 0.10 : 0.04;
+        const leviathanWeight = state.currentRegime === 'TREND' ? 0.06 : 0.00;
+        const megalodonWeight = state.currentRegime === 'TREND' ? 0.05 : 0.05;
 
         const behemothCapital = Math.min(globalBalance * behemothWeight, MAX_CAPITAL_PER_SLOT);
         const leviathanCapital = Math.min(globalBalance * leviathanWeight, MAX_CAPITAL_PER_SLOT);
@@ -388,7 +388,7 @@ async function runMultiAssetOrchestrator() {
                 }
 
                 if (trade.action === 'BUY') {
-                    const trailStop = calculateLowestLow(state.buffer4H, 10, 1) - atr * 1.5;
+                    const trailStop = calculateLowestLow(state.buffer4H, 30, 1) - atr * 3.0;
                     trade.sl = Math.max(trade.sl, trailStop);
                     if (candle.low <= trade.sl) {
                         const exitPrice = Math.min(trade.sl, candle.open) * (1 - SLIPPAGE);
@@ -400,7 +400,7 @@ async function runMultiAssetOrchestrator() {
                         state.leviathanTrade = null;
                     }
                 } else {
-                    const trailStop = calculateHighestHigh(state.buffer4H, 10, 1) + atr * 1.5;
+                    const trailStop = calculateHighestHigh(state.buffer4H, 30, 1) + atr * 3.0;
                     trade.sl = Math.min(trade.sl, trailStop);
                     if (candle.high >= trade.sl) {
                         const exitPrice = Math.max(trade.sl, candle.open) * (1 + SLIPPAGE);
@@ -419,7 +419,7 @@ async function runMultiAssetOrchestrator() {
                 const bearSignal = ema50 < ema200 && rsi < 55 && rsi > 28 && candle.close < lowest20;
 
                 if (bullSignal) {
-                    const sl = calculateLowestLow(state.buffer4H, 10, 1) - atr * 1.5;
+                    const sl = calculateLowestLow(state.buffer4H, 30, 1) - atr * 3.0;
                     const riskDist = Math.max(Math.abs(candle.close - sl) / candle.close, 0.01);
                     const riskAmount = globalBalance * 0.04; // Risk 4% of total portfolio per trade (Hyper Aggressive)
                     let posSize = riskAmount / riskDist;
@@ -434,7 +434,7 @@ async function runMultiAssetOrchestrator() {
                     };
                     stats.leviathanTrades++;
                 } else if (bearSignal) {
-                    const sl = calculateHighestHigh(state.buffer4H, 10, 1) + atr * 1.5;
+                    const sl = calculateHighestHigh(state.buffer4H, 30, 1) + atr * 3.0;
                     const riskDist = Math.max(Math.abs(sl - candle.close) / candle.close, 0.01);
                     const riskAmount = globalBalance * 0.04; // Risk 4% of total portfolio per trade (Hyper Aggressive)
                     let posSize = riskAmount / riskDist;
