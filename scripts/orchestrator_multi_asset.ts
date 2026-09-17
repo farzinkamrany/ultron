@@ -271,7 +271,7 @@ async function runMultiAssetOrchestrator() {
             : 0;
         const fallingKnife = priceVelocity < -0.04;
 
-        if (!state.gridActive && state.buffer4H.length > 20 && !fallingKnife) {
+        if (!state.gridActive && state.buffer4H.length > 20 && !fallingKnife && state.currentRegime !== 'TREND') {
 
             state.grid = [];
             state.positionCoins = 0;
