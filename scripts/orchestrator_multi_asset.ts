@@ -147,6 +147,7 @@ class SymbolState {
 
     public leviathanTrade: any = null;
     public megalodonTrade: any = null;
+    public megalodonCooldownUntil: number = 0; // Timestamp: no re-entry before this
 
     public symbol: string;
     constructor(symbol: string) { this.symbol = symbol; }
@@ -482,6 +483,7 @@ async function runMultiAssetOrchestrator() {
                         globalBalance += pnl;
                         stats.megalodonProfit += pnl;
                         state.megalodonTrade = null;
+                        state.megalodonCooldownUntil = candle.timestamp + (20 * 4 * 3600 * 1000); // 80h cooldown after stop-out
                     }
                 } else {
                     const trailStop = ema800 + atr * 3;
@@ -493,9 +495,10 @@ async function runMultiAssetOrchestrator() {
                         globalBalance += pnl;
                         stats.megalodonProfit += pnl;
                         state.megalodonTrade = null;
+                        state.megalodonCooldownUntil = candle.timestamp + (20 * 4 * 3600 * 1000); // 80h cooldown after stop-out
                     }
                 }
-            } else if (candleClosed4H) {
+            } else if (candleClosed4H && candle.timestamp > state.megalodonCooldownUntil) {
                 if (candle.close > ema800 * 1.02) {
                     const sl = ema800 - atr * 3;
                     const riskDist = Math.max(Math.abs(candle.close - sl) / candle.close, 0.01);
