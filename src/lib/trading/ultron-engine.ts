@@ -127,6 +127,17 @@ function rsi(candles: Candle[], period = 14): number {
   return 100 - (100 / (1 + rs));
 }
 
+function averageVolume(candles: Candle[], period: number, offset = 0): number {
+  if (candles.length <= period + offset) return 0;
+  let sum = 0;
+  const start = candles.length - period - offset;
+  const end = candles.length - offset;
+  for (let i = start; i < end; i++) {
+    sum += candles[i].volume;
+  }
+  return sum / period;
+}
+
 function adx(candles: Candle[], period = 14): number {
   if (candles.length < period * 2) return 0;
   let plusDM = 0, minusDM = 0, trSum = 0;
@@ -412,9 +423,13 @@ export function processSymbol(
         const prevHigh20 = highest(candles4H, 20, 2);
         const prevLow20 = lowest(candles4H, 20, 2);
         
-        // Entry signals (Pure Donchian Breakout)
-        const bullSignal = closedCandle.close > prevEma200 && closedCandle.close > prevHigh20;
-        const bearSignal = closedCandle.close < prevEma200 && closedCandle.close < prevLow20;
+        // Entry signals (Pure Donchian Breakout + Volume Confirmation)
+        const avgVol20 = averageVolume(candles4H, 20, 1);
+        const last4HVolume = closedCandle.volume;
+        const volumeConfirmed = last4HVolume > avgVol20;
+
+        const bullSignal = closedCandle.close > prevEma200 && closedCandle.close > prevHigh20 && volumeConfirmed;
+        const bearSignal = closedCandle.close < prevEma200 && closedCandle.close < prevLow20 && volumeConfirmed;
 
         if (bullSignal && defconLevel === 0) {
           const sl = lowest(candles4H, 10, 1) - atrVal;
