@@ -52,6 +52,8 @@ export interface LiveSymbolState {
     partialTaken: boolean;
     tpTarget?: number;
     pyramid1?: boolean;
+    pyramid2?: boolean;
+    pyramid3?: boolean;
   } | null;
   megalodonTrade: {
     action: 'BUY' | 'SELL';
@@ -222,9 +224,16 @@ export function processSymbol(
     state.currentRegime = newRegime;
   }
 
-  const behemothWeight = state.currentRegime === 'RANGE' ? 0.30 : 0.00;
-  const leviathanWeight = state.currentRegime === 'TREND' ? 0.20 : 0.00;
-  const megalodonWeight = state.currentRegime === 'TREND' ? 0.20 : 0.05;
+  let behemothWeight = state.currentRegime === 'RANGE' ? 0.30 : 0.00;
+  let leviathanWeight = state.currentRegime === 'TREND' ? 0.20 : 0.00;
+  let megalodonWeight = state.currentRegime === 'TREND' ? 0.20 : 0.05;
+
+  // Hyper Mode: Disable Behemoth < 50k, boost Megalodon
+  if (accountBalance < 50000) {
+    behemothWeight = 0.00;
+    leviathanWeight = state.currentRegime === 'TREND' ? 0.30 : 0.00;
+    megalodonWeight = accountBalance < 10000 ? 0.80 : 0.70;
+  }
 
   const behemothCapital = Math.min(accountBalance * behemothWeight, 500_000);
   const leviathanCapital = Math.min(accountBalance * leviathanWeight, 500_000);
@@ -361,17 +370,19 @@ export function processSymbol(
         ? (candle.high - trade.entryPrice) / trade.entryPrice
         : (trade.entryPrice - candle.low) / trade.entryPrice;
 
-      // ── Pyramiding (Add 50% size at +15% profit) ──
-      if (!trade.pyramid1 && gainPct >= 0.15) {
-        const additionalSize = trade.positionSize * 0.5;
+      // ── Pyramiding: Aggressive Hyper Mode (3 levels) ──
+      if (!trade.pyramid1 && gainPct >= 0.10) {
+        const additionalSize = trade.positionSize * 1.0; // +100%
         const maxAllowed = Math.max(0, maxAllowedMargin - totalMarginUsed);
         const pyramidSize = Math.min(additionalSize, maxAllowed);
         
         if (pyramidSize >= 50) {
+          const currentQty = trade.positionSize / trade.entryPrice;
+          const addedQty = pyramidSize / candle.close;
+          trade.entryPrice = (trade.positionSize + pyramidSize) / (currentQty + addedQty);
           trade.positionSize += pyramidSize;
           trade.pyramid1 = true;
-          if (trade.action === 'BUY') trade.sl = Math.max(trade.sl, trade.entryPrice);
-          else trade.sl = Math.min(trade.sl, trade.entryPrice);
+          trade.sl = trade.action === 'BUY' ? Math.max(trade.sl, trade.entryPrice) : Math.min(trade.sl, trade.entryPrice);
           
           signals.push({
             symbol: state.symbol,
@@ -380,16 +391,68 @@ export function processSymbol(
             stopLoss: trade.sl,
             takeProfit: trade.tpTarget ? trade.entryPrice * (1 + trade.tpTarget) : 0,
             positionSizeUsd: pyramidSize,
-            reason: `Leviathan Pyramiding (+15% profit reached). Added 50% size. SL moved to BE.`,
+            reason: `Leviathan Pyramiding 1 (+10% profit). Added 100% size. SL moved to BE.`,
           });
-          // Update total margin used for this run
           totalMarginUsed += pyramidSize;
         }
       }
 
+      if (!trade.pyramid2 && gainPct >= 0.20) {
+        const additionalSize = trade.positionSize * 0.5; // +50%
+        const maxAllowed = Math.max(0, maxAllowedMargin - totalMarginUsed);
+        const pyramidSize = Math.min(additionalSize, maxAllowed);
+        
+        if (pyramidSize >= 50) {
+          const currentQty = trade.positionSize / trade.entryPrice;
+          const addedQty = pyramidSize / candle.close;
+          trade.entryPrice = (trade.positionSize + pyramidSize) / (currentQty + addedQty);
+          trade.positionSize += pyramidSize;
+          trade.pyramid2 = true;
+          
+          signals.push({
+            symbol: state.symbol,
+            strategy: 'LEVIATHAN',
+            action: trade.action === 'BUY' ? 'OPEN_LONG' : 'OPEN_SHORT',
+            stopLoss: trade.sl,
+            takeProfit: trade.tpTarget ? trade.entryPrice * (1 + trade.tpTarget) : 0,
+            positionSizeUsd: pyramidSize,
+            reason: `Leviathan Pyramiding 2 (+20% profit). Added 50% size.`,
+          });
+          totalMarginUsed += pyramidSize;
+        }
+      }
+
+      if (!trade.pyramid3 && gainPct >= 0.40) {
+        const additionalSize = trade.positionSize * 0.3; // +30%
+        const maxAllowed = Math.max(0, maxAllowedMargin - totalMarginUsed);
+        const pyramidSize = Math.min(additionalSize, maxAllowed);
+        
+        if (pyramidSize >= 50) {
+          const currentQty = trade.positionSize / trade.entryPrice;
+          const addedQty = pyramidSize / candle.close;
+          trade.entryPrice = (trade.positionSize + pyramidSize) / (currentQty + addedQty);
+          trade.positionSize += pyramidSize;
+          trade.pyramid3 = true;
+          
+          signals.push({
+            symbol: state.symbol,
+            strategy: 'LEVIATHAN',
+            action: trade.action === 'BUY' ? 'OPEN_LONG' : 'OPEN_SHORT',
+            stopLoss: trade.sl,
+            takeProfit: trade.tpTarget ? trade.entryPrice * (1 + trade.tpTarget) : 0,
+            positionSizeUsd: pyramidSize,
+            reason: `Leviathan Pyramiding 3 (+40% profit). Added 30% size.`,
+          });
+          totalMarginUsed += pyramidSize;
+        }
+      }
+
+      // Hyper Mode: Disable Partial TP < 50k
+      if (accountBalance < 50000) trade.tpTarget = 999;
+
       // Partial TP at tpTarget (usually 20-35%) — lock half the gains early, let the rest ride free
       // The remaining half gets SL moved to breakeven (zero downside risk)
-      if (!trade.partialTaken) {
+      if (!trade.partialTaken && (trade.tpTarget || 0) < 100) {
         const gainPct = trade.action === 'BUY'
           ? (candle.high - trade.entryPrice) / trade.entryPrice
           : (trade.entryPrice - candle.low) / trade.entryPrice;
@@ -557,7 +620,12 @@ export function processSymbol(
             reason: `Megalodon LONG exit: TP ${tpPrice.toFixed(2)} hit (+30%)`,
           });
           state.megalodonTrade = null;
-          state.megalodonCooldownUntil = now + 20 * 3600 * 1000;
+          const pnl = (tpPrice - trade.entryPrice) / trade.entryPrice;
+          if (pnl > 0.20) {
+            state.megalodonCooldownUntil = now;
+          } else {
+            state.megalodonCooldownUntil = now + 20 * 3600 * 1000;
+          }
         } else if (candle.low <= trade.sl) {
           signals.push({
             symbol: state.symbol,
@@ -570,11 +638,16 @@ export function processSymbol(
           });
           state.megalodonTrade = null;
           const exitPrice = Math.min(trade.sl, candle.open) * (1 - SLIPPAGE);
-          const lossPct = (trade.entryPrice - exitPrice) / trade.entryPrice;
-          if (lossPct > 0.02) {
-            state.megalodonCooldownUntil = now + 80 * 3600 * 1000;
+          const pnl = (exitPrice - trade.entryPrice) / trade.entryPrice;
+          if (pnl > 0.20) {
+            state.megalodonCooldownUntil = now;
           } else {
-            state.megalodonCooldownUntil = now + 20 * 3600 * 1000;
+            const lossPct = (trade.entryPrice - exitPrice) / trade.entryPrice;
+            if (lossPct > 0.02) {
+              state.megalodonCooldownUntil = now + 80 * 3600 * 1000;
+            } else {
+              state.megalodonCooldownUntil = now + 20 * 3600 * 1000;
+            }
           }
         }
       } else {
@@ -592,7 +665,12 @@ export function processSymbol(
             reason: `Megalodon SHORT exit: TP ${tpPrice.toFixed(2)} hit (+30%)`,
           });
           state.megalodonTrade = null;
-          state.megalodonCooldownUntil = now + 20 * 3600 * 1000;
+          const pnl = (trade.entryPrice - tpPrice) / trade.entryPrice;
+          if (pnl > 0.20) {
+            state.megalodonCooldownUntil = now;
+          } else {
+            state.megalodonCooldownUntil = now + 20 * 3600 * 1000;
+          }
         } else if (candle.high >= trade.sl) {
           signals.push({
             symbol: state.symbol,
@@ -605,11 +683,16 @@ export function processSymbol(
           });
           state.megalodonTrade = null;
           const exitPrice = Math.max(trade.sl, candle.open) * (1 + SLIPPAGE);
-          const lossPct = (exitPrice - trade.entryPrice) / trade.entryPrice;
-          if (lossPct > 0.02) {
-            state.megalodonCooldownUntil = now + 80 * 3600 * 1000;
+          const pnl = (trade.entryPrice - exitPrice) / trade.entryPrice;
+          if (pnl > 0.20) {
+            state.megalodonCooldownUntil = now;
           } else {
-            state.megalodonCooldownUntil = now + 20 * 3600 * 1000;
+            const lossPct = (exitPrice - trade.entryPrice) / trade.entryPrice;
+            if (lossPct > 0.02) {
+              state.megalodonCooldownUntil = now + 80 * 3600 * 1000;
+            } else {
+              state.megalodonCooldownUntil = now + 20 * 3600 * 1000;
+            }
           }
         }
       }
@@ -624,9 +707,14 @@ export function processSymbol(
           const sl = prevEma800 - prevAtrVal * 3;
           const riskDist = Math.max(Math.abs(closedCandle.close - sl) / closedCandle.close, 0.01);
           let riskPct = 0.03;
-          if (accountBalance >= 1000000) riskPct = 0.005;
+          if (accountBalance < 2000) riskPct = 0.40;
+          else if (accountBalance < 5000) riskPct = 0.30;
+          else if (accountBalance < 20000) riskPct = 0.20;
+          else if (accountBalance < 100000) riskPct = 0.10;
+          else if (accountBalance >= 1000000) riskPct = 0.005;
           else if (accountBalance >= 100000) riskPct = 0.01;
-          else riskPct = 0.20; // Hyper-explosive 20% risk for <50k
+
+          if (accountBalance < 50000 && isGlobalTrend) riskPct *= 1.3;
           const riskAmount = accountBalance * riskPct;
           const desired = riskAmount / riskDist;
           const maxAllowed = Math.min(megalodonCapital * 2, Math.max(0, maxAllowedMargin - totalMarginUsed));
@@ -648,9 +736,14 @@ export function processSymbol(
           const sl = prevEma800 + prevAtrVal * 3;
           const riskDist = Math.max(Math.abs(sl - closedCandle.close) / closedCandle.close, 0.01);
           let riskPct = 0.03;
-          if (accountBalance >= 1000000) riskPct = 0.005;
+          if (accountBalance < 2000) riskPct = 0.40;
+          else if (accountBalance < 5000) riskPct = 0.30;
+          else if (accountBalance < 20000) riskPct = 0.20;
+          else if (accountBalance < 100000) riskPct = 0.10;
+          else if (accountBalance >= 1000000) riskPct = 0.005;
           else if (accountBalance >= 100000) riskPct = 0.01;
-          else riskPct = 0.20; // Hyper-explosive 20% risk for <50k
+
+          if (accountBalance < 50000 && isGlobalTrend) riskPct *= 1.3;
           const riskAmount = accountBalance * riskPct;
           const desired = riskAmount / riskDist;
           const maxAllowed = Math.min(megalodonCapital * 2, Math.max(0, maxAllowedMargin - totalMarginUsed));

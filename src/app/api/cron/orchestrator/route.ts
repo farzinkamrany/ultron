@@ -349,16 +349,19 @@ export async function POST(req: NextRequest) {
       if (state.currentRegime === 'TREND') trendingCount++;
     }
     let baseLeverage = 5.0;
-    if (accountBalance < 50000) baseLeverage = 25.0;
+    if (accountBalance < 5000) baseLeverage = 50.0;
+    else if (accountBalance < 20000) baseLeverage = 35.0;
+    else if (accountBalance < 50000) baseLeverage = 25.0;
     else if (accountBalance < 100000) baseLeverage = 15.0;
     else if (accountBalance < 1000000) baseLeverage = 10.0;
     else if (accountBalance < 10000000) baseLeverage = 8.0;
     else baseLeverage = 6.0;
 
-    if (trendingCount >= 7) baseLeverage *= 1.3;
+    if (trendingCount >= 8) baseLeverage *= 1.5;
+    else if (trendingCount >= 7) baseLeverage *= 1.3;
     else if (trendingCount >= 5) baseLeverage *= 1.15;
     
-    const globalPortfolioLeverage = Math.min(baseLeverage, 30.0);
+    const globalPortfolioLeverage = Math.min(baseLeverage, 50.0);
     console.log(`[Orchestrator] Global Trend Count: ${trendingCount}/${SYMBOLS.length} -> Leverage Cap: ${globalPortfolioLeverage}x`);
 
     for (const symbol of SYMBOLS) {
