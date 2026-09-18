@@ -531,7 +531,16 @@ async function runMultiAssetOrchestrator() {
                 if (trade.action === 'BUY') {
                     const trailStop = ema800 - atr * 3;
                     trade.sl = Math.max(trade.sl, trailStop);
-                    if (candle.low <= trade.sl) {
+                    const tpPrice = trade.entryPrice * 1.30;
+                    if (candle.high >= tpPrice) {
+                        const exitPrice = tpPrice;
+                        const quantity  = trade.positionSize / trade.entryPrice;
+                        const pnl = ((exitPrice - trade.entryPrice) * quantity) - (trade.positionSize * TAKER_FEE * 2);
+                        globalBalance += pnl;
+                        stats.megalodonProfit += pnl;
+                        state.megalodonTrade = null;
+                        state.megalodonCooldownUntil = candle.timestamp + (20 * 3600 * 1000);
+                    } else if (candle.low <= trade.sl) {
                         const exitPrice = Math.min(trade.sl, candle.open) * (1 - SLIPPAGE);
                         const quantity  = trade.positionSize / trade.entryPrice;
                         const pnl = ((exitPrice - trade.entryPrice) * quantity) - (trade.positionSize * TAKER_FEE * 2);
@@ -549,7 +558,16 @@ async function runMultiAssetOrchestrator() {
                 } else {
                     const trailStop = ema800 + atr * 3;
                     trade.sl = Math.min(trade.sl, trailStop);
-                    if (candle.high >= trade.sl) {
+                    const tpPrice = trade.entryPrice * 0.70;
+                    if (candle.low <= tpPrice) {
+                        const exitPrice = tpPrice;
+                        const quantity  = trade.positionSize / trade.entryPrice;
+                        const pnl = ((trade.entryPrice - exitPrice) * quantity) - (trade.positionSize * TAKER_FEE * 2);
+                        globalBalance += pnl;
+                        stats.megalodonProfit += pnl;
+                        state.megalodonTrade = null;
+                        state.megalodonCooldownUntil = candle.timestamp + (20 * 3600 * 1000);
+                    } else if (candle.high >= trade.sl) {
                         const exitPrice = Math.max(trade.sl, candle.open) * (1 + SLIPPAGE);
                         const quantity  = trade.positionSize / trade.entryPrice;
                         const pnl = ((trade.entryPrice - exitPrice) * quantity) - (trade.positionSize * TAKER_FEE * 2);

@@ -502,7 +502,20 @@ export function processSymbol(
       if (trade.action === 'BUY') {
         const trail = ema800 - atrVal * 3;
         trade.sl = Math.max(trade.sl, trail);
-        if (candle.low <= trade.sl) {
+        const tpPrice = trade.entryPrice * 1.30;
+        if (candle.high >= tpPrice) {
+          signals.push({
+            symbol: state.symbol,
+            strategy: 'MEGALODON',
+            action: 'CLOSE_LONG',
+            stopLoss: trade.sl,
+            takeProfit: tpPrice,
+            positionSizeUsd: trade.positionSize,
+            reason: `Megalodon LONG exit: TP ${tpPrice.toFixed(2)} hit (+30%)`,
+          });
+          state.megalodonTrade = null;
+          state.megalodonCooldownUntil = now + 20 * 3600 * 1000;
+        } else if (candle.low <= trade.sl) {
           signals.push({
             symbol: state.symbol,
             strategy: 'MEGALODON',
@@ -524,7 +537,20 @@ export function processSymbol(
       } else {
         const trail = ema800 + atrVal * 3;
         trade.sl = Math.min(trade.sl, trail);
-        if (candle.high >= trade.sl) {
+        const tpPrice = trade.entryPrice * 0.70;
+        if (candle.low <= tpPrice) {
+          signals.push({
+            symbol: state.symbol,
+            strategy: 'MEGALODON',
+            action: 'CLOSE_SHORT',
+            stopLoss: trade.sl,
+            takeProfit: tpPrice,
+            positionSizeUsd: trade.positionSize,
+            reason: `Megalodon SHORT exit: TP ${tpPrice.toFixed(2)} hit (+30%)`,
+          });
+          state.megalodonTrade = null;
+          state.megalodonCooldownUntil = now + 20 * 3600 * 1000;
+        } else if (candle.high >= trade.sl) {
           signals.push({
             symbol: state.symbol,
             strategy: 'MEGALODON',
@@ -570,7 +596,7 @@ export function processSymbol(
               strategy: 'MEGALODON',
               action: 'OPEN_LONG',
               stopLoss: sl,
-              takeProfit: closedCandle.close * 2,
+              takeProfit: closedCandle.close * 1.30,
               positionSizeUsd: posSize,
               reason: `Megalodon LONG: price ${closedCandle.close.toFixed(2)} > EMA800 ${prevEma800.toFixed(2)}`,
             });
@@ -594,7 +620,7 @@ export function processSymbol(
               strategy: 'MEGALODON',
               action: 'OPEN_SHORT',
               stopLoss: sl,
-              takeProfit: closedCandle.close * 0.5,
+              takeProfit: closedCandle.close * 0.70,
               positionSizeUsd: posSize,
               reason: `Megalodon SHORT: price ${closedCandle.close.toFixed(2)} < EMA800 ${prevEma800.toFixed(2)}`,
             });
