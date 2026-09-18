@@ -144,13 +144,15 @@ async function executeSignal(signal: OrchestratorSignal, currentPrice: number): 
           privateKey: process.env.HYPERLIQUID_PRIVATE_KEY || '',
           enableRateLimit: true,
         });
+        await exchange.loadMarkets();
         
-        // Remove 'USDT'/'USDC' suffix and standardize format if needed for Hyperliquid
-        const formattedSymbol = signal.symbol.replace('/USDT', '').replace('/USDC', '');
+        // Hyperliquid unified symbol format: BTC/USDC:USDC
+        const baseSymbol = signal.symbol.split('/')[0];
+        const formattedSymbol = `${baseSymbol}/USDC:USDC`;
         const amount = signal.positionSizeUsd / currentPrice;
         const side = signal.action === 'OPEN_LONG' ? 'buy' : 'sell';
         
-        // Market entry
+        // Market entry (CCXT handles precision formatting internally after loadMarkets)
         await exchange.createMarketOrder(formattedSymbol, side, amount);
         
         // Stop Loss & Take Profit logic (Hyperliquid uses specific params, but we use CCXT unified)
@@ -212,8 +214,10 @@ async function executeSignal(signal: OrchestratorSignal, currentPrice: number): 
           privateKey: process.env.HYPERLIQUID_PRIVATE_KEY || '',
           enableRateLimit: true,
         });
+        await exchange.loadMarkets();
         
-        const formattedSymbol = signal.symbol.replace('/USDT', '').replace('/USDC', '');
+        const baseSymbol = signal.symbol.split('/')[0];
+        const formattedSymbol = `${baseSymbol}/USDC:USDC`;
         
         // First cancel open SL/TP orders
         try {
