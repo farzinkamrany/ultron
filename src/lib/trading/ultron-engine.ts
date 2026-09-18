@@ -191,17 +191,16 @@ export function processSymbol(
   candles4H: Candle[],
   accountBalance: number,
   totalMarginUsed: number,
-  ctoConfig: CTOConfig | null = null
+  ctoConfig: CTOConfig | null = null,
+  globalPortfolioLeverage: number = 5.0
 ): { state: LiveSymbolState; signals: OrchestratorSignal[] } {
   const signals: OrchestratorSignal[] = [];
   const candle = candles4H[candles4H.length - 1]; // the just-closed 4H candle
   const now = candle.timestamp;
 
-  // Dynamic leverage: 8x in TREND regime (confirmed bull/bear trend), 5x in RANGE
   // CTO can further scale this via risk_per_trade_pct if active
   const riskPct = ctoConfig?.risk_per_trade_pct ?? 1.6;
-  const baseLeverage = state.currentRegime === 'TREND' ? 8.0 : 5.0;
-  const portfolioLeverage = baseLeverage * (riskPct / 1.6);
+  const portfolioLeverage = globalPortfolioLeverage * (riskPct / 1.6);
   const maxAllowedMargin = accountBalance * portfolioLeverage;
 
   const defconLevel = ctoConfig?.defcon_level ?? 0;

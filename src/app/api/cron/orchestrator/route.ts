@@ -328,6 +328,29 @@ export async function POST(req: NextRequest) {
 
     console.log(`[Orchestrator] Balance: $${accountBalance.toFixed(2)} | Margin Used: $${totalMarginUsed.toFixed(2)}`);
 
+    // 1. Load CTO Config from Redis
+    let ctoConfig = null;
+    try {
+      const ctoData = await redis.get('ultron_cto_config');
+      if (ctoData) {
+        ctoConfig = typeof ctoData === 'string' ? JSON.parse(ctoData) : ctoData;
+        console.log(`[Orchestrator] Loaded CTO Config: defcon=${ctoConfig.defcon_level}, riskPct=${ctoConfig.risk_per_trade_pct}`);
+      }
+    } catch (e) {
+      console.warn('[Orchestrator] Failed to load CTO config from Redis, proceeding with defaults.');
+    }
+
+    // 2. Load all states to compute Global Portfolio Leverage
+    const allStatesMap: Record<string, LiveSymbolState> = {};
+    let trendingCount = 0;
+    for (const symbol of SYMBOLS) {
+      const state = await loadState(symbol);
+      allStatesMap[symbol] = state;
+      if (state.currentRegime === 'TREND') trendingCount++;
+    }
+    const globalPortfolioLeverage = trendingCount >= 5 ? 8.0 : 5.0;
+    console.log(`[Orchestrator] Global Trend Count: ${trendingCount}/${SYMBOLS.length} -> Leverage Cap: ${globalPortfolioLeverage}x`);
+
     for (const symbol of SYMBOLS) {
       try {
         // Fetch 4H candles — 1000 candles = ~166 days (enough for EMA50/200)
@@ -348,8 +371,8 @@ export async function POST(req: NextRequest) {
         }));
 
         const currentPrice = candles[candles.length - 1].close;
-        const state = await loadState(symbol);
-        const { state: newState, signals } = processSymbol(state, candles, accountBalance, totalMarginUsed);
+        const state = allStatesMap[symbol];
+        const { state: newState, signals } = processSymbol(state, candles, accountBalance, totalMarginUsed, ctoConfig, globalPortfolioLeverage);
 
         await saveState(newState);
 
