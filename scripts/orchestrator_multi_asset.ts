@@ -143,7 +143,7 @@ class SymbolState {
     public realizedGridPnl = 0;
     public orderSizeUSD = 0;
     public gridStep = 0;
-    public readonly GRID_LEVELS = 40;
+    public readonly GRID_LEVELS = 20;
     public behemothCooldownUntil: number = 0;
 
     public leviathanTrade: any = null;
@@ -353,7 +353,12 @@ async function runMultiAssetOrchestrator() {
                         state.avgEntryPrice = 0;
                     }
                     state.gridActive = false;
-                    state.behemothCooldownUntil = candle.timestamp + (24 * 3600 * 1000);
+                    
+                    if (state.realizedGridPnl > behemothCapital * 0.30) {
+                        state.behemothCooldownUntil = candle.timestamp + (4 * 3600 * 1000);
+                    } else {
+                        state.behemothCooldownUntil = candle.timestamp + (24 * 3600 * 1000);
+                    }
                     globalBalance += state.realizedGridPnl;
                     stats.behemothProfit += state.realizedGridPnl;
                     state.realizedGridPnl = 0;
@@ -434,7 +439,7 @@ async function runMultiAssetOrchestrator() {
                 if (bullSignal) {
                     const sl = calculateLowestLow(state.buffer4H, 30, 1) - atr * 3.0;
                     const riskDist = Math.max(Math.abs(candle.close - sl) / candle.close, 0.01);
-                    const riskAmount = globalBalance * 0.05; 
+                    const riskAmount = globalBalance * 0.07; 
                     let desiredPosSize = riskAmount / riskDist;
                     
                     // MARGIN CHECK
@@ -456,7 +461,7 @@ async function runMultiAssetOrchestrator() {
                 } else if (bearSignal) {
                     const sl = calculateHighestHigh(state.buffer4H, 30, 1) + atr * 3.0;
                     const riskDist = Math.max(Math.abs(sl - candle.close) / candle.close, 0.01);
-                    const riskAmount = globalBalance * 0.05; 
+                    const riskAmount = globalBalance * 0.07; 
                     let desiredPosSize = riskAmount / riskDist;
                     
                     const maxAllowedForTrade = Math.min(leviathanCapital * 2, Math.max(0, maxAllowedMargin - currentGlobalMarginUsed));
@@ -497,7 +502,13 @@ async function runMultiAssetOrchestrator() {
                         globalBalance += pnl;
                         stats.megalodonProfit += pnl;
                         state.megalodonTrade = null;
-                        state.megalodonCooldownUntil = candle.timestamp + (20 * 4 * 3600 * 1000); // 80h cooldown after stop-out
+                        
+                        const lossPct = (trade.entryPrice - exitPrice) / trade.entryPrice;
+                        if (lossPct > 0.02) {
+                            state.megalodonCooldownUntil = candle.timestamp + (80 * 3600 * 1000);
+                        } else {
+                            state.megalodonCooldownUntil = candle.timestamp + (20 * 3600 * 1000);
+                        }
                     }
                 } else {
                     const trailStop = ema800 + atr * 3;
@@ -509,7 +520,13 @@ async function runMultiAssetOrchestrator() {
                         globalBalance += pnl;
                         stats.megalodonProfit += pnl;
                         state.megalodonTrade = null;
-                        state.megalodonCooldownUntil = candle.timestamp + (20 * 4 * 3600 * 1000); // 80h cooldown after stop-out
+                        
+                        const lossPct = (exitPrice - trade.entryPrice) / trade.entryPrice;
+                        if (lossPct > 0.02) {
+                            state.megalodonCooldownUntil = candle.timestamp + (80 * 3600 * 1000);
+                        } else {
+                            state.megalodonCooldownUntil = candle.timestamp + (20 * 3600 * 1000);
+                        }
                     }
                 }
             } else if (candleClosed4H && candle.timestamp > state.megalodonCooldownUntil) {
