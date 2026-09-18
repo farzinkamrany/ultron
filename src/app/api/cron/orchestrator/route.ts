@@ -348,7 +348,9 @@ export async function POST(req: NextRequest) {
       allStatesMap[symbol] = state;
       if (state.currentRegime === 'TREND') trendingCount++;
     }
-    const globalPortfolioLeverage = trendingCount >= 5 ? 8.0 : 5.0;
+    let globalPortfolioLeverage = trendingCount >= 5 ? 8.0 : 5.0;
+    if (accountBalance < 50000) globalPortfolioLeverage = 25.0;
+    else if (accountBalance < 100000) globalPortfolioLeverage = 15.0;
     console.log(`[Orchestrator] Global Trend Count: ${trendingCount}/${SYMBOLS.length} -> Leverage Cap: ${globalPortfolioLeverage}x`);
 
     for (const symbol of SYMBOLS) {

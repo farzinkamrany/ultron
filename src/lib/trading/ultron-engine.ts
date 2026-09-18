@@ -583,7 +583,9 @@ export function processSymbol(
           let riskPct = 0.03;
           if (accountBalance >= 1000000) riskPct = 0.005;
           else if (accountBalance >= 100000) riskPct = 0.01;
-          else if (accountBalance >= 10000) riskPct = 0.02;
+          else if (accountBalance >= 50000) riskPct = 0.02;
+          else if (accountBalance >= 5000) riskPct = 0.10;
+          else riskPct = 0.20; // Hyper-explosive 20% risk for <5k
           const riskAmount = accountBalance * riskPct;
           const desired = riskAmount / riskDist;
           const maxAllowed = Math.min(megalodonCapital * 2, Math.max(0, maxAllowedMargin - totalMarginUsed));
@@ -607,7 +609,9 @@ export function processSymbol(
           let riskPct = 0.03;
           if (accountBalance >= 1000000) riskPct = 0.005;
           else if (accountBalance >= 100000) riskPct = 0.01;
-          else if (accountBalance >= 10000) riskPct = 0.02;
+          else if (accountBalance >= 50000) riskPct = 0.02;
+          else if (accountBalance >= 5000) riskPct = 0.10;
+          else riskPct = 0.20; // Hyper-explosive 20% risk for <5k
           const riskAmount = accountBalance * riskPct;
           const desired = riskAmount / riskDist;
           const maxAllowed = Math.min(megalodonCapital * 2, Math.max(0, maxAllowedMargin - totalMarginUsed));
