@@ -78,7 +78,7 @@ export default function PnLDashboard() {
   }, [trades]);
 
   return (
-    <div className="min-h-screen bg-[#050505] text-foreground p-4 md:p-6 pb-20 overflow-x-hidden selection:bg-primary/30">
+    <div className="dark min-h-screen bg-[#050505] text-white p-4 md:p-6 pb-20 overflow-x-hidden selection:bg-primary/30">
       {/* Premium Background Glow */}
       <div className="fixed top-0 left-1/2 -translate-x-1/2 w-[800px] h-[300px] bg-primary/10 rounded-full blur-[120px] pointer-events-none -z-10" />
       <div className="fixed bottom-0 right-0 w-[600px] h-[400px] bg-purple-500/10 rounded-full blur-[150px] pointer-events-none -z-10" />
@@ -89,7 +89,7 @@ export default function PnLDashboard() {
             <h1 className="text-3xl font-black tracking-tighter bg-gradient-to-r from-white to-white/50 bg-clip-text text-transparent drop-shadow-sm">
               Ultron Quant <span className="text-primary text-sm tracking-widest uppercase font-bold ml-2 border border-primary/30 bg-primary/10 px-2 py-0.5 rounded-full">V5.0</span>
             </h1>
-            <p className="text-muted-foreground text-sm font-medium mt-1">Institutional Grade Algorithmic Engine</p>
+            <p className="text-gray-400 text-sm font-medium mt-1">Institutional Grade Algorithmic Engine</p>
           </div>
           <div className="p-3 bg-primary/10 border border-primary/20 rounded-2xl shadow-[0_0_20px_rgba(var(--primary),0.1)]">
             <Activity className="text-primary w-6 h-6 animate-pulse" />
@@ -98,30 +98,30 @@ export default function PnLDashboard() {
 
         {/* Stats Grid */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-          <div className="p-4 rounded-xl border border-border/50 bg-card shadow-sm flex flex-col space-y-2">
-            <div className="flex items-center justify-between text-muted-foreground">
+          <div className="p-4 rounded-xl border border-white/10 bg-white/5 shadow-sm flex flex-col space-y-2">
+            <div className="flex items-center justify-between text-gray-400">
               <span className="text-xs font-medium uppercase tracking-wider">Win Rate</span>
               <Target className="w-4 h-4 text-primary" />
             </div>
             <div className="text-2xl font-bold flex items-baseline space-x-1">
               <span>{stats.winRate}</span>
-              <span className="text-xs font-normal text-muted-foreground">%</span>
+              <span className="text-xs font-normal text-gray-500">%</span>
             </div>
           </div>
 
-          <div className="p-4 rounded-xl border border-border/50 bg-card shadow-sm flex flex-col space-y-2">
-            <div className="flex items-center justify-between text-muted-foreground">
+          <div className="p-4 rounded-xl border border-white/10 bg-white/5 shadow-sm flex flex-col space-y-2">
+            <div className="flex items-center justify-between text-gray-400">
               <span className="text-xs font-medium uppercase tracking-wider">Total PnL</span>
               <Wallet className="w-4 h-4 text-primary" />
             </div>
-            <div className={`text-2xl font-bold flex items-baseline space-x-1 ${parseFloat(stats.totalPnl) >= 0 ? "text-green-500" : "text-red-500"}`}>
+            <div className={`text-2xl font-bold flex items-baseline space-x-1 ${parseFloat(stats.totalPnl) >= 0 ? "text-green-400" : "text-red-400"}`}>
               <span>{parseFloat(stats.totalPnl) > 0 ? "+" : ""}{stats.totalPnl}</span>
               <span className="text-xs font-normal opacity-80">USDT</span>
             </div>
           </div>
 
-          <div className="p-4 rounded-xl border border-border/50 bg-card shadow-sm flex flex-col space-y-2">
-            <div className="flex items-center justify-between text-muted-foreground">
+          <div className="p-4 rounded-xl border border-white/10 bg-white/5 shadow-sm flex flex-col space-y-2">
+            <div className="flex items-center justify-between text-gray-400">
               <span className="text-xs font-medium uppercase tracking-wider">Active</span>
               <Clock className="w-4 h-4 text-primary" />
             </div>
@@ -130,19 +130,19 @@ export default function PnLDashboard() {
             </div>
           </div>
 
-          <div className="p-4 rounded-xl border border-border/50 bg-card shadow-sm flex flex-col space-y-2">
-            <div className="flex items-center justify-between text-muted-foreground">
+          <div className="p-4 rounded-xl border border-white/10 bg-white/5 shadow-sm flex flex-col space-y-2">
+            <div className="flex items-center justify-between text-gray-400">
               <span className="text-xs font-medium uppercase tracking-wider">Max DD</span>
-              <AlertTriangle className="w-4 h-4 text-orange-500" />
+              <AlertTriangle className="w-4 h-4 text-orange-400" />
             </div>
-            <div className="text-2xl font-bold text-orange-500 flex items-baseline space-x-1">
+            <div className="text-2xl font-bold text-orange-400 flex items-baseline space-x-1">
               <span>-{stats.maxDrawdown}</span>
               <span className="text-xs font-normal opacity-80">USDT</span>
             </div>
           </div>
 
-          <div className="p-4 rounded-xl border border-border/50 bg-card shadow-sm flex flex-col space-y-2 col-span-2 md:col-span-1">
-            <div className="flex items-center justify-between text-muted-foreground">
+          <div className="p-4 rounded-xl border border-white/10 bg-white/5 shadow-sm flex flex-col space-y-2 col-span-2 md:col-span-1">
+            <div className="flex items-center justify-between text-gray-400">
               <span className="text-xs font-medium uppercase tracking-wider">Profit Factor</span>
               <Percent className="w-4 h-4 text-primary" />
             </div>
@@ -153,8 +153,8 @@ export default function PnLDashboard() {
         </div>
 
         {/* Equity Curve Chart */}
-        <div className="p-4 rounded-xl border border-border/50 bg-card shadow-sm">
-          <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground mb-4 flex items-center">
+        <div className="p-4 rounded-xl border border-white/10 bg-white/5 shadow-sm">
+          <h2 className="text-sm font-medium uppercase tracking-wider text-gray-400 mb-4 flex items-center">
             <TrendingUp className="w-4 h-4 mr-2" />
             Cumulative Equity Curve
           </h2>
@@ -170,7 +170,7 @@ export default function PnLDashboard() {
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {trades.length === 0 ? (
-              <p className="text-muted-foreground text-sm py-4 col-span-full text-center">No algorithmic trades executed yet.</p>
+              <p className="text-gray-400 text-sm py-4 col-span-full text-center">No algorithmic trades executed yet.</p>
             ) : (
               trades.slice(0, visibleCount).map((trade, idx) => {
                 const strategyMatch = trade.rationale?.match(/\[(.*?)\]/);
@@ -186,30 +186,31 @@ export default function PnLDashboard() {
                     key={trade.id} 
                     onClick={() => setSelectedTrade(trade)}
                     style={{ animationDelay: `${(idx % 10) * 50}ms` }}
-                    className="p-4 rounded-xl bg-card/40 backdrop-blur-md border border-white/5 flex items-center justify-between group hover:bg-card/60 hover:border-white/10 transition-all gap-2 cursor-pointer active:scale-[0.98] animate-in fade-in slide-in-from-bottom-4 duration-500"
+                    className="p-3 sm:p-4 rounded-xl bg-white/5 backdrop-blur-md border border-white/5 flex flex-col sm:flex-row items-start sm:items-center justify-between group hover:bg-white/10 hover:border-white/10 transition-all gap-3 sm:gap-2 cursor-pointer active:scale-[0.98] animate-in fade-in slide-in-from-bottom-4 duration-500"
                   >
-                    <div className="flex items-center space-x-4 min-w-0">
-                      <div className={`p-3 shrink-0 rounded-2xl border ${trade.position_type === 'LONG' ? 'bg-green-500/10 border-green-500/20 text-green-500' : 'bg-red-500/10 border-red-500/20 text-red-500'}`}>
-                        {trade.position_type === 'LONG' ? <TrendingUp className="w-5 h-5" /> : <TrendingDown className="w-5 h-5" />}
+                    <div className="flex items-center space-x-3 sm:space-x-4 min-w-0 w-full sm:w-auto">
+                      <div className={`p-2.5 sm:p-3 shrink-0 rounded-xl sm:rounded-2xl border ${trade.position_type === 'LONG' ? 'bg-green-500/10 border-green-500/20 text-green-400' : 'bg-red-500/10 border-red-500/20 text-red-400'}`}>
+                        {trade.position_type === 'LONG' ? <TrendingUp className="w-4 h-4 sm:w-5 h-5" /> : <TrendingDown className="w-4 h-4 sm:w-5 h-5" />}
                       </div>
-                      <div className="min-w-0 space-y-1">
-                        <div className="font-bold text-base flex items-center gap-2 flex-wrap">
+                      <div className="min-w-0 space-y-1 flex-1">
+                        <div className="font-bold text-sm sm:text-base flex items-center gap-1.5 sm:gap-2 flex-wrap text-white">
                           <span className="truncate">{trade.symbol}</span>
-                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold tracking-widest shrink-0 border ${stratColor}`}>
+                          <span className={`text-[8px] sm:text-[10px] px-1.5 sm:px-2 py-0.5 rounded-full font-bold tracking-widest shrink-0 border ${stratColor}`}>
                             {strategy}
                           </span>
                         </div>
-                        <div className="text-[11px] font-mono text-muted-foreground flex items-center gap-2 flex-wrap">
-                          <span className="font-medium text-foreground/80">Entry: ${Number(trade.entry_price).toFixed(2)}</span>
-                          <span className="w-1 h-1 rounded-full bg-white/20"></span>
+                        <div className="text-[10px] sm:text-[11px] font-mono text-gray-400 flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                          <span className="font-medium text-white/80">Entry: ${Number(trade.entry_price).toFixed(2)}</span>
+                          <span className="w-1 h-1 rounded-full bg-white/20 hidden sm:block"></span>
                           <span className="opacity-70">
                             {new Date(trade.created_at).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' })}
                           </span>
                         </div>
                       </div>
                     </div>
-                    <div className="text-right flex flex-col items-end justify-center shrink-0">
-                      <span className={`text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-md border ${
+                    
+                    <div className="w-full sm:w-auto flex flex-row sm:flex-col items-center sm:items-end justify-between sm:justify-center shrink-0 pt-3 sm:pt-0 mt-1 sm:mt-0 border-t border-white/5 sm:border-t-0">
+                      <span className={`text-[9px] sm:text-[10px] font-bold uppercase tracking-widest px-2 sm:px-2.5 py-1 rounded-md border ${
                         trade.status === 'WON' ? 'bg-green-500/10 text-green-500 border-green-500/20' :
                         trade.status === 'LOST' ? 'bg-red-500/10 text-red-500 border-red-500/20' :
                         'bg-blue-500/10 text-blue-500 border-blue-500/20 animate-pulse'
@@ -217,8 +218,8 @@ export default function PnLDashboard() {
                         {trade.status}
                       </span>
                       {trade.status !== 'OPEN' && (
-                        <span className={`text-sm font-bold font-mono mt-1.5 ${trade.pnl >= 0 ? "text-green-400 drop-shadow-[0_0_8px_rgba(74,222,128,0.4)]" : "text-red-400"}`}>
-                          {trade.pnl >= 0 ? "+" : ""}{Number(trade.pnl).toFixed(1)} <span className="text-[9px] opacity-70">USDT</span>
+                        <span className={`text-xs sm:text-sm font-bold font-mono sm:mt-1.5 ${trade.pnl >= 0 ? "text-green-400 drop-shadow-[0_0_8px_rgba(74,222,128,0.4)]" : "text-red-400"}`}>
+                          {trade.pnl >= 0 ? "+" : ""}{Number(trade.pnl).toFixed(1)} <span className="text-[8px] sm:text-[9px] opacity-70">USDT</span>
                         </span>
                       )}
                     </div>
@@ -238,30 +239,30 @@ export default function PnLDashboard() {
 
       {/* Trade Details Modal */}
       {selectedTrade && (
-        <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex justify-center items-end md:items-center">
-          <div className="bg-card w-full md:w-[450px] max-w-full rounded-t-2xl md:rounded-2xl border border-border/50 shadow-2xl p-6 animate-in slide-in-from-bottom-10 md:slide-in-from-bottom-0 md:zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-50 bg-[#000000]/80 backdrop-blur-sm flex justify-center items-end md:items-center text-white">
+          <div className="bg-[#111] w-full md:w-[450px] max-w-full rounded-t-2xl md:rounded-2xl border border-white/10 shadow-2xl p-6 animate-in slide-in-from-bottom-10 md:slide-in-from-bottom-0 md:zoom-in-95 duration-200">
             <div className="flex justify-between items-start mb-6">
               <div>
-                <h3 className="text-xl font-bold flex items-center gap-2">
+                <h3 className="text-xl font-bold flex items-center gap-2 text-white">
                   {selectedTrade.symbol}
-                  <span className={`text-xs px-2 py-1 rounded-md font-bold tracking-widest ${selectedTrade.position_type === 'LONG' ? 'bg-green-500/20 text-green-500' : 'bg-red-500/20 text-red-500'}`}>
+                  <span className={`text-xs px-2 py-1 rounded-md font-bold tracking-widest ${selectedTrade.position_type === 'LONG' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
                     {selectedTrade.position_type}
                   </span>
                 </h3>
-                <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
                   <Calendar className="w-3 h-3" />
                   {new Date(selectedTrade.created_at).toLocaleString('fa-IR')}
                 </p>
               </div>
-              <button onClick={() => setSelectedTrade(null)} className="p-2 rounded-full hover:bg-muted/50 transition-colors">
-                <X className="w-5 h-5 text-muted-foreground" />
+              <button onClick={() => setSelectedTrade(null)} className="p-2 rounded-full hover:bg-white/10 transition-colors">
+                <X className="w-5 h-5 text-gray-400" />
               </button>
             </div>
 
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4 p-4 rounded-xl bg-card/50 border border-white/5 shadow-inner">
+              <div className="grid grid-cols-2 gap-4 p-4 rounded-xl bg-white/5 border border-white/5 shadow-inner">
                 <div>
-                  <p className="text-[10px] text-muted-foreground uppercase tracking-widest mb-1 font-semibold">Status</p>
+                  <p className="text-[10px] text-gray-400 uppercase tracking-widest mb-1 font-semibold">Status</p>
                   <p className={`font-bold tracking-wider ${
                     selectedTrade.status === 'WON' ? 'text-green-400 drop-shadow-[0_0_8px_rgba(74,222,128,0.4)]' :
                     selectedTrade.status === 'LOST' ? 'text-red-400 drop-shadow-[0_0_8px_rgba(248,113,113,0.4)]' :
@@ -269,20 +270,20 @@ export default function PnLDashboard() {
                   }`}>{selectedTrade.status}</p>
                 </div>
                 <div>
-                  <p className="text-[10px] text-muted-foreground uppercase tracking-widest mb-1 font-semibold">PnL</p>
+                  <p className="text-[10px] text-gray-400 uppercase tracking-widest mb-1 font-semibold">PnL</p>
                   <p className={`font-bold font-mono text-lg ${selectedTrade.pnl >= 0 ? "text-green-400" : "text-red-400"}`}>
                     {selectedTrade.pnl >= 0 ? "+" : ""}{Number(selectedTrade.pnl).toFixed(2)} <span className="text-xs">USDT</span>
                   </p>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 gap-0 p-1 rounded-xl bg-card/30 border border-white/5 font-mono text-sm overflow-hidden">
+              <div className="grid grid-cols-1 gap-0 p-1 rounded-xl bg-white/5 border border-white/5 font-mono text-sm overflow-hidden">
                 <div className="flex justify-between items-center py-3 px-4 hover:bg-white/5 transition-colors">
-                  <span className="text-muted-foreground text-xs uppercase tracking-widest">Size</span>
+                  <span className="text-gray-400 text-xs uppercase tracking-widest">Size</span>
                   <span className="font-bold text-blue-400 drop-shadow-[0_0_5px_rgba(96,165,250,0.3)]">${Number(selectedTrade.position_size_usd || 1000).toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between items-center py-3 px-4 border-t border-white/5 hover:bg-white/5 transition-colors">
-                  <span className="text-muted-foreground text-xs uppercase tracking-widest">Entry</span>
+                  <span className="text-gray-400 text-xs uppercase tracking-widest">Entry</span>
                   <span className="font-bold text-white/90">${Number(selectedTrade.entry_price).toFixed(4)}</span>
                 </div>
                 <div className="flex justify-between items-center py-3 px-4 border-t border-white/5 hover:bg-white/5 transition-colors">
@@ -296,14 +297,14 @@ export default function PnLDashboard() {
               </div>
 
               {selectedTrade.rationale && (
-                <div className="p-4 rounded-xl bg-muted/20 border border-white/5">
-                  <p className="text-[10px] text-muted-foreground uppercase tracking-widest mb-2 font-semibold">Engine Rationale</p>
-                  <p className="text-xs text-foreground/80 leading-relaxed font-mono">{selectedTrade.rationale}</p>
+                <div className="p-4 rounded-xl bg-white/5 border border-white/5">
+                  <p className="text-[10px] text-gray-400 uppercase tracking-widest mb-2 font-semibold">Engine Rationale</p>
+                  <p className="text-xs text-white/80 leading-relaxed font-mono">{selectedTrade.rationale}</p>
                 </div>
               )}
 
               {selectedTrade.closed_at && (
-                <p className="text-[10px] text-center text-muted-foreground/60 mt-4 uppercase tracking-widest">
+                <p className="text-[10px] text-center text-gray-500 mt-4 uppercase tracking-widest">
                   Closed: {new Date(selectedTrade.closed_at).toLocaleString('fa-IR')}
                 </p>
               )}
