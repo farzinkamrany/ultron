@@ -124,8 +124,26 @@ export async function POST(req: NextRequest) {
           .eq('status', 'OPEN')
           .ilike('rationale', '%[BEHEMOTH]%');
           
+        // Fetch closed trades for today
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+        const { data: closedTrades } = await supabase
+          .from('paper_trades')
+          .select('pnl, status')
+          .in('status', ['WON', 'LOST'])
+          .gte('closed_at', todayStart.toISOString())
+          .ilike('rationale', '%[BEHEMOTH]%');
+          
+        let todayPnl = 0;
+        let todayCount = 0;
+        if (closedTrades) {
+          todayCount = closedTrades.length;
+          todayPnl = closedTrades.reduce((sum, t) => sum + (t.pnl || 0), 0);
+        }
+        const todayReport = todayCount > 0 ? `\n\n🗓 <b>Today's Secured Profit:</b> ${todayPnl >= 0 ? '+' : ''}$${todayPnl.toFixed(2)} (${todayCount} trades)` : '';
+          
         if (error || !openTrades || openTrades.length === 0) {
-          await sendTelegramMessage(chatId, `👑 <b>BEHEMOTH STATUS</b> 👑\n\n💤 No active grids right now. Waiting for ranges...`);
+          await sendTelegramMessage(chatId, `👑 <b>BEHEMOTH STATUS</b> 👑\n\n💤 No active grids right now. Waiting for ranges...${todayReport}`);
         } else {
           const exchange = new ccxt.hyperliquid();
           const fetchSymbols = openTrades.map(t => `${t.symbol.split('/')[0]}/USDC:USDC`);
@@ -151,7 +169,7 @@ export async function POST(req: NextRequest) {
           
           const header = `👑 <b>BEHEMOTH LIVE REPORT</b> 👑\n━━━━━━━━━━━━━━━━━━━━━━\n`;
           const body = lines.join('\n');
-          const footer = `\n━━━━━━━━━━━━━━━━━━━━━━\n💰 <b>Margin In Use:</b> $${totalMargin.toFixed(2)}\n💵 <b>Unrealized PNL:</b> ${totalPnl >= 0 ? '+' : ''}$${totalPnl.toFixed(2)}`;
+          const footer = `\n━━━━━━━━━━━━━━━━━━━━━━\n💰 <b>Margin In Use:</b> $${totalMargin.toFixed(2)}\n💵 <b>Unrealized PNL:</b> ${totalPnl >= 0 ? '+' : ''}$${totalPnl.toFixed(2)}${todayReport}`;
           await sendTelegramMessage(chatId, header + body + footer);
         }
       } catch (e) {
