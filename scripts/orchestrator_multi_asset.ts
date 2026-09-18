@@ -75,11 +75,11 @@ function calculateADX(candles: MultiCandle[], period: number = 14): number {
     if (candles.length < period * 2) return 0;
     let plusDM = 0, minusDM = 0, tr = 0;
     for (let i = candles.length - period; i < candles.length; i++) {
-        const upMove = candles[i].high - candles[i - 1].high;
-        const downMove = candles[i - 1].low - candles[i].low;
+        const upMove = candles[i].high - candles[i-1].high;
+        const downMove = candles[i-1].low - candles[i].low;
         if (upMove > downMove && upMove > 0) plusDM += upMove;
         if (downMove > upMove && downMove > 0) minusDM += downMove;
-        const high = candles[i].high, low = candles[i].low, prevClose = candles[i - 1].close;
+        const high = candles[i].high, low = candles[i].low, prevClose = candles[i-1].close;
         tr += Math.max(high - low, Math.abs(high - prevClose), Math.abs(low - prevClose));
     }
     if (tr === 0) return 0;
@@ -189,7 +189,7 @@ async function runMultiAssetOrchestrator() {
 
     let globalBalance = INITIAL_CAPITAL;
     let peakBalance = globalBalance;
-    let peakRealizedBalance = INITIAL_CAPITAL;
+    let peakRealizedBalance = INITIAL_CAPITAL; 
 
     let stats = {
         behemothProfit: 0,
@@ -203,7 +203,6 @@ async function runMultiAssetOrchestrator() {
         switchesToLeviathan: 0,
         maxDrawdown: 0,
         maxRealizedDrawdown: 0,
-        maxRealizedDrawdownTime: 0,
         velocityBlocks: 0,
     };
 
@@ -224,8 +223,8 @@ async function runMultiAssetOrchestrator() {
         if (!state.current4HCandle) {
             state.current4HCandle = { ...candle, timestamp: periodTimestamp };
         } else if (state.current4HCandle.timestamp !== periodTimestamp) {
-            state.buffer4H.push({ ...state.current4HCandle });
-            if (state.buffer4H.length > 1000) state.buffer4H.shift();
+            state.buffer4H.push({...state.current4HCandle});
+            if (state.buffer4H.length > 1000) state.buffer4H.shift(); 
             state.current4HCandle = { ...candle, timestamp: periodTimestamp };
             candleClosed4H = true;
         } else {
@@ -245,21 +244,10 @@ async function runMultiAssetOrchestrator() {
             if (st.leviathanTrade) currentGlobalMarginUsed += st.leviathanTrade.positionSize;
             if (st.megalodonTrade) currentGlobalMarginUsed += st.megalodonTrade.positionSize;
         }
-        // Dynamic leverage: Scale based on balance and boost in strong trends
-        let baseLeverage = 5.0;
-        if (globalBalance < 50000) baseLeverage = 25.0;
-        else if (globalBalance < 100000) baseLeverage = 15.0;
-        else if (globalBalance < 1000000) baseLeverage = 10.0;
-        else if (globalBalance < 10000000) baseLeverage = 8.0;
-        else baseLeverage = 6.0;
-
+        // Dynamic leverage: 5x in ranging markets, 8x when majority of symbols in confirmed TREND
         const activeRegimes = Object.values(states).map(s => s.currentRegime);
         const trendingCount = activeRegimes.filter(r => r === 'TREND').length;
-        
-        if (trendingCount >= 7) baseLeverage *= 1.3;
-        else if (trendingCount >= 5) baseLeverage *= 1.15;
-        
-        const dynamicLeverage = Math.min(baseLeverage, 30.0);
+        const dynamicLeverage = trendingCount >= 5 ? 8.0 : 5.0;
         const maxAllowedMargin = globalBalance * dynamicLeverage;
 
         // ============================================================
@@ -313,10 +301,10 @@ async function runMultiAssetOrchestrator() {
             const upperBound = candle.close * (1 + dynamicRange);
             const lowerBound = candle.close * (1 - dynamicRange);
             state.gridStep = (upperBound - lowerBound) / state.GRID_LEVELS;
-
+            
             // MARGIN CHECK
             let targetCapital = Math.min(behemothCapital, Math.max(0, maxAllowedMargin - currentGlobalMarginUsed));
-
+            
             if (targetCapital >= 50) {
                 state.orderSizeUSD = targetCapital / (state.GRID_LEVELS / 2);
                 currentGlobalMarginUsed += targetCapital;
@@ -330,108 +318,85 @@ async function runMultiAssetOrchestrator() {
             }
 
         } else if (state.gridActive) {
-            for (const level of state.grid) {
-                if (!level.active) continue;
-                if (level.type === 'BUY' && candle.low <= level.price) {
-                    const coinsBought = state.orderSizeUSD / level.price;
-                    const totalCost = state.positionCoins * state.avgEntryPrice + coinsBought * level.price;
-                    state.positionCoins += coinsBought;
-                    state.avgEntryPrice = totalCost / state.positionCoins;
-                    state.realizedGridPnl += state.orderSizeUSD * Math.abs(MAKER_FEE);
-                    level.active = false;
-                    const sellLevel = state.grid.find(g => g.price > level.price);
-                    if (sellLevel) {
-                        sellLevel.type = 'SELL';
-                        sellLevel.active = true;
-                    }
-                }
-                else if (level.type === 'SELL' && candle.high >= level.price) {
-                    if (state.positionCoins > 0) {
-                        const coinsSold = state.orderSizeUSD / level.price;
-                        const profitUSD = coinsSold * state.gridStep;
-                        state.realizedGridPnl += profitUSD;
+                for (const level of state.grid) {
+                    if (!level.active) continue;
+                    if (level.type === 'BUY' && candle.low <= level.price) {
+                        const coinsBought = state.orderSizeUSD / level.price;
+                        const totalCost = state.positionCoins * state.avgEntryPrice + coinsBought * level.price;
+                        state.positionCoins += coinsBought;
+                        state.avgEntryPrice = totalCost / state.positionCoins;
                         state.realizedGridPnl += state.orderSizeUSD * Math.abs(MAKER_FEE);
-                        state.positionCoins = Math.max(0, state.positionCoins - coinsSold);
-
-                        // Re-calculate average entry price accurately if coins remain
-                        if (state.positionCoins < 0.0001) {
-                            state.positionCoins = 0;
-                            state.avgEntryPrice = 0;
-                        }
                         level.active = false;
-                        const buyLevel = state.grid.slice().reverse().find(g => g.price < level.price);
-                        if (buyLevel) {
-                            buyLevel.type = 'BUY';
-                            buyLevel.active = true;
+                        const sellLevel = state.grid.find(g => g.price > level.price);
+                        if (sellLevel) {
+                            sellLevel.type = 'SELL';
+                            sellLevel.active = true;
+                        }
+                    }
+                    else if (level.type === 'SELL' && candle.high >= level.price) {
+                        if (state.positionCoins > 0) {
+                            const coinsSold = state.orderSizeUSD / level.price;
+                            const profitUSD = coinsSold * state.gridStep;
+                            state.realizedGridPnl += profitUSD;
+                            state.realizedGridPnl += state.orderSizeUSD * Math.abs(MAKER_FEE);
+                            state.positionCoins = Math.max(0, state.positionCoins - coinsSold);
+                            
+                            // Re-calculate average entry price accurately if coins remain
+                            if (state.positionCoins < 0.0001) {
+                                state.positionCoins = 0;
+                                state.avgEntryPrice = 0;
+                            }
+                            level.active = false;
+                            const buyLevel = state.grid.slice().reverse().find(g => g.price < level.price);
+                            if (buyLevel) {
+                                buyLevel.type = 'BUY';
+                                buyLevel.active = true;
+                            }
                         }
                     }
                 }
-            }
 
-            const upperBound = state.grid[state.grid.length - 1].price;
-            const lowerBound = state.grid[0].price;
-            if (candle.close > upperBound || candle.close < lowerBound) {
-                if (state.positionCoins !== 0) {
-                    const exitValue = state.positionCoins * candle.close;
-                    const entryValue = state.positionCoins * state.avgEntryPrice;
-                    state.realizedGridPnl += (exitValue - entryValue);
-                    state.realizedGridPnl -= exitValue * TAKER_FEE;
-                    state.positionCoins = 0;
-                    state.avgEntryPrice = 0;
+                const upperBound = state.grid[state.grid.length-1].price;
+                const lowerBound = state.grid[0].price;
+                if (candle.close > upperBound || candle.close < lowerBound) {
+                    if (state.positionCoins !== 0) {
+                        const exitValue = state.positionCoins * candle.close;
+                        const entryValue = state.positionCoins * state.avgEntryPrice;
+                        state.realizedGridPnl += (exitValue - entryValue);
+                        state.realizedGridPnl -= exitValue * TAKER_FEE;
+                        state.positionCoins = 0;
+                        state.avgEntryPrice = 0;
+                    }
+                    state.gridActive = false;
+                    
+                    if (state.realizedGridPnl > behemothCapital * 0.30) {
+                        state.behemothCooldownUntil = candle.timestamp + (4 * 3600 * 1000);
+                    } else {
+                        state.behemothCooldownUntil = candle.timestamp + (24 * 3600 * 1000);
+                    }
+                    globalBalance += state.realizedGridPnl;
+                    stats.behemothProfit += state.realizedGridPnl;
+                    state.realizedGridPnl = 0;
+                } else if (candleClosed4H && state.realizedGridPnl > behemothCapital * 1.0) {
+                    globalBalance += state.realizedGridPnl;
+                    stats.behemothProfit += state.realizedGridPnl;
+                    state.realizedGridPnl = 0;
                 }
-                state.gridActive = false;
-
-                if (state.realizedGridPnl > behemothCapital * 0.30) {
-                    state.behemothCooldownUntil = candle.timestamp + (4 * 3600 * 1000);
-                } else {
-                    state.behemothCooldownUntil = candle.timestamp + (24 * 3600 * 1000);
-                }
-                globalBalance += state.realizedGridPnl;
-                stats.behemothProfit += state.realizedGridPnl;
-                state.realizedGridPnl = 0;
-            } else if (candleClosed4H && state.realizedGridPnl > behemothCapital * 1.0) {
-                globalBalance += state.realizedGridPnl;
-                stats.behemothProfit += state.realizedGridPnl;
-                state.realizedGridPnl = 0;
             }
-        }
 
         // ============================================================
         // 4. LEVIATHAN — RSI + EMA Cross + Partial TP
         // ============================================================
         if (state.buffer4H.length > 200) {
-            const ema50 = calculateEMA(state.buffer4H, 50);
+            const ema50  = calculateEMA(state.buffer4H, 50);
             const ema200 = calculateEMA(state.buffer4H, 200);
-            const atr = calculateATR(state.buffer4H, 14);
-            const rsi = calculateRSI(state.buffer4H, 14);
+            const atr    = calculateATR(state.buffer4H, 14);
+            const rsi    = calculateRSI(state.buffer4H, 14);
             const highest20 = calculateHighestHigh(state.buffer4H, 20, 1);
-            const lowest20 = calculateLowestLow(state.buffer4H, 20, 1);
+            const lowest20  = calculateLowestLow(state.buffer4H, 20, 1);
 
             if (state.leviathanTrade) {
                 const trade = state.leviathanTrade;
-                
-                const gainPct = trade.action === 'BUY'
-                    ? (candle.high - trade.entryPrice) / trade.entryPrice
-                    : (trade.entryPrice - candle.low) / trade.entryPrice;
-
-                // Pyramiding: Add 50% more size at +15% profit
-                if (!trade.pyramid1 && gainPct >= 0.15) {
-                    const additionalSize = trade.positionSize * 0.5;
-                    const maxAllowed = Math.max(0, maxAllowedMargin - currentGlobalMarginUsed);
-                    const pyramidSize = Math.min(additionalSize, maxAllowed);
-                    
-                    if (pyramidSize >= 50) {
-                        trade.positionSize += pyramidSize;
-                        trade.pyramid1 = true;
-                        if (trade.action === 'BUY') {
-                            trade.sl = Math.max(trade.sl, trade.entryPrice);
-                        } else {
-                            trade.sl = Math.min(trade.sl, trade.entryPrice);
-                        }
-                        currentGlobalMarginUsed += pyramidSize;
-                    }
-                }
-
                 if (!trade.partialTaken) {
                     const gainPct = trade.action === 'BUY'
                         ? (candle.high - trade.entryPrice) / trade.entryPrice
@@ -439,8 +404,8 @@ async function runMultiAssetOrchestrator() {
 
                     if (gainPct >= trade.tpTarget) {
                         const halfSize = trade.positionSize * 0.5;
-                        const halfQty = halfSize / trade.entryPrice;
-                        const tpPrice = trade.action === 'BUY'
+                        const halfQty  = halfSize / trade.entryPrice;
+                        const tpPrice  = trade.action === 'BUY'
                             ? trade.entryPrice * (1 + trade.tpTarget) * (1 - SLIPPAGE)
                             : trade.entryPrice * (1 - trade.tpTarget) * (1 + SLIPPAGE);
                         const partialPnl = trade.action === 'BUY'
@@ -462,7 +427,7 @@ async function runMultiAssetOrchestrator() {
                     trade.sl = Math.max(trade.sl, trailStop);
                     if (candle.low <= trade.sl) {
                         const exitPrice = Math.min(trade.sl, candle.open) * (1 - SLIPPAGE);
-                        const quantity = trade.positionSize / trade.entryPrice;
+                        const quantity  = trade.positionSize / trade.entryPrice;
                         const pnl = ((exitPrice - trade.entryPrice) * quantity) - (trade.positionSize * TAKER_FEE * 2);
                         globalBalance += pnl;
                         stats.leviathanProfit += pnl;
@@ -474,7 +439,7 @@ async function runMultiAssetOrchestrator() {
                     trade.sl = Math.min(trade.sl, trailStop);
                     if (candle.high >= trade.sl) {
                         const exitPrice = Math.max(trade.sl, candle.open) * (1 + SLIPPAGE);
-                        const quantity = trade.positionSize / trade.entryPrice;
+                        const quantity  = trade.positionSize / trade.entryPrice;
                         const pnl = ((trade.entryPrice - exitPrice) * quantity) - (trade.positionSize * TAKER_FEE * 2);
                         globalBalance += pnl;
                         stats.leviathanProfit += pnl;
@@ -496,22 +461,17 @@ async function runMultiAssetOrchestrator() {
                 if (bullSignal) {
                     const sl = calculateLowestLow(state.buffer4H, 10, 1) - atr;
                     const riskDist = Math.max(Math.abs(candle.close - sl) / candle.close, 0.01);
-                    let riskPct = 0.02;
-                    if (globalBalance < 10000) riskPct = 0.08;
-                    else if (globalBalance < 100000) riskPct = 0.05;
-                    else if (globalBalance < 1000000) riskPct = 0.03;
-                    else if (globalBalance < 10000000) riskPct = 0.02;
-                    else riskPct = 0.015;
-
-                    if (trendingCount >= 5) riskPct *= 1.5;
-                    riskPct = Math.min(riskPct, 0.10);
+                    let riskPct = 0.05;
+                    if (globalBalance >= 1000000) riskPct = 0.01;
+                    else if (globalBalance >= 100000) riskPct = 0.02;
+                    else if (globalBalance >= 10000) riskPct = 0.03;
                     const riskAmount = globalBalance * riskPct;
                     let desiredPosSize = riskAmount / riskDist;
-
+                    
                     // MARGIN CHECK
                     const maxAllowedForTrade = Math.min(leviathanCapital * 5, Math.max(0, maxAllowedMargin - currentGlobalMarginUsed));
                     let posSize = Math.min(desiredPosSize, maxAllowedForTrade);
-
+                    
                     if (posSize >= 50) {
                         const atrPct = atr / candle.close;
                         const tpTarget = Math.max(0.15, Math.min(0.35, atrPct * 8));
@@ -530,18 +490,13 @@ async function runMultiAssetOrchestrator() {
                 } else if (bearSignal) {
                     const sl = calculateHighestHigh(state.buffer4H, 10, 1) + atr;
                     const riskDist = Math.max(Math.abs(sl - candle.close) / candle.close, 0.01);
-                    let riskPct = 0.02;
-                    if (globalBalance < 10000) riskPct = 0.08;
-                    else if (globalBalance < 100000) riskPct = 0.05;
-                    else if (globalBalance < 1000000) riskPct = 0.03;
-                    else if (globalBalance < 10000000) riskPct = 0.02;
-                    else riskPct = 0.015;
-
-                    if (trendingCount >= 5) riskPct *= 1.5;
-                    riskPct = Math.min(riskPct, 0.10);
+                    let riskPct = 0.05;
+                    if (globalBalance >= 1000000) riskPct = 0.01;
+                    else if (globalBalance >= 100000) riskPct = 0.02;
+                    else if (globalBalance >= 10000) riskPct = 0.03;
                     const riskAmount = globalBalance * riskPct;
                     let desiredPosSize = riskAmount / riskDist;
-
+                    
                     const maxAllowedForTrade = Math.min(leviathanCapital * 2, Math.max(0, maxAllowedMargin - currentGlobalMarginUsed));
                     let posSize = Math.min(desiredPosSize, maxAllowedForTrade);
 
@@ -576,23 +531,14 @@ async function runMultiAssetOrchestrator() {
                 if (trade.action === 'BUY') {
                     const trailStop = ema800 - atr * 3;
                     trade.sl = Math.max(trade.sl, trailStop);
-                    const tpPrice = trade.entryPrice * 1.30;
-                    if (candle.high >= tpPrice) {
-                        const exitPrice = tpPrice;
-                        const quantity = trade.positionSize / trade.entryPrice;
-                        const pnl = ((exitPrice - trade.entryPrice) * quantity) - (trade.positionSize * TAKER_FEE * 2);
-                        globalBalance += pnl;
-                        stats.megalodonProfit += pnl;
-                        state.megalodonTrade = null;
-                        state.megalodonCooldownUntil = candle.timestamp + (20 * 3600 * 1000);
-                    } else if (candle.low <= trade.sl) {
+                    if (candle.low <= trade.sl) {
                         const exitPrice = Math.min(trade.sl, candle.open) * (1 - SLIPPAGE);
-                        const quantity = trade.positionSize / trade.entryPrice;
+                        const quantity  = trade.positionSize / trade.entryPrice;
                         const pnl = ((exitPrice - trade.entryPrice) * quantity) - (trade.positionSize * TAKER_FEE * 2);
                         globalBalance += pnl;
                         stats.megalodonProfit += pnl;
                         state.megalodonTrade = null;
-
+                        
                         const lossPct = (trade.entryPrice - exitPrice) / trade.entryPrice;
                         if (lossPct > 0.02) {
                             state.megalodonCooldownUntil = candle.timestamp + (80 * 3600 * 1000);
@@ -603,23 +549,14 @@ async function runMultiAssetOrchestrator() {
                 } else {
                     const trailStop = ema800 + atr * 3;
                     trade.sl = Math.min(trade.sl, trailStop);
-                    const tpPrice = trade.entryPrice * 0.70;
-                    if (candle.low <= tpPrice) {
-                        const exitPrice = tpPrice;
-                        const quantity = trade.positionSize / trade.entryPrice;
-                        const pnl = ((trade.entryPrice - exitPrice) * quantity) - (trade.positionSize * TAKER_FEE * 2);
-                        globalBalance += pnl;
-                        stats.megalodonProfit += pnl;
-                        state.megalodonTrade = null;
-                        state.megalodonCooldownUntil = candle.timestamp + (20 * 3600 * 1000);
-                    } else if (candle.high >= trade.sl) {
+                    if (candle.high >= trade.sl) {
                         const exitPrice = Math.max(trade.sl, candle.open) * (1 + SLIPPAGE);
-                        const quantity = trade.positionSize / trade.entryPrice;
+                        const quantity  = trade.positionSize / trade.entryPrice;
                         const pnl = ((trade.entryPrice - exitPrice) * quantity) - (trade.positionSize * TAKER_FEE * 2);
                         globalBalance += pnl;
                         stats.megalodonProfit += pnl;
                         state.megalodonTrade = null;
-
+                        
                         const lossPct = (exitPrice - trade.entryPrice) / trade.entryPrice;
                         if (lossPct > 0.02) {
                             state.megalodonCooldownUntil = candle.timestamp + (80 * 3600 * 1000);
@@ -635,18 +572,18 @@ async function runMultiAssetOrchestrator() {
                     let riskPct = 0.03;
                     if (globalBalance >= 1000000) riskPct = 0.005;
                     else if (globalBalance >= 100000) riskPct = 0.01;
-                    else riskPct = 0.20; // Hyper-explosive 20% risk for <50k
+                    else if (globalBalance >= 10000) riskPct = 0.02;
                     const riskAmount = globalBalance * riskPct;
                     let desiredPosSize = riskAmount / riskDist;
 
                     let posSize = Math.min(desiredPosSize, megalodonCapital * 2, Math.max(0, maxAllowedMargin - currentGlobalMarginUsed));
-
+                    
                     if (posSize >= 50) {
                         state.megalodonTrade = {
                             action: 'BUY',
                             entryPrice: candle.close * (1 + SLIPPAGE),
                             sl: sl,
-                            positionSize: posSize
+                            positionSize: posSize 
                         };
                         currentGlobalMarginUsed += posSize;
                         stats.megalodonTrades++;
@@ -657,7 +594,7 @@ async function runMultiAssetOrchestrator() {
                     let riskPct = 0.03;
                     if (globalBalance >= 1000000) riskPct = 0.005;
                     else if (globalBalance >= 100000) riskPct = 0.01;
-                    else riskPct = 0.20; // Hyper-explosive 20% risk for <50k
+                    else if (globalBalance >= 10000) riskPct = 0.02;
                     const riskAmount = globalBalance * riskPct;
                     let desiredPosSize = riskAmount / riskDist;
 
@@ -705,10 +642,7 @@ async function runMultiAssetOrchestrator() {
 
         if (globalBalance > peakRealizedBalance) peakRealizedBalance = globalBalance;
         const realizedDD = (peakRealizedBalance - globalBalance) / peakRealizedBalance * 100;
-        if (realizedDD > stats.maxRealizedDrawdown) {
-            stats.maxRealizedDrawdown = realizedDD;
-            stats.maxRealizedDrawdownTime = candle.timestamp;
-        }
+        if (realizedDD > stats.maxRealizedDrawdown) stats.maxRealizedDrawdown = realizedDD;
 
         const currentYear = new Date(candle.timestamp).getUTCFullYear();
         if (currentYear > lastYear) {
@@ -743,7 +677,8 @@ async function runMultiAssetOrchestrator() {
     console.log(`Final Equity:           $${globalBalance.toFixed(2)} (Start: $${INITIAL_CAPITAL})`);
     console.log(`Net Profit:             $${(globalBalance - INITIAL_CAPITAL).toFixed(2)}`);
     console.log(`------------------------------------------------------------`);
-    console.log(`✅ REAL Drawdown:         ${stats.maxRealizedDrawdown.toFixed(2)}% (happened on: ${new Date(stats.maxRealizedDrawdownTime).toISOString().split('T')[0]})`);
+    console.log(`✅ REAL Drawdown:         ${stats.maxRealizedDrawdown.toFixed(2)}% (realized cash only)`);
+    console.log(`📊 MTM Drawdown:          ${stats.maxDrawdown.toFixed(2)}% (includes paper losses — misleading)`);
     console.log(`------------------------------------------------------------`);
     console.log(`Behemoth Grid Profit:   $${stats.behemothProfit.toFixed(2)}`);
     console.log(`Leviathan Profit:       $${stats.leviathanProfit.toFixed(2)}`);
