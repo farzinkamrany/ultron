@@ -107,6 +107,17 @@ function calculateRSI(candles: MultiCandle[], period: number = 14): number {
     return 100 - (100 / (1 + rs));
 }
 
+function calculateAverageVolume(candles: MultiCandle[], period: number, offset: number = 0): number {
+    if (candles.length <= period + offset) return 0;
+    let sum = 0;
+    const start = candles.length - period - offset;
+    const end = candles.length - offset;
+    for (let i = start; i < end; i++) {
+        sum += candles[i].volume;
+    }
+    return sum / period;
+}
+
 async function loadCSV(filePath: string, symbol: string): Promise<MultiCandle[]> {
     if (!fs.existsSync(filePath)) return [];
     const fileStream = fs.createReadStream(filePath);
@@ -438,9 +449,14 @@ async function runMultiAssetOrchestrator() {
                 }
             }
             else if (candleClosed4H) {
+                // Priority 1: Volume Confirmation
+                const avgVol20 = calculateAverageVolume(state.buffer4H, 20, 1);
+                const last4HVolume = state.buffer4H[state.buffer4H.length - 1].volume;
+                const volumeConfirmed = last4HVolume > avgVol20;
+
                 // Pure Trend Breakout (No RSI filter, exactly like standalone)
-                const bullSignal = candle.close > ema200 && candle.close > highest20;
-                const bearSignal = candle.close < ema200 && candle.close < lowest20;
+                const bullSignal = candle.close > ema200 && candle.close > highest20 && volumeConfirmed;
+                const bearSignal = candle.close < ema200 && candle.close < lowest20 && volumeConfirmed;
 
                 if (bullSignal) {
                     const sl = calculateLowestLow(state.buffer4H, 10, 1) - atr;
