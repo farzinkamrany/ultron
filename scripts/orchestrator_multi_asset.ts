@@ -143,7 +143,7 @@ class SymbolState {
     public realizedGridPnl = 0;
     public orderSizeUSD = 0;
     public gridStep = 0;
-    public readonly GRID_LEVELS = 30;
+    public readonly GRID_LEVELS = 40;
     public behemothCooldownUntil: number = 0;
 
     public leviathanTrade: any = null;
@@ -257,9 +257,9 @@ async function runMultiAssetOrchestrator() {
             }
         }
 
-        const behemothWeight = state.currentRegime === 'RANGE' ? 0.13 : 0.05;
-        const leviathanWeight = state.currentRegime === 'TREND' ? 0.08 : 0.00;
-        const megalodonWeight = state.currentRegime === 'TREND' ? 0.07 : 0.07;
+        const behemothWeight = state.currentRegime === 'RANGE' ? 0.30 : 0.00;
+        const leviathanWeight = state.currentRegime === 'TREND' ? 0.20 : 0.00;
+        const megalodonWeight = state.currentRegime === 'TREND' ? 0.20 : 0.05;
 
         const behemothCapital = Math.min(globalBalance * behemothWeight, MAX_CAPITAL_PER_SLOT);
         const leviathanCapital = Math.min(globalBalance * leviathanWeight, MAX_CAPITAL_PER_SLOT);
@@ -297,7 +297,7 @@ async function runMultiAssetOrchestrator() {
                 for (let j = 0; j <= state.GRID_LEVELS; j++) {
                     const p = lowerBound + (j * state.gridStep);
                     if (p < candle.close) state.grid.push({ price: p, type: 'BUY', active: true });
-                    else state.grid.push({ price: p, type: 'SELL', active: true });
+                    else state.grid.push({ price: p, type: 'SELL', active: false });
                 }
                 state.gridActive = true;
             }
@@ -321,9 +321,12 @@ async function runMultiAssetOrchestrator() {
                     else if (level.type === 'SELL' && candle.high >= level.price) {
                         if (state.positionCoins > 0) {
                             const coinsSold = state.orderSizeUSD / level.price;
-                            state.realizedGridPnl += (state.gridStep / level.price) * state.orderSizeUSD;
+                            const profitUSD = coinsSold * state.gridStep;
+                            state.realizedGridPnl += profitUSD;
                             state.realizedGridPnl += state.orderSizeUSD * Math.abs(MAKER_FEE);
                             state.positionCoins = Math.max(0, state.positionCoins - coinsSold);
+                            
+                            // Re-calculate average entry price accurately if coins remain
                             if (state.positionCoins < 0.0001) {
                                 state.positionCoins = 0;
                                 state.avgEntryPrice = 0;
@@ -354,7 +357,7 @@ async function runMultiAssetOrchestrator() {
                     globalBalance += state.realizedGridPnl;
                     stats.behemothProfit += state.realizedGridPnl;
                     state.realizedGridPnl = 0;
-                } else if (candleClosed4H && state.realizedGridPnl > behemothCapital * 0.5) {
+                } else if (candleClosed4H && state.realizedGridPnl > behemothCapital * 1.0) {
                     globalBalance += state.realizedGridPnl;
                     stats.behemothProfit += state.realizedGridPnl;
                     state.realizedGridPnl = 0;
@@ -441,10 +444,11 @@ async function runMultiAssetOrchestrator() {
                     if (posSize >= 50) {
                         state.leviathanTrade = {
                             action: 'BUY',
+                            initialEntryPrice: candle.close * (1 + SLIPPAGE),
                             entryPrice: candle.close * (1 + SLIPPAGE),
                             sl: sl,
                             positionSize: posSize,
-                            partialTaken: false
+                            pyramidLevel: 0
                         };
                         currentGlobalMarginUsed += posSize;
                         stats.leviathanTrades++;
@@ -455,17 +459,17 @@ async function runMultiAssetOrchestrator() {
                     const riskAmount = globalBalance * 0.05; 
                     let desiredPosSize = riskAmount / riskDist;
                     
-                    // MARGIN CHECK
-                    const maxAllowedForTrade = Math.min(leviathanCapital * 5, Math.max(0, maxAllowedMargin - currentGlobalMarginUsed));
+                    const maxAllowedForTrade = Math.min(leviathanCapital * 2, Math.max(0, maxAllowedMargin - currentGlobalMarginUsed));
                     let posSize = Math.min(desiredPosSize, maxAllowedForTrade);
 
                     if (posSize >= 50) {
                         state.leviathanTrade = {
                             action: 'SELL',
+                            initialEntryPrice: candle.close * (1 - SLIPPAGE),
                             entryPrice: candle.close * (1 - SLIPPAGE),
                             sl: sl,
                             positionSize: posSize,
-                            partialTaken: false
+                            pyramidLevel: 0
                         };
                         currentGlobalMarginUsed += posSize;
                         stats.leviathanTrades++;
@@ -515,8 +519,7 @@ async function runMultiAssetOrchestrator() {
                     const riskAmount = globalBalance * 0.03; // Risk 3% of portfolio per macro trade
                     let desiredPosSize = riskAmount / riskDist;
 
-                    // MARGIN CHECK
-                    let posSize = Math.min(desiredPosSize, megalodonCapital * 5, Math.max(0, maxAllowedMargin - currentGlobalMarginUsed));
+                    let posSize = Math.min(desiredPosSize, megalodonCapital * 2, Math.max(0, maxAllowedMargin - currentGlobalMarginUsed));
                     
                     if (posSize >= 50) {
                         state.megalodonTrade = {
@@ -621,7 +624,7 @@ async function runMultiAssetOrchestrator() {
     console.log(`Megalodon Profit:       $${stats.megalodonProfit.toFixed(2)}`);
     console.log(`Leviathan Trades:       ${stats.leviathanTrades} | Win Rate: ${winRate}%`);
     console.log(`Megalodon Trades:       ${stats.megalodonTrades}`);
-    console.log(`Leviathan Partial TPs:  ${stats.leviathanPartialTPs}x`);
+    console.log(`Leviathan Pyramids:     ${stats.leviathanPartialTPs}x`);
     console.log(`------------------------------------------------------------`);
     for (const year in yearlyResults) {
         console.log(`Year ${year}: $${yearlyResults[year].endBalance.toFixed(2)} (${yearlyResults[year].profitPct.toFixed(2)}%)`);
