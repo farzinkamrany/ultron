@@ -78,14 +78,22 @@ export default function PnLDashboard() {
   }, [trades]);
 
   return (
-    <div className="min-h-screen bg-background text-foreground p-4 md:p-6 pb-20">
-      <div className="max-w-5xl mx-auto space-y-6">
-        <header className="flex items-center justify-between">
+    <div className="min-h-screen bg-[#050505] text-foreground p-4 md:p-6 pb-20 overflow-x-hidden selection:bg-primary/30">
+      {/* Premium Background Glow */}
+      <div className="fixed top-0 left-1/2 -translate-x-1/2 w-[800px] h-[300px] bg-primary/10 rounded-full blur-[120px] pointer-events-none -z-10" />
+      <div className="fixed bottom-0 right-0 w-[600px] h-[400px] bg-purple-500/10 rounded-full blur-[150px] pointer-events-none -z-10" />
+
+      <div className="max-w-5xl mx-auto space-y-8">
+        <header className="flex items-center justify-between pb-4 border-b border-white/5">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Ultron Quant</h1>
-            <p className="text-muted-foreground text-sm">Algorithmic Trading Dashboard</p>
+            <h1 className="text-3xl font-black tracking-tighter bg-gradient-to-r from-white to-white/50 bg-clip-text text-transparent drop-shadow-sm">
+              Ultron Quant <span className="text-primary text-sm tracking-widest uppercase font-bold ml-2 border border-primary/30 bg-primary/10 px-2 py-0.5 rounded-full">V5.0</span>
+            </h1>
+            <p className="text-muted-foreground text-sm font-medium mt-1">Institutional Grade Algorithmic Engine</p>
           </div>
-          <Activity className="text-primary w-8 h-8 opacity-80" />
+          <div className="p-3 bg-primary/10 border border-primary/20 rounded-2xl shadow-[0_0_20px_rgba(var(--primary),0.1)]">
+            <Activity className="text-primary w-6 h-6 animate-pulse" />
+          </div>
         </header>
 
         {/* Stats Grid */}
@@ -157,54 +165,66 @@ export default function PnLDashboard() {
 
         {/* Trades List */}
         <div className="space-y-4">
-          <h2 className="text-lg font-semibold border-b border-border/50 pb-2">Recent Execution Log</h2>
+          <h2 className="text-lg font-bold border-b border-white/5 pb-2 flex items-center gap-2">
+            <Activity className="w-5 h-5 text-primary" /> Execution Log
+          </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {trades.length === 0 ? (
-              <p className="text-muted-foreground text-sm py-4 col-span-full">No algorithmic trades executed yet.</p>
+              <p className="text-muted-foreground text-sm py-4 col-span-full text-center">No algorithmic trades executed yet.</p>
             ) : (
-              trades.slice(0, visibleCount).map((trade) => (
-                <div 
-                  key={trade.id} 
-                  onClick={() => setSelectedTrade(trade)}
-                  className="p-3 rounded-lg bg-card/50 border border-border/30 flex items-center justify-between group hover:border-primary/30 transition-all gap-2 cursor-pointer active:scale-[0.98]"
-                >
-                  <div className="flex items-center space-x-3 min-w-0">
-                    <div className={`p-2 shrink-0 rounded-xl ${trade.position_type === 'LONG' ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
-                      {trade.position_type === 'LONG' ? <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5" /> : <TrendingDown className="w-4 h-4 sm:w-5 sm:h-5" />}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="font-bold text-sm sm:text-base flex items-center gap-2 flex-wrap">
-                        <span className="truncate">{trade.symbol}</span>
-                        <span className={`text-[9px] sm:text-[10px] px-1.5 py-0.5 rounded-sm font-bold tracking-widest shrink-0 ${trade.position_type === 'LONG' ? 'bg-green-500/20 text-green-500' : 'bg-red-500/20 text-red-500'}`}>
-                          {trade.position_type}
-                        </span>
+              trades.slice(0, visibleCount).map((trade, idx) => {
+                const strategyMatch = trade.rationale?.match(/\[(.*?)\]/);
+                const strategy = strategyMatch ? strategyMatch[1] : 'UNKNOWN';
+                
+                let stratColor = 'bg-gray-500/10 text-gray-400 border-gray-500/20';
+                if (strategy === 'LEVIATHAN') stratColor = 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20 shadow-[0_0_10px_rgba(234,179,8,0.1)]';
+                if (strategy === 'MEGALODON') stratColor = 'bg-purple-500/10 text-purple-400 border-purple-500/20 shadow-[0_0_10px_rgba(168,85,247,0.1)]';
+                if (strategy === 'BEHEMOTH') stratColor = 'bg-blue-500/10 text-blue-400 border-blue-500/20 shadow-[0_0_10px_rgba(59,130,246,0.1)]';
+
+                return (
+                  <div 
+                    key={trade.id} 
+                    onClick={() => setSelectedTrade(trade)}
+                    style={{ animationDelay: `${(idx % 10) * 50}ms` }}
+                    className="p-4 rounded-xl bg-card/40 backdrop-blur-md border border-white/5 flex items-center justify-between group hover:bg-card/60 hover:border-white/10 transition-all gap-2 cursor-pointer active:scale-[0.98] animate-in fade-in slide-in-from-bottom-4 duration-500"
+                  >
+                    <div className="flex items-center space-x-4 min-w-0">
+                      <div className={`p-3 shrink-0 rounded-2xl border ${trade.position_type === 'LONG' ? 'bg-green-500/10 border-green-500/20 text-green-500' : 'bg-red-500/10 border-red-500/20 text-red-500'}`}>
+                        {trade.position_type === 'LONG' ? <TrendingUp className="w-5 h-5" /> : <TrendingDown className="w-5 h-5" />}
                       </div>
-                      <div className="text-[10px] sm:text-[11px] font-mono text-muted-foreground mt-1 flex flex-col gap-0.5">
-                        <span className="flex items-center gap-1 flex-wrap">
-                          <span>Entry: ${Number(trade.entry_price).toFixed(1)}</span>
-                          <span className="text-muted-foreground/60">
-                            • {new Date(trade.created_at).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' })}
+                      <div className="min-w-0 space-y-1">
+                        <div className="font-bold text-base flex items-center gap-2 flex-wrap">
+                          <span className="truncate">{trade.symbol}</span>
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold tracking-widest shrink-0 border ${stratColor}`}>
+                            {strategy}
                           </span>
-                        </span>
+                        </div>
+                        <div className="text-[11px] font-mono text-muted-foreground flex items-center gap-2 flex-wrap">
+                          <span className="font-medium text-foreground/80">Entry: ${Number(trade.entry_price).toFixed(2)}</span>
+                          <span className="w-1 h-1 rounded-full bg-white/20"></span>
+                          <span className="opacity-70">
+                            {new Date(trade.created_at).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  <div className="text-right flex flex-col items-end justify-center shrink-0">
-                    <span className={`text-[9px] sm:text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-sm border ${
-                      trade.status === 'WON' ? 'bg-green-500/10 text-green-500 border-green-500/20' :
-                      trade.status === 'LOST' ? 'bg-red-500/10 text-red-500 border-red-500/20' :
-                      'bg-blue-500/10 text-blue-500 border-blue-500/20'
-                    }`}>
-                      {trade.status}
-                    </span>
-                    {trade.status !== 'OPEN' && (
-                      <span className={`text-xs sm:text-sm font-bold font-mono mt-1 ${trade.pnl >= 0 ? "text-green-500" : "text-red-500"}`}>
-                        {trade.pnl >= 0 ? "+" : ""}{Number(trade.pnl).toFixed(1)} <span className="text-[9px]">USDT</span>
+                    <div className="text-right flex flex-col items-end justify-center shrink-0">
+                      <span className={`text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-md border ${
+                        trade.status === 'WON' ? 'bg-green-500/10 text-green-500 border-green-500/20' :
+                        trade.status === 'LOST' ? 'bg-red-500/10 text-red-500 border-red-500/20' :
+                        'bg-blue-500/10 text-blue-500 border-blue-500/20 animate-pulse'
+                      }`}>
+                        {trade.status}
                       </span>
-                    )}
+                      {trade.status !== 'OPEN' && (
+                        <span className={`text-sm font-bold font-mono mt-1.5 ${trade.pnl >= 0 ? "text-green-400 drop-shadow-[0_0_8px_rgba(74,222,128,0.4)]" : "text-red-400"}`}>
+                          {trade.pnl >= 0 ? "+" : ""}{Number(trade.pnl).toFixed(1)} <span className="text-[9px] opacity-70">USDT</span>
+                        </span>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
           {/* Infinite Scroll Anchor */}
@@ -239,40 +259,51 @@ export default function PnLDashboard() {
             </div>
 
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4 p-4 rounded-xl bg-muted/30 border border-border/30">
+              <div className="grid grid-cols-2 gap-4 p-4 rounded-xl bg-card/50 border border-white/5 shadow-inner">
                 <div>
-                  <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Status</p>
-                  <p className={`font-bold ${
-                    selectedTrade.status === 'WON' ? 'text-green-500' :
-                    selectedTrade.status === 'LOST' ? 'text-red-500' :
-                    'text-blue-500'
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-widest mb-1 font-semibold">Status</p>
+                  <p className={`font-bold tracking-wider ${
+                    selectedTrade.status === 'WON' ? 'text-green-400 drop-shadow-[0_0_8px_rgba(74,222,128,0.4)]' :
+                    selectedTrade.status === 'LOST' ? 'text-red-400 drop-shadow-[0_0_8px_rgba(248,113,113,0.4)]' :
+                    'text-blue-400'
                   }`}>{selectedTrade.status}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">PnL</p>
-                  <p className={`font-bold font-mono ${selectedTrade.pnl >= 0 ? "text-green-500" : "text-red-500"}`}>
-                    {selectedTrade.pnl >= 0 ? "+" : ""}{Number(selectedTrade.pnl).toFixed(2)} USDT
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-widest mb-1 font-semibold">PnL</p>
+                  <p className={`font-bold font-mono text-lg ${selectedTrade.pnl >= 0 ? "text-green-400" : "text-red-400"}`}>
+                    {selectedTrade.pnl >= 0 ? "+" : ""}{Number(selectedTrade.pnl).toFixed(2)} <span className="text-xs">USDT</span>
                   </p>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 gap-2 p-4 rounded-xl bg-muted/30 border border-border/30 font-mono text-sm">
-                <div className="flex justify-between items-center py-1">
-                  <span className="text-muted-foreground">Entry Price</span>
-                  <span className="font-bold">${Number(selectedTrade.entry_price).toFixed(4)}</span>
+              <div className="grid grid-cols-1 gap-0 p-1 rounded-xl bg-card/30 border border-white/5 font-mono text-sm overflow-hidden">
+                <div className="flex justify-between items-center py-3 px-4 hover:bg-white/5 transition-colors">
+                  <span className="text-muted-foreground text-xs uppercase tracking-widest">Size</span>
+                  <span className="font-bold text-blue-400 drop-shadow-[0_0_5px_rgba(96,165,250,0.3)]">${Number(selectedTrade.position_size_usd || 1000).toLocaleString()}</span>
                 </div>
-                <div className="flex justify-between items-center py-1 border-t border-border/30">
-                  <span className="text-green-500/80">Take Profit</span>
-                  <span className="text-green-500 font-bold">${Number(selectedTrade.take_profit).toFixed(4)}</span>
+                <div className="flex justify-between items-center py-3 px-4 border-t border-white/5 hover:bg-white/5 transition-colors">
+                  <span className="text-muted-foreground text-xs uppercase tracking-widest">Entry</span>
+                  <span className="font-bold text-white/90">${Number(selectedTrade.entry_price).toFixed(4)}</span>
                 </div>
-                <div className="flex justify-between items-center py-1 border-t border-border/30">
-                  <span className="text-red-500/80">Stop Loss</span>
-                  <span className="text-red-500 font-bold">${Number(selectedTrade.stop_loss).toFixed(4)}</span>
+                <div className="flex justify-between items-center py-3 px-4 border-t border-white/5 hover:bg-white/5 transition-colors">
+                  <span className="text-green-500/80 text-xs uppercase tracking-widest">Target</span>
+                  <span className="text-green-400 font-bold">${Number(selectedTrade.take_profit).toFixed(4)}</span>
+                </div>
+                <div className="flex justify-between items-center py-3 px-4 border-t border-white/5 hover:bg-white/5 transition-colors">
+                  <span className="text-red-500/80 text-xs uppercase tracking-widest">Stop Loss</span>
+                  <span className="text-red-400 font-bold">${Number(selectedTrade.stop_loss).toFixed(4)}</span>
                 </div>
               </div>
 
+              {selectedTrade.rationale && (
+                <div className="p-4 rounded-xl bg-muted/20 border border-white/5">
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-widest mb-2 font-semibold">Engine Rationale</p>
+                  <p className="text-xs text-foreground/80 leading-relaxed font-mono">{selectedTrade.rationale}</p>
+                </div>
+              )}
+
               {selectedTrade.closed_at && (
-                <p className="text-xs text-center text-muted-foreground mt-4 border-t border-border/30 pt-4">
+                <p className="text-[10px] text-center text-muted-foreground/60 mt-4 uppercase tracking-widest">
                   Closed: {new Date(selectedTrade.closed_at).toLocaleString('fa-IR')}
                 </p>
               )}

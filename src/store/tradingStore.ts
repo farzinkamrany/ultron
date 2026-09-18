@@ -21,6 +21,8 @@ interface PaperTrade {
   pnl: number;
   created_at: string;
   closed_at: string | null;
+  rationale?: string;
+  position_size_usd?: number;
 }
 
 interface TradingState {
