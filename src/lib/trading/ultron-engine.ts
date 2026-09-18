@@ -78,7 +78,7 @@ export const DEFAULT_SYMBOL_STATE: Omit<LiveSymbolState, 'symbol'> = {
 
 // ─── Constants ─────────────────────────────────────────────────────────────
 
-const GRID_LEVELS = 40;
+const GRID_LEVELS = 20;
 const TAKER_FEE = 0.00035;
 const MAKER_FEE = -0.0001;
 const SLIPPAGE = 0.001;
@@ -193,7 +193,7 @@ export function processSymbol(
   }
 
   const behemothWeight = state.currentRegime === 'RANGE' ? 0.30 : 0.00;
-  const leviathanWeight = state.currentRegime === 'TREND' ? 0.20 : 0.00;
+  const leviathanWeight = 0.00; // DISABLED (Drag on portfolio)
   const megalodonWeight = state.currentRegime === 'TREND' ? 0.20 : 0.05;
 
   const behemothCapital = Math.min(accountBalance * behemothWeight, 500_000);
@@ -303,7 +303,11 @@ export function processSymbol(
     const lowerBound = state.grid[0].price;
     if (candle.close > upperBound || candle.close < lowerBound) {
       state.gridActive = false;
-      state.behemothCooldownUntil = now + 24 * 3600 * 1000;
+      if (state.realizedGridPnl > behemothCapital * 0.30) {
+        state.behemothCooldownUntil = now + 4 * 3600 * 1000;
+      } else {
+        state.behemothCooldownUntil = now + 24 * 3600 * 1000;
+      }
       state.positionCoins = 0;
       state.avgEntryPrice = 0;
       state.realizedGridPnl = 0;
@@ -449,7 +453,13 @@ export function processSymbol(
             reason: `Megalodon LONG exit: SL ${trade.sl.toFixed(2)} hit`,
           });
           state.megalodonTrade = null;
-          state.megalodonCooldownUntil = now + 80 * 3600 * 1000;
+          const exitPrice = Math.min(trade.sl, candle.open) * (1 - SLIPPAGE);
+          const lossPct = (trade.entryPrice - exitPrice) / trade.entryPrice;
+          if (lossPct > 0.02) {
+            state.megalodonCooldownUntil = now + 80 * 3600 * 1000;
+          } else {
+            state.megalodonCooldownUntil = now + 20 * 3600 * 1000;
+          }
         }
       } else {
         const trail = ema800 + atrVal * 3;
@@ -465,7 +475,13 @@ export function processSymbol(
             reason: `Megalodon SHORT exit: SL ${trade.sl.toFixed(2)} hit`,
           });
           state.megalodonTrade = null;
-          state.megalodonCooldownUntil = now + 80 * 3600 * 1000;
+          const exitPrice = Math.max(trade.sl, candle.open) * (1 + SLIPPAGE);
+          const lossPct = (exitPrice - trade.entryPrice) / trade.entryPrice;
+          if (lossPct > 0.02) {
+            state.megalodonCooldownUntil = now + 80 * 3600 * 1000;
+          } else {
+            state.megalodonCooldownUntil = now + 20 * 3600 * 1000;
+          }
         }
       }
     } else if (now > state.megalodonCooldownUntil) {

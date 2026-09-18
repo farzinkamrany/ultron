@@ -258,7 +258,7 @@ async function runMultiAssetOrchestrator() {
         }
 
         const behemothWeight = state.currentRegime === 'RANGE' ? 0.30 : 0.00;
-        const leviathanWeight = state.currentRegime === 'TREND' ? 0.20 : 0.00;
+        const leviathanWeight = 0.00; // DISABLED FOR TESTING
         const megalodonWeight = state.currentRegime === 'TREND' ? 0.20 : 0.05;
 
         const behemothCapital = Math.min(globalBalance * behemothWeight, MAX_CAPITAL_PER_SLOT);
