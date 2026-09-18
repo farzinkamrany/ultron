@@ -50,6 +50,7 @@ export interface LiveSymbolState {
     sl: number;
     positionSize: number;
     partialTaken: boolean;
+    tpTarget?: number;
   } | null;
   megalodonTrade: {
     action: 'BUY' | 'SELL';
@@ -357,27 +358,27 @@ export function processSymbol(
       // Partial TP at +20% — lock half the gains early, let the rest ride free
       // The remaining half gets SL moved to breakeven (zero downside risk)
       if (!trade.partialTaken) {
-        const tpTarget = (ctoConfig?.take_profit_target_pct ?? 20) / 100;
         const gainPct = trade.action === 'BUY'
           ? (candle.high - trade.entryPrice) / trade.entryPrice
           : (trade.entryPrice - candle.low) / trade.entryPrice;
+
+        const tpTarget = trade.tpTarget || 0.20;
+
         if (gainPct >= tpTarget) {
+          const partialSize = trade.positionSize * 0.5;
           trade.positionSize *= 0.5;
           trade.partialTaken = true;
           if (trade.action === 'BUY') trade.sl = Math.max(trade.sl, trade.entryPrice);
           else trade.sl = Math.min(trade.sl, trade.entryPrice);
 
-          const tpMultiplierLong = 1 + tpTarget;
-          const tpMultiplierShort = 1 - tpTarget;
-
           signals.push({
             symbol: state.symbol,
             strategy: 'LEVIATHAN',
-            action: 'PARTIAL_TP_HIT',
+            action: trade.action === 'BUY' ? 'CLOSE_LONG' : 'CLOSE_SHORT',
             stopLoss: trade.sl,
-            takeProfit: trade.action === 'BUY' ? trade.entryPrice * tpMultiplierLong : trade.entryPrice * tpMultiplierShort,
-            positionSizeUsd: trade.positionSize, // remaining half
-            reason: `Leviathan Partial TP Hit (Limit filled by Exchange). Updating SL to Breakeven.`,
+            takeProfit: trade.action === 'BUY' ? trade.entryPrice * (1 + tpTarget * 2) : trade.entryPrice * (1 - tpTarget * 2),
+            positionSizeUsd: partialSize,
+            reason: `Leviathan Partial TP hit (${(tpTarget*100).toFixed(1)}%). SL moved to BE.`,
           });
         }
       }
@@ -441,14 +442,16 @@ export function processSymbol(
 
           if (posSize >= 50) {
             const entryPrice = closedCandle.close * (1 + SLIPPAGE);
-            state.leviathanTrade = { action: 'BUY', entryPrice, sl, positionSize: posSize, partialTaken: false };
+            const atrPct = atrVal / closedCandle.close;
+            const tpTarget = Math.max(0.15, Math.min(0.35, atrPct * 8));
+            state.leviathanTrade = { action: 'BUY', entryPrice, sl, positionSize: posSize, partialTaken: false, tpTarget };
             totalMarginUsed += posSize;
             signals.push({
               symbol: state.symbol,
               strategy: 'LEVIATHAN',
               action: 'OPEN_LONG',
               stopLoss: sl,
-              takeProfit: closedCandle.close * (1 + (ctoConfig?.take_profit_target_pct ?? 20) / 100),
+              takeProfit: closedCandle.close * (1 + tpTarget),
               positionSizeUsd: posSize,
               reason: `Leviathan LONG: Breakout above ${prevHigh20.toFixed(2)}`,
             });
@@ -463,16 +466,18 @@ export function processSymbol(
 
           if (posSize >= 50) {
             const entryPrice = closedCandle.close * (1 - SLIPPAGE);
-            state.leviathanTrade = { action: 'SELL', entryPrice, sl, positionSize: posSize, partialTaken: false };
+            const atrPct = atrVal / closedCandle.close;
+            const tpTarget = Math.max(0.15, Math.min(0.35, atrPct * 8));
+            state.leviathanTrade = { action: 'SELL', entryPrice, sl, positionSize: posSize, partialTaken: false, tpTarget };
             totalMarginUsed += posSize;
             signals.push({
               symbol: state.symbol,
               strategy: 'LEVIATHAN',
               action: 'OPEN_SHORT',
               stopLoss: sl,
-              takeProfit: closedCandle.close * (1 - (ctoConfig?.take_profit_target_pct ?? 20) / 100),
+              takeProfit: closedCandle.close * (1 - tpTarget),
               positionSizeUsd: posSize,
-              reason: `Leviathan SHORT: Breakout below ${prevLow20.toFixed(2)}`,
+              reason: `Leviathan SHORT: Breakdown below ${prevLow20.toFixed(2)}`,
             });
           }
         }

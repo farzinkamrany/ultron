@@ -402,12 +402,12 @@ async function runMultiAssetOrchestrator() {
                         ? (candle.high - trade.entryPrice) / trade.entryPrice
                         : (trade.entryPrice - candle.low) / trade.entryPrice;
 
-                    if (gainPct >= 0.20) {
+                    if (gainPct >= trade.tpTarget) {
                         const halfSize = trade.positionSize * 0.5;
                         const halfQty  = halfSize / trade.entryPrice;
                         const tpPrice  = trade.action === 'BUY'
-                            ? trade.entryPrice * 1.20 * (1 - SLIPPAGE)
-                            : trade.entryPrice * 0.80 * (1 + SLIPPAGE);
+                            ? trade.entryPrice * (1 + trade.tpTarget) * (1 - SLIPPAGE)
+                            : trade.entryPrice * (1 - trade.tpTarget) * (1 + SLIPPAGE);
                         const partialPnl = trade.action === 'BUY'
                             ? (tpPrice - trade.entryPrice) * halfQty - halfSize * TAKER_FEE
                             : (trade.entryPrice - tpPrice) * halfQty - halfSize * TAKER_FEE;
@@ -469,13 +469,16 @@ async function runMultiAssetOrchestrator() {
                     let posSize = Math.min(desiredPosSize, maxAllowedForTrade);
                     
                     if (posSize >= 50) {
+                        const atrPct = atr / candle.close;
+                        const tpTarget = Math.max(0.15, Math.min(0.35, atrPct * 8));
                         state.leviathanTrade = {
                             action: 'BUY',
                             initialEntryPrice: candle.close * (1 + SLIPPAGE),
                             entryPrice: candle.close * (1 + SLIPPAGE),
                             sl: sl,
                             positionSize: posSize,
-                            pyramidLevel: 0
+                            pyramidLevel: 0,
+                            tpTarget: tpTarget
                         };
                         currentGlobalMarginUsed += posSize;
                         stats.leviathanTrades++;
@@ -490,13 +493,16 @@ async function runMultiAssetOrchestrator() {
                     let posSize = Math.min(desiredPosSize, maxAllowedForTrade);
 
                     if (posSize >= 50) {
+                        const atrPct = atr / candle.close;
+                        const tpTarget = Math.max(0.15, Math.min(0.35, atrPct * 8));
                         state.leviathanTrade = {
                             action: 'SELL',
                             initialEntryPrice: candle.close * (1 - SLIPPAGE),
                             entryPrice: candle.close * (1 - SLIPPAGE),
                             sl: sl,
                             positionSize: posSize,
-                            pyramidLevel: 0
+                            pyramidLevel: 0,
+                            tpTarget: tpTarget
                         };
                         currentGlobalMarginUsed += posSize;
                         stats.leviathanTrades++;
