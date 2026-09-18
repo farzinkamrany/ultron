@@ -19,7 +19,7 @@ import { Candle } from './financial-intelligence';
 export interface OrchestratorSignal {
   symbol: string;
   strategy: 'BEHEMOTH' | 'LEVIATHAN' | 'MEGALODON';
-  action: 'OPEN_LONG' | 'OPEN_SHORT' | 'CLOSE_LONG' | 'CLOSE_SHORT' | 'GRID_UPDATE';
+  action: 'OPEN_LONG' | 'OPEN_SHORT' | 'CLOSE_LONG' | 'CLOSE_SHORT' | 'GRID_UPDATE' | 'PARTIAL_TP_HIT';
   stopLoss: number;
   takeProfit: number;
   positionSizeUsd: number;
@@ -340,11 +340,11 @@ export function processSymbol(
           signals.push({
             symbol: state.symbol,
             strategy: 'LEVIATHAN',
-            action: trade.action === 'BUY' ? 'CLOSE_LONG' : 'CLOSE_SHORT',
+            action: 'PARTIAL_TP_HIT',
             stopLoss: trade.sl,
             takeProfit: trade.action === 'BUY' ? trade.entryPrice * 1.40 : trade.entryPrice * 0.60,
-            positionSizeUsd: trade.positionSize, // half already taken
-            reason: `Leviathan Partial TP at +40% gain`,
+            positionSizeUsd: trade.positionSize, // remaining half
+            reason: `Leviathan Partial TP Hit (Limit filled by Exchange). Updating SL to Breakeven.`,
           });
         }
       }

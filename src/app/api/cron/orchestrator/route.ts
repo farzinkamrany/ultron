@@ -103,6 +103,7 @@ async function executeSignal(signal: OrchestratorSignal, currentPrice: number): 
 
   const isOpen = signal.action === 'OPEN_LONG' || signal.action === 'OPEN_SHORT';
   const isClose = signal.action === 'CLOSE_LONG' || signal.action === 'CLOSE_SHORT';
+  const isPartialTPHit = signal.action === 'PARTIAL_TP_HIT';
 
   if (isOpen) {
     // Check: don't open duplicate trades for same symbol+strategy
@@ -159,7 +160,8 @@ async function executeSignal(signal: OrchestratorSignal, currentPrice: number): 
         const oppositeSide = side === 'buy' ? 'sell' : 'buy';
         try {
            await exchange.createOrder(formattedSymbol, 'stop', oppositeSide, amount, undefined, { stopPrice: signal.stopLoss });
-           await exchange.createOrder(formattedSymbol, 'take_profit', oppositeSide, amount, signal.takeProfit, { stopPrice: signal.takeProfit });
+           const tpAmount = signal.strategy === 'LEVIATHAN' ? amount * 0.5 : amount;
+           await exchange.createOrder(formattedSymbol, 'take_profit', oppositeSide, tpAmount, signal.takeProfit, { stopPrice: signal.takeProfit });
         } catch (e: any) {
            console.error(`[Orchestrator] Failed to place SL/TP for ${formattedSymbol}:`, e.message);
         }
@@ -177,6 +179,59 @@ async function executeSignal(signal: OrchestratorSignal, currentPrice: number): 
         `💰 Size: $${signal.positionSizeUsd.toFixed(0)}\n` +
         `📝 ${signal.reason}`
       );
+    }
+  }
+
+  if (isPartialTPHit) {
+    // Engine indicates that the Limit TP we set was hit, so we just need to trail the SL for the remaining half
+    const { data: openTrade } = await supabase
+      .from('paper_trades')
+      .select('*')
+      .eq('symbol', signal.symbol)
+      .eq('status', 'OPEN')
+      .ilike('rationale', `%${signal.strategy}%`)
+      .limit(1)
+      .single();
+
+    if (openTrade) {
+      if (mode === 'PAPER') {
+        // Just update paper position size to reflect partial TP
+        await supabase.from('paper_trades').update({
+          position_size_usd: signal.positionSizeUsd,
+          stop_loss: signal.stopLoss
+        }).eq('id', openTrade.id);
+      } else if (mode === 'MICRO' && signal.strategy === 'LEVIATHAN') {
+        try {
+          const exchange = new ccxt.hyperliquid({
+            walletAddress: process.env.HYPERLIQUID_WALLET || process.env.HYPERLIQUID_WALLET_ADDRESS || '',
+            privateKey: process.env.HYPERLIQUID_PRIVATE_KEY || '',
+            enableRateLimit: true,
+          });
+          await exchange.loadMarkets();
+          const baseSymbol = signal.symbol.split('/')[0];
+          const formattedSymbol = `${baseSymbol}/USDC:USDC`;
+          
+          // Cancel old SL/TP
+          try {
+            await exchange.cancelAllOrders(formattedSymbol);
+          } catch(e) {}
+          
+          // Place new Stop Loss for the remaining amount
+          const oppositeSide = openTrade.position_type === 'LONG' ? 'sell' : 'buy';
+          const amount = signal.positionSizeUsd / currentPrice;
+          await exchange.createOrder(formattedSymbol, 'stop', oppositeSide, amount, undefined, { stopPrice: signal.stopLoss });
+        } catch (e: any) {
+          console.error(`[Orchestrator] Failed MICRO partial TP update for ${signal.symbol}:`, e.message);
+        }
+      }
+
+      if (adminChatId) {
+        await sendTelegramMessage(adminChatId,
+          `✂️ <b>${signal.strategy} PARTIAL TP HIT</b> | ${openTrade.position_type} ${signal.symbol}\n` +
+          `📍 50% Size Locked. SL moved to Breakeven: $${signal.stopLoss.toFixed(4)}\n` +
+          `📝 ${signal.reason}`
+        );
+      }
     }
   }
 
