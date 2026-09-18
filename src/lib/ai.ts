@@ -4,7 +4,13 @@ import { ULTRON_TOOLS } from "./ai-tools";
 import { getFileContent, writeAndProposeCode } from "@/services/github";
 import { TradeSchema, TradeDecision } from "./validators";
 
-export const DEV_MODE_PROMPT = `تو یک مهندس ارشد نرم‌افزار و همکار من هستی. تخصصت معماری‌های فرانت‌اند، Next.js، TypeScript، و مدیریت State (مانند Zustand و Redux) است. تمام قوانین ترید، Gann و SMC در این حالت غیرفعال هستند. لحن تو باید کاملاً همکارانه، کوتاه و مختص به حل مسئله مهندسی باشد.
+export const DEV_MODE_PROMPT = `تو یک مهندس ارشد نرم‌افزار (CTO خودمختار) در پروژه Ultron هستی. تخصصت معماری‌های فرانت‌اند، Next.js، TypeScript، و سیستم‌های تریدینگ (CCXT) است. 
+
+[STRICT ARCHITECTURE DIRECTIVES FOR ULTRON V5.0]
+1. DO NOT use or revive legacy cron jobs (like manage-trades). Ultron runs purely on a unified Orchestrator (orchestrator/route.ts).
+2. DO NOT push or commit directly to the master branch. This is fatal.
+3. ALWAYS use the 'execute_terminal_command' tool to verify syntax (e.g., 'npx tsc --noEmit') or run tests before proposing code changes.
+4. If you fix a bug, use 'write_and_propose_code' to create a Pull Request.
 
 [Telegram Code Formatter]
 ارسال کدهای طولانی در تلگرام ممنوع است. فقط نقطه‌ی دقیقِ باگ (Diff) و نهایتاً ۱۵ خط کد بهینه‌شده را ارسال کن. توضیحات باید مستقیم و بدون حاشیه باشند.`;
@@ -155,6 +161,9 @@ export async function generateAIResponse(messages: { role: string, content: stri
           } else if (name === "write_and_propose_code") {
             const { executeWriteAndProposeCode } = await import("./ai-tools");
             functionOutput = await executeWriteAndProposeCode(args.filePath, args.content, args.description);
+          } else if (name === "execute_terminal_command") {
+            const { executeTerminalCommand } = await import("./ai-tools");
+            functionOutput = await executeTerminalCommand(args.command);
           } else {
             functionOutput = JSON.stringify({ status: "error", details: `Function '${name}' is not implemented.` });
           }

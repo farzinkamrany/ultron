@@ -312,6 +312,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, processed: SYMBOLS.length, signals: results });
   } catch (err: any) {
     console.error('[Orchestrator Cron] Fatal error:', err.message);
+    try {
+      await redis.set('ultron_fatal_crash', JSON.stringify({ error: err.message, stack: err.stack, time: new Date().toISOString() }));
+    } catch (e) {}
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
 }

@@ -53,12 +53,22 @@ export async function GET(req: NextRequest) {
       miss_reason: t.status === 'LOST' ? 'Hit Stop Loss' : null
     })) : [];
 
+    let fatalCrash = null;
+    try {
+      const crashData = await redis.get('ultron_fatal_crash');
+      if (crashData) {
+        fatalCrash = typeof crashData === 'string' ? JSON.parse(crashData) : crashData;
+        await redis.del('ultron_fatal_crash'); // Clear it so it doesn't spam
+      }
+    } catch (e) {}
+
     const dailyStats = {
       total_trades: totalTrades,
       win_rate: winRate,
       max_drawdown: maxDrawdown,
       net_pnl: netPnl,
-      recent_trades: recentTrades
+      recent_trades: recentTrades,
+      fatal_crash: fatalCrash
     };
 
     // 2. Gather Market Regime (Volatility/ATR)

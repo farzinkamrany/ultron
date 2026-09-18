@@ -79,6 +79,20 @@ export const ULTRON_TOOLS = [
           },
           required: ["filePath", "content", "description"]
         }
+      },
+      {
+        name: "execute_terminal_command",
+        description: "Runs a read-only or testing terminal command (e.g., 'npx tsc --noEmit'). Git commands are strictly blocked for safety.",
+        parameters: {
+          type: "OBJECT",
+          properties: {
+            command: {
+              type: "STRING",
+              description: "The terminal command to execute."
+            }
+          },
+          required: ["command"]
+        }
       }
     ]
   }
@@ -96,4 +110,35 @@ export async function executeWriteAndProposeCode(filePath: string, content: stri
     }
     return JSON.stringify({ status: "error", details: error.message });
   }
+}
+
+import { exec } from "child_process";
+
+export async function executeTerminalCommand(command: string): Promise<string> {
+  // Safety lock: Prevent git modifications to enforce PR workflow
+  if (/\bgit\b/.test(command)) {
+    return JSON.stringify({
+      status: "error",
+      details: "Git commands are strictly prohibited in the terminal execution tool. You MUST use 'write_and_propose_code' to submit changes via Pull Request."
+    });
+  }
+
+  return new Promise((resolve) => {
+    exec(command, { timeout: 30000, maxBuffer: 1024 * 1024 * 5 }, (error, stdout, stderr) => {
+      if (error) {
+        resolve(JSON.stringify({
+          status: "error",
+          details: error.message,
+          stdout: stdout.substring(0, 1000),
+          stderr: stderr.substring(0, 1000)
+        }));
+      } else {
+        resolve(JSON.stringify({
+          status: "success",
+          stdout: stdout.substring(0, 2000),
+          stderr: stderr.substring(0, 1000)
+        }));
+      }
+    });
+  });
 }
