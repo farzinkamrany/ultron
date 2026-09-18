@@ -1,12 +1,30 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { useTradingStore } from "@/store/tradingStore";
-import { Activity, TrendingUp, TrendingDown, Target, Clock, Wallet, AlertTriangle, Percent } from "lucide-react";
+import { Activity, TrendingUp, TrendingDown, Target, Clock, Wallet, AlertTriangle, Percent, X, Calendar, ArrowRight } from "lucide-react";
 import { EquityCurve } from "@/components/charts/EquityCurve";
 
 export default function PnLDashboard() {
   const { trades, fetchPaperTrades } = useTradingStore();
+  const [visibleCount, setVisibleCount] = useState(10);
+  const [selectedTrade, setSelectedTrade] = useState<any>(null);
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          setVisibleCount((prev) => Math.min(prev + 10, trades.length));
+        }
+      },
+      { threshold: 0.1 }
+    );
+    if (loadMoreRef.current) {
+      observer.observe(loadMoreRef.current);
+    }
+    return () => observer.disconnect();
+  }, [trades.length]);
 
   useEffect(() => {
     fetchPaperTrades();
@@ -144,8 +162,12 @@ export default function PnLDashboard() {
             {trades.length === 0 ? (
               <p className="text-muted-foreground text-sm py-4 col-span-full">No algorithmic trades executed yet.</p>
             ) : (
-              trades.slice(0, 10).map((trade) => (
-                <div key={trade.id} className="p-3 rounded-lg bg-card/50 border border-border/30 flex items-center justify-between group hover:border-primary/30 transition-all gap-2">
+              trades.slice(0, visibleCount).map((trade) => (
+                <div 
+                  key={trade.id} 
+                  onClick={() => setSelectedTrade(trade)}
+                  className="p-3 rounded-lg bg-card/50 border border-border/30 flex items-center justify-between group hover:border-primary/30 transition-all gap-2 cursor-pointer active:scale-[0.98]"
+                >
                   <div className="flex items-center space-x-3 min-w-0">
                     <div className={`p-2 shrink-0 rounded-xl ${trade.position_type === 'LONG' ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
                       {trade.position_type === 'LONG' ? <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5" /> : <TrendingDown className="w-4 h-4 sm:w-5 sm:h-5" />}
@@ -163,10 +185,6 @@ export default function PnLDashboard() {
                           <span className="text-muted-foreground/60">
                             • {new Date(trade.created_at).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' })}
                           </span>
-                        </span>
-                        <span className="flex items-center gap-2 flex-wrap">
-                          <span className="text-green-500/90 truncate">TP: ${Number(trade.take_profit).toFixed(1)}</span>
-                          <span className="text-red-500/90 truncate">SL: ${Number(trade.stop_loss).toFixed(1)}</span>
                         </span>
                       </div>
                     </div>
@@ -189,8 +207,86 @@ export default function PnLDashboard() {
               ))
             )}
           </div>
+          {/* Infinite Scroll Anchor */}
+          {visibleCount < trades.length && (
+            <div ref={loadMoreRef} className="w-full py-6 flex justify-center items-center">
+              <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Trade Details Modal */}
+      {selectedTrade && (
+        <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex justify-center items-end md:items-center">
+          <div className="bg-card w-full md:w-[450px] max-w-full rounded-t-2xl md:rounded-2xl border border-border/50 shadow-2xl p-6 animate-in slide-in-from-bottom-10 md:slide-in-from-bottom-0 md:zoom-in-95 duration-200">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h3 className="text-xl font-bold flex items-center gap-2">
+                  {selectedTrade.symbol}
+                  <span className={`text-xs px-2 py-1 rounded-md font-bold tracking-widest ${selectedTrade.position_type === 'LONG' ? 'bg-green-500/20 text-green-500' : 'bg-red-500/20 text-red-500'}`}>
+                    {selectedTrade.position_type}
+                  </span>
+                </h3>
+                <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                  <Calendar className="w-3 h-3" />
+                  {new Date(selectedTrade.created_at).toLocaleString('fa-IR')}
+                </p>
+              </div>
+              <button onClick={() => setSelectedTrade(null)} className="p-2 rounded-full hover:bg-muted/50 transition-colors">
+                <X className="w-5 h-5 text-muted-foreground" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4 p-4 rounded-xl bg-muted/30 border border-border/30">
+                <div>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Status</p>
+                  <p className={`font-bold ${
+                    selectedTrade.status === 'WON' ? 'text-green-500' :
+                    selectedTrade.status === 'LOST' ? 'text-red-500' :
+                    'text-blue-500'
+                  }`}>{selectedTrade.status}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">PnL</p>
+                  <p className={`font-bold font-mono ${selectedTrade.pnl >= 0 ? "text-green-500" : "text-red-500"}`}>
+                    {selectedTrade.pnl >= 0 ? "+" : ""}{Number(selectedTrade.pnl).toFixed(2)} USDT
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-2 p-4 rounded-xl bg-muted/30 border border-border/30 font-mono text-sm">
+                <div className="flex justify-between items-center py-1">
+                  <span className="text-muted-foreground">Entry Price</span>
+                  <span className="font-bold">${Number(selectedTrade.entry_price).toFixed(4)}</span>
+                </div>
+                <div className="flex justify-between items-center py-1 border-t border-border/30">
+                  <span className="text-green-500/80">Take Profit</span>
+                  <span className="text-green-500 font-bold">${Number(selectedTrade.take_profit).toFixed(4)}</span>
+                </div>
+                <div className="flex justify-between items-center py-1 border-t border-border/30">
+                  <span className="text-red-500/80">Stop Loss</span>
+                  <span className="text-red-500 font-bold">${Number(selectedTrade.stop_loss).toFixed(4)}</span>
+                </div>
+              </div>
+
+              {selectedTrade.closed_at && (
+                <p className="text-xs text-center text-muted-foreground mt-4 border-t border-border/30 pt-4">
+                  Closed: {new Date(selectedTrade.closed_at).toLocaleString('fa-IR')}
+                </p>
+              )}
+            </div>
+
+            <button 
+              onClick={() => setSelectedTrade(null)}
+              className="w-full mt-6 bg-primary text-primary-foreground py-3 rounded-xl font-bold hover:bg-primary/90 transition-colors"
+            >
+              Close Details
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
