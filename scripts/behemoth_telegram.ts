@@ -10,7 +10,15 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 );
 
-const exchange = new ccxt.hyperliquid();
+import { HttpsProxyAgent } from 'https-proxy-agent';
+
+let agent;
+const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
+if (proxyUrl) {
+  agent = new HttpsProxyAgent(proxyUrl);
+}
+
+const exchange = new ccxt.hyperliquid(agent ? { agent } : {});
 
 async function sendTelegramMessage(chatId: string | number, text: string) {
   const token = process.env.TELEGRAM_BOT_TOKEN;

@@ -15,7 +15,15 @@ const redis = new Redis({
   token: process.env.UPSTASH_REDIS_REST_TOKEN || '',
 });
 
-const exchange = new ccxt.hyperliquid();
+import { HttpsProxyAgent } from 'https-proxy-agent';
+
+let agent;
+const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
+if (proxyUrl) {
+  agent = new HttpsProxyAgent(proxyUrl);
+}
+
+const exchange = new ccxt.hyperliquid(agent ? { agent } : {});
 
 async function main() {
   console.log('\n=========================================================');
