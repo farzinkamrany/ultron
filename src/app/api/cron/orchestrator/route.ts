@@ -81,10 +81,10 @@ async function getTotalMarginUsed(): Promise<number> {
   // For paper trading: count open trades as margin used
   const { data } = await supabase
     .from('paper_trades')
-    .select('entry_price')
+    .select('position_size_usd')
     .eq('status', 'OPEN');
-  // Estimate: assume each paper trade uses ~$1000 (1000 / entry_price * entry_price)
-  return (data?.length || 0) * 1000;
+  
+  return (data || []).reduce((sum, t) => sum + (t.position_size_usd || 0), 0);
 }
 
 async function executeSignal(signal: OrchestratorSignal, currentPrice: number): Promise<void> {
@@ -131,10 +131,38 @@ async function executeSignal(signal: OrchestratorSignal, currentPrice: number): 
         status: 'OPEN',
         pnl: 0,
         rationale: `[${signal.strategy}] ${signal.reason}`,
+        position_size_usd: signal.positionSizeUsd,
       });
       if (error) {
         console.error(`[Orchestrator] Failed to insert paper trade:`, error.message);
         return;
+      }
+    } else if (mode === 'MICRO' && (signal.strategy === 'LEVIATHAN' || signal.strategy === 'MEGALODON')) {
+      try {
+        const exchange = new ccxt.hyperliquid({
+          walletAddress: process.env.HYPERLIQUID_WALLET || '',
+          privateKey: process.env.HYPERLIQUID_PRIVATE_KEY || '',
+          enableRateLimit: true,
+        });
+        
+        // Remove 'USDT'/'USDC' suffix and standardize format if needed for Hyperliquid
+        const formattedSymbol = signal.symbol.replace('/USDT', '').replace('/USDC', '');
+        const amount = signal.positionSizeUsd / currentPrice;
+        const side = signal.action === 'OPEN_LONG' ? 'buy' : 'sell';
+        
+        // Market entry
+        await exchange.createMarketOrder(formattedSymbol, side, amount);
+        
+        // Stop Loss & Take Profit logic (Hyperliquid uses specific params, but we use CCXT unified)
+        const oppositeSide = side === 'buy' ? 'sell' : 'buy';
+        try {
+           await exchange.createOrder(formattedSymbol, 'stop', oppositeSide, amount, undefined, { stopPrice: signal.stopLoss });
+           await exchange.createOrder(formattedSymbol, 'take_profit', oppositeSide, amount, signal.takeProfit, { stopPrice: signal.takeProfit });
+        } catch (e: any) {
+           console.error(`[Orchestrator] Failed to place SL/TP for ${formattedSymbol}:`, e.message);
+        }
+      } catch (e: any) {
+        console.error(`[Orchestrator] Failed MICRO execution for ${signal.symbol}:`, e.message);
       }
     }
 
@@ -165,7 +193,7 @@ async function executeSignal(signal: OrchestratorSignal, currentPrice: number): 
 
     if (!openTrade) return;
 
-    const qty = 1000 / openTrade.entry_price;
+    const qty = (openTrade.position_size_usd || 1000) / openTrade.entry_price;
     const pnl = posType === 'LONG'
       ? (currentPrice - openTrade.entry_price) * qty
       : (openTrade.entry_price - currentPrice) * qty;
@@ -177,6 +205,28 @@ async function executeSignal(signal: OrchestratorSignal, currentPrice: number): 
         pnl: pnl,
         closed_at: new Date().toISOString(),
       }).eq('id', openTrade.id);
+    } else if (mode === 'MICRO' && (signal.strategy === 'LEVIATHAN' || signal.strategy === 'MEGALODON')) {
+      try {
+        const exchange = new ccxt.hyperliquid({
+          walletAddress: process.env.HYPERLIQUID_WALLET || '',
+          privateKey: process.env.HYPERLIQUID_PRIVATE_KEY || '',
+          enableRateLimit: true,
+        });
+        
+        const formattedSymbol = signal.symbol.replace('/USDT', '').replace('/USDC', '');
+        
+        // First cancel open SL/TP orders
+        try {
+           await exchange.cancelAllOrders(formattedSymbol);
+        } catch(e) {}
+        
+        // Close position with Market Order
+        const amount = (openTrade.position_size_usd || signal.positionSizeUsd) / openTrade.entry_price;
+        const side = signal.action === 'CLOSE_LONG' ? 'sell' : 'buy';
+        await exchange.createMarketOrder(formattedSymbol, side, amount);
+      } catch (e: any) {
+        console.error(`[Orchestrator] Failed MICRO close execution for ${signal.symbol}:`, e.message);
+      }
     }
 
     const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID || process.env.TELEGRAM_CHAT_ID;
