@@ -258,7 +258,7 @@ async function runMultiAssetOrchestrator() {
         }
 
         const behemothWeight = state.currentRegime === 'RANGE' ? 0.30 : 0.00;
-        const leviathanWeight = 0.00; // DISABLED FOR TESTING
+        const leviathanWeight = state.currentRegime === 'TREND' ? 0.20 : 0.00;
         const megalodonWeight = state.currentRegime === 'TREND' ? 0.20 : 0.05;
 
         const behemothCapital = Math.min(globalBalance * behemothWeight, MAX_CAPITAL_PER_SLOT);
@@ -407,7 +407,7 @@ async function runMultiAssetOrchestrator() {
                 }
 
                 if (trade.action === 'BUY') {
-                    const trailStop = calculateLowestLow(state.buffer4H, 30, 1) - atr * 3.0;
+                    const trailStop = calculateLowestLow(state.buffer4H, 10, 1) - atr;
                     trade.sl = Math.max(trade.sl, trailStop);
                     if (candle.low <= trade.sl) {
                         const exitPrice = Math.min(trade.sl, candle.open) * (1 - SLIPPAGE);
@@ -419,7 +419,7 @@ async function runMultiAssetOrchestrator() {
                         state.leviathanTrade = null;
                     }
                 } else {
-                    const trailStop = calculateHighestHigh(state.buffer4H, 30, 1) + atr * 3.0;
+                    const trailStop = calculateHighestHigh(state.buffer4H, 10, 1) + atr;
                     trade.sl = Math.min(trade.sl, trailStop);
                     if (candle.high >= trade.sl) {
                         const exitPrice = Math.max(trade.sl, candle.open) * (1 + SLIPPAGE);
@@ -433,13 +433,14 @@ async function runMultiAssetOrchestrator() {
                 }
             }
             else if (candleClosed4H) {
-                const bullSignal = ema50 > ema200 && rsi > 45 && rsi < 72 && candle.close > highest20;
-                const bearSignal = ema50 < ema200 && rsi < 55 && rsi > 28 && candle.close < lowest20;
+                // Pure Trend Breakout (No RSI filter, exactly like standalone)
+                const bullSignal = candle.close > ema200 && candle.close > highest20;
+                const bearSignal = candle.close < ema200 && candle.close < lowest20;
 
                 if (bullSignal) {
-                    const sl = calculateLowestLow(state.buffer4H, 30, 1) - atr * 3.0;
+                    const sl = calculateLowestLow(state.buffer4H, 10, 1) - atr;
                     const riskDist = Math.max(Math.abs(candle.close - sl) / candle.close, 0.01);
-                    const riskAmount = globalBalance * 0.07; 
+                    const riskAmount = globalBalance * 0.05; 
                     let desiredPosSize = riskAmount / riskDist;
                     
                     // MARGIN CHECK
@@ -459,9 +460,9 @@ async function runMultiAssetOrchestrator() {
                         stats.leviathanTrades++;
                     }
                 } else if (bearSignal) {
-                    const sl = calculateHighestHigh(state.buffer4H, 30, 1) + atr * 3.0;
+                    const sl = calculateHighestHigh(state.buffer4H, 10, 1) + atr;
                     const riskDist = Math.max(Math.abs(sl - candle.close) / candle.close, 0.01);
-                    const riskAmount = globalBalance * 0.07; 
+                    const riskAmount = globalBalance * 0.05; 
                     let desiredPosSize = riskAmount / riskDist;
                     
                     const maxAllowedForTrade = Math.min(leviathanCapital * 2, Math.max(0, maxAllowedMargin - currentGlobalMarginUsed));

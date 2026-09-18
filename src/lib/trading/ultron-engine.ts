@@ -193,7 +193,7 @@ export function processSymbol(
   }
 
   const behemothWeight = state.currentRegime === 'RANGE' ? 0.30 : 0.00;
-  const leviathanWeight = 0.00; // DISABLED (Drag on portfolio)
+  const leviathanWeight = state.currentRegime === 'TREND' ? 0.20 : 0.00;
   const megalodonWeight = state.currentRegime === 'TREND' ? 0.20 : 0.05;
 
   const behemothCapital = Math.min(accountBalance * behemothWeight, 500_000);
@@ -349,7 +349,7 @@ export function processSymbol(
       }
       // Trailing stop
       if (trade.action === 'BUY') {
-        const trail = lowest(candles4H, 30, 1) - atrVal * 3.0;
+        const trail = lowest(candles4H, 10, 1) - atrVal;
         trade.sl = Math.max(trade.sl, trail);
         if (candle.low <= trade.sl) {
           signals.push({
@@ -364,7 +364,7 @@ export function processSymbol(
           state.leviathanTrade = null;
         }
       } else {
-        const trail = highest(candles4H, 30, 1) + atrVal * 3.0;
+        const trail = highest(candles4H, 10, 1) + atrVal;
         trade.sl = Math.min(trade.sl, trail);
         if (candle.high >= trade.sl) {
           signals.push({
@@ -380,16 +380,16 @@ export function processSymbol(
         }
       }
     } else {
-      // Entry signals
-      const bullSignal = ema50 > ema200 && rsiVal > 45 && rsiVal < 72 && candle.close > high20;
-      const bearSignal = ema50 < ema200 && rsiVal < 55 && rsiVal > 28 && candle.close < low20;
+      // Entry signals (Pure Donchian Breakout)
+      const bullSignal = candle.close > ema200 && candle.close > high20;
+      const bearSignal = candle.close < ema200 && candle.close < low20;
 
       if (bullSignal) {
-        const sl = lowest(candles4H, 30, 1) - atrVal * 3.0;
+        const sl = lowest(candles4H, 10, 1) - atrVal;
         const riskDist = Math.max(Math.abs(candle.close - sl) / candle.close, 0.01);
         const riskAmount = accountBalance * 0.05;
         const desired = riskAmount / riskDist;
-        const maxAllowed = Math.min(leviathanCapital * 2, Math.max(0, maxAllowedMargin - totalMarginUsed));
+        const maxAllowed = Math.min(leviathanCapital * 5, Math.max(0, maxAllowedMargin - totalMarginUsed));
         const posSize = Math.min(desired, maxAllowed);
 
         if (posSize >= 50) {
@@ -403,11 +403,11 @@ export function processSymbol(
             stopLoss: sl,
             takeProfit: candle.close * 1.40,
             positionSizeUsd: posSize,
-            reason: `Leviathan LONG: EMA50>${ema50.toFixed(0)} EMA200, RSI=${rsiVal.toFixed(1)}, BO above ${high20.toFixed(2)}`,
+            reason: `Leviathan LONG: Breakout above ${high20.toFixed(2)}`,
           });
         }
       } else if (bearSignal) {
-        const sl = highest(candles4H, 30, 1) + atrVal * 3.0;
+        const sl = highest(candles4H, 10, 1) + atrVal;
         const riskDist = Math.max(Math.abs(sl - candle.close) / candle.close, 0.01);
         const riskAmount = accountBalance * 0.05;
         const desired = riskAmount / riskDist;
@@ -425,7 +425,7 @@ export function processSymbol(
             stopLoss: sl,
             takeProfit: candle.close * 0.60,
             positionSizeUsd: posSize,
-            reason: `Leviathan SHORT: EMA50<EMA200, RSI=${rsiVal.toFixed(1)}, BO below ${low20.toFixed(2)}`,
+            reason: `Leviathan SHORT: Breakout below ${low20.toFixed(2)}`,
           });
         }
       }
