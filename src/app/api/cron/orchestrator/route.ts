@@ -348,9 +348,17 @@ export async function POST(req: NextRequest) {
       allStatesMap[symbol] = state;
       if (state.currentRegime === 'TREND') trendingCount++;
     }
-    let globalPortfolioLeverage = trendingCount >= 5 ? 8.0 : 5.0;
-    if (accountBalance < 50000) globalPortfolioLeverage = 25.0;
-    else if (accountBalance < 100000) globalPortfolioLeverage = 15.0;
+    let baseLeverage = 5.0;
+    if (accountBalance < 50000) baseLeverage = 25.0;
+    else if (accountBalance < 100000) baseLeverage = 15.0;
+    else if (accountBalance < 1000000) baseLeverage = 10.0;
+    else if (accountBalance < 10000000) baseLeverage = 8.0;
+    else baseLeverage = 6.0;
+
+    if (trendingCount >= 7) baseLeverage *= 1.3;
+    else if (trendingCount >= 5) baseLeverage *= 1.15;
+    
+    const globalPortfolioLeverage = Math.min(baseLeverage, 30.0);
     console.log(`[Orchestrator] Global Trend Count: ${trendingCount}/${SYMBOLS.length} -> Leverage Cap: ${globalPortfolioLeverage}x`);
 
     for (const symbol of SYMBOLS) {
@@ -377,7 +385,8 @@ export async function POST(req: NextRequest) {
 
         const currentPrice = candles[candles.length - 1].close;
         const state = allStatesMap[symbol];
-        const { state: newState, signals } = processSymbol(state, candles, accountBalance, totalMarginUsed, ctoConfig, globalPortfolioLeverage);
+        const isGlobalTrend = trendingCount >= 5;
+        const { state: newState, signals } = processSymbol(state, candles, accountBalance, totalMarginUsed, ctoConfig, globalPortfolioLeverage, isGlobalTrend);
 
         await saveState(newState);
 

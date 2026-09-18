@@ -51,6 +51,7 @@ export interface LiveSymbolState {
     positionSize: number;
     partialTaken: boolean;
     tpTarget?: number;
+    pyramid1?: boolean;
   } | null;
   megalodonTrade: {
     action: 'BUY' | 'SELL';
@@ -192,7 +193,8 @@ export function processSymbol(
   accountBalance: number,
   totalMarginUsed: number,
   ctoConfig: CTOConfig | null = null,
-  globalPortfolioLeverage: number = 5.0
+  globalPortfolioLeverage: number = 5.0,
+  isGlobalTrend: boolean = false
 ): { state: LiveSymbolState; signals: OrchestratorSignal[] } {
   const signals: OrchestratorSignal[] = [];
   const candle = candles4H[candles4H.length - 1]; // the just-closed 4H candle
@@ -354,7 +356,38 @@ export function processSymbol(
 
     if (state.leviathanTrade) {
       const trade = state.leviathanTrade;
-      // Partial TP at +20% — lock half the gains early, let the rest ride free
+      
+      const gainPct = trade.action === 'BUY'
+        ? (candle.high - trade.entryPrice) / trade.entryPrice
+        : (trade.entryPrice - candle.low) / trade.entryPrice;
+
+      // ── Pyramiding (Add 50% size at +15% profit) ──
+      if (!trade.pyramid1 && gainPct >= 0.15) {
+        const additionalSize = trade.positionSize * 0.5;
+        const maxAllowed = Math.max(0, maxAllowedMargin - totalMarginUsed);
+        const pyramidSize = Math.min(additionalSize, maxAllowed);
+        
+        if (pyramidSize >= 50) {
+          trade.positionSize += pyramidSize;
+          trade.pyramid1 = true;
+          if (trade.action === 'BUY') trade.sl = Math.max(trade.sl, trade.entryPrice);
+          else trade.sl = Math.min(trade.sl, trade.entryPrice);
+          
+          signals.push({
+            symbol: state.symbol,
+            strategy: 'LEVIATHAN',
+            action: trade.action === 'BUY' ? 'OPEN_LONG' : 'OPEN_SHORT',
+            stopLoss: trade.sl,
+            takeProfit: trade.tpTarget ? trade.entryPrice * (1 + trade.tpTarget) : 0,
+            positionSizeUsd: pyramidSize,
+            reason: `Leviathan Pyramiding (+15% profit reached). Added 50% size. SL moved to BE.`,
+          });
+          // Update total margin used for this run
+          totalMarginUsed += pyramidSize;
+        }
+      }
+
+      // Partial TP at tpTarget (usually 20-35%) — lock half the gains early, let the rest ride free
       // The remaining half gets SL moved to breakeven (zero downside risk)
       if (!trade.partialTaken) {
         const gainPct = trade.action === 'BUY'
@@ -434,10 +467,15 @@ export function processSymbol(
         if (bullSignal && defconLevel === 0) {
           const sl = lowest(candles4H, 10, 1) - atrVal;
           const riskDist = Math.max(Math.abs(closedCandle.close - sl) / closedCandle.close, 0.01);
-          let riskPct = 0.05;
-          if (accountBalance >= 1000000) riskPct = 0.01;
-          else if (accountBalance >= 100000) riskPct = 0.02;
-          else if (accountBalance >= 10000) riskPct = 0.03;
+          let riskPct = 0.02;
+          if (accountBalance < 10000) riskPct = 0.08;
+          else if (accountBalance < 100000) riskPct = 0.05;
+          else if (accountBalance < 1000000) riskPct = 0.03;
+          else if (accountBalance < 10000000) riskPct = 0.02;
+          else riskPct = 0.015;
+
+          if (isGlobalTrend) riskPct *= 1.5;
+          riskPct = Math.min(riskPct, 0.10);
           const riskAmount = accountBalance * riskPct;
           const desired = riskAmount / riskDist;
           const maxAllowed = Math.min(leviathanCapital * 5, Math.max(0, maxAllowedMargin - totalMarginUsed));
@@ -462,10 +500,15 @@ export function processSymbol(
         } else if (bearSignal && defconLevel === 0) {
           const sl = highest(candles4H, 10, 1) + atrVal;
           const riskDist = Math.max(Math.abs(sl - closedCandle.close) / closedCandle.close, 0.01);
-          let riskPct = 0.05;
-          if (accountBalance >= 1000000) riskPct = 0.01;
-          else if (accountBalance >= 100000) riskPct = 0.02;
-          else if (accountBalance >= 10000) riskPct = 0.03;
+          let riskPct = 0.02;
+          if (accountBalance < 10000) riskPct = 0.08;
+          else if (accountBalance < 100000) riskPct = 0.05;
+          else if (accountBalance < 1000000) riskPct = 0.03;
+          else if (accountBalance < 10000000) riskPct = 0.02;
+          else riskPct = 0.015;
+
+          if (isGlobalTrend) riskPct *= 1.5;
+          riskPct = Math.min(riskPct, 0.10);
           const riskAmount = accountBalance * riskPct;
           const desired = riskAmount / riskDist;
           const maxAllowed = Math.min(leviathanCapital * 2, Math.max(0, maxAllowedMargin - totalMarginUsed));
