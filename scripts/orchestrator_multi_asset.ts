@@ -461,7 +461,11 @@ async function runMultiAssetOrchestrator() {
                 if (bullSignal) {
                     const sl = calculateLowestLow(state.buffer4H, 10, 1) - atr;
                     const riskDist = Math.max(Math.abs(candle.close - sl) / candle.close, 0.01);
-                    const riskAmount = globalBalance * 0.05; 
+                    let riskPct = 0.05;
+                    if (globalBalance >= 1000000) riskPct = 0.01;
+                    else if (globalBalance >= 100000) riskPct = 0.02;
+                    else if (globalBalance >= 10000) riskPct = 0.03;
+                    const riskAmount = globalBalance * riskPct;
                     let desiredPosSize = riskAmount / riskDist;
                     
                     // MARGIN CHECK
@@ -486,7 +490,11 @@ async function runMultiAssetOrchestrator() {
                 } else if (bearSignal) {
                     const sl = calculateHighestHigh(state.buffer4H, 10, 1) + atr;
                     const riskDist = Math.max(Math.abs(sl - candle.close) / candle.close, 0.01);
-                    const riskAmount = globalBalance * 0.05; 
+                    let riskPct = 0.05;
+                    if (globalBalance >= 1000000) riskPct = 0.01;
+                    else if (globalBalance >= 100000) riskPct = 0.02;
+                    else if (globalBalance >= 10000) riskPct = 0.03;
+                    const riskAmount = globalBalance * riskPct;
                     let desiredPosSize = riskAmount / riskDist;
                     
                     const maxAllowedForTrade = Math.min(leviathanCapital * 2, Math.max(0, maxAllowedMargin - currentGlobalMarginUsed));
@@ -561,7 +569,11 @@ async function runMultiAssetOrchestrator() {
                 if (candle.close > ema800 * 1.02) {
                     const sl = ema800 - atr * 3;
                     const riskDist = Math.max(Math.abs(candle.close - sl) / candle.close, 0.01);
-                    const riskAmount = globalBalance * 0.03; // Risk 3% of portfolio per macro trade
+                    let riskPct = 0.03;
+                    if (globalBalance >= 1000000) riskPct = 0.005;
+                    else if (globalBalance >= 100000) riskPct = 0.01;
+                    else if (globalBalance >= 10000) riskPct = 0.02;
+                    const riskAmount = globalBalance * riskPct;
                     let desiredPosSize = riskAmount / riskDist;
 
                     let posSize = Math.min(desiredPosSize, megalodonCapital * 2, Math.max(0, maxAllowedMargin - currentGlobalMarginUsed));
@@ -579,7 +591,11 @@ async function runMultiAssetOrchestrator() {
                 } else if (candle.close < ema800 * 0.98) {
                     const sl = ema800 + atr * 3;
                     const riskDist = Math.max(Math.abs(sl - candle.close) / candle.close, 0.01);
-                    const riskAmount = globalBalance * 0.03; // Risk 3% of portfolio per macro trade
+                    let riskPct = 0.03;
+                    if (globalBalance >= 1000000) riskPct = 0.005;
+                    else if (globalBalance >= 100000) riskPct = 0.01;
+                    else if (globalBalance >= 10000) riskPct = 0.02;
+                    const riskAmount = globalBalance * riskPct;
                     let desiredPosSize = riskAmount / riskDist;
 
                     // MARGIN CHECK

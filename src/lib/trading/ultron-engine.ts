@@ -435,7 +435,11 @@ export function processSymbol(
         if (bullSignal && defconLevel === 0) {
           const sl = lowest(candles4H, 10, 1) - atrVal;
           const riskDist = Math.max(Math.abs(closedCandle.close - sl) / closedCandle.close, 0.01);
-          const riskAmount = accountBalance * 0.05;
+          let riskPct = 0.05;
+          if (accountBalance >= 1000000) riskPct = 0.01;
+          else if (accountBalance >= 100000) riskPct = 0.02;
+          else if (accountBalance >= 10000) riskPct = 0.03;
+          const riskAmount = accountBalance * riskPct;
           const desired = riskAmount / riskDist;
           const maxAllowed = Math.min(leviathanCapital * 5, Math.max(0, maxAllowedMargin - totalMarginUsed));
           const posSize = Math.min(desired, maxAllowed);
@@ -459,7 +463,11 @@ export function processSymbol(
         } else if (bearSignal && defconLevel === 0) {
           const sl = highest(candles4H, 10, 1) + atrVal;
           const riskDist = Math.max(Math.abs(sl - closedCandle.close) / closedCandle.close, 0.01);
-          const riskAmount = accountBalance * 0.05;
+          let riskPct = 0.05;
+          if (accountBalance >= 1000000) riskPct = 0.01;
+          else if (accountBalance >= 100000) riskPct = 0.02;
+          else if (accountBalance >= 10000) riskPct = 0.03;
+          const riskAmount = accountBalance * riskPct;
           const desired = riskAmount / riskDist;
           const maxAllowed = Math.min(leviathanCapital * 2, Math.max(0, maxAllowedMargin - totalMarginUsed));
           const posSize = Math.min(desired, maxAllowed);
@@ -547,7 +555,12 @@ export function processSymbol(
         if (closedCandle.close > prevEma800 * 1.02) {
           const sl = prevEma800 - prevAtrVal * 3;
           const riskDist = Math.max(Math.abs(closedCandle.close - sl) / closedCandle.close, 0.01);
-          const desired = (accountBalance * 0.03) / riskDist;
+          let riskPct = 0.03;
+          if (accountBalance >= 1000000) riskPct = 0.005;
+          else if (accountBalance >= 100000) riskPct = 0.01;
+          else if (accountBalance >= 10000) riskPct = 0.02;
+          const riskAmount = accountBalance * riskPct;
+          const desired = riskAmount / riskDist;
           const maxAllowed = Math.min(megalodonCapital * 2, Math.max(0, maxAllowedMargin - totalMarginUsed));
           const posSize = Math.min(desired, maxAllowed);
 
@@ -566,7 +579,12 @@ export function processSymbol(
         } else if (closedCandle.close < prevEma800 * 0.98) {
           const sl = prevEma800 + prevAtrVal * 3;
           const riskDist = Math.max(Math.abs(sl - closedCandle.close) / closedCandle.close, 0.01);
-          const desired = (accountBalance * 0.03) / riskDist;
+          let riskPct = 0.03;
+          if (accountBalance >= 1000000) riskPct = 0.005;
+          else if (accountBalance >= 100000) riskPct = 0.01;
+          else if (accountBalance >= 10000) riskPct = 0.02;
+          const riskAmount = accountBalance * riskPct;
+          const desired = riskAmount / riskDist;
           const maxAllowed = Math.min(megalodonCapital * 2, Math.max(0, maxAllowedMargin - totalMarginUsed));
           const posSize = Math.min(desired, maxAllowed);
 
