@@ -4,6 +4,8 @@ import { sendTelegramMessage, sendTelegramAction } from '@/lib/telegram';
 import { redis } from '@/lib/redis';
 import { logExpense } from '@/lib/ultron-tracker';
 import { triggerPanicClose } from '@/lib/trading/executor';
+import { supabase } from '@/lib/supabase';
+import ccxt from 'ccxt';
 
 export const maxDuration = 30;
 export const runtime = "nodejs";
@@ -106,9 +108,54 @@ export async function POST(req: NextRequest) {
     if (text === 'panic_close' || text.startsWith('/panic')) {
       try {
         await triggerPanicClose();
-        // Answer callback query if needed (usually a separate endpoint, but we can just send a message)
+        await sendTelegramMessage(chatId, `🚨 Panic close initiated! All trades are being shut down.`);
       } catch (e) {
         console.error("Panic close failed:", e);
+      }
+      return new NextResponse('OK', { status: 200 });
+    }
+
+    if (text === 'behemoth_status' || text.startsWith('/behemoth')) {
+      try {
+        await sendTelegramAction(chatId, 'typing');
+        const { data: openTrades, error } = await supabase
+          .from('paper_trades')
+          .select('*')
+          .eq('status', 'OPEN')
+          .ilike('rationale', '%[BEHEMOTH]%');
+          
+        if (error || !openTrades || openTrades.length === 0) {
+          await sendTelegramMessage(chatId, `👑 <b>BEHEMOTH STATUS</b> 👑\n\n💤 No active grids right now. Waiting for ranges...`);
+        } else {
+          const exchange = new ccxt.hyperliquid();
+          const fetchSymbols = openTrades.map(t => `${t.symbol.split('/')[0]}/USDC:USDC`);
+          const tickers = await exchange.fetchTickers(fetchSymbols);
+          
+          let totalPnl = 0;
+          let totalMargin = 0;
+          let lines = [];
+          
+          for (const trade of openTrades) {
+            const hyperSymbol = `${trade.symbol.split('/')[0]}/USDC:USDC`;
+            const livePrice = tickers[hyperSymbol]?.last || trade.entry_price;
+            const isLong = trade.position_type === 'LONG';
+            const diff = isLong ? (livePrice - trade.entry_price) : (trade.entry_price - livePrice);
+            const pnlUsd = (diff / trade.entry_price) * trade.position_size_usd;
+
+            totalPnl += pnlUsd;
+            totalMargin += trade.position_size_usd;
+
+            const emoji = pnlUsd >= 0 ? '🟢' : '🔴';
+            lines.push(`${emoji} <b>${trade.symbol}</b> | $${trade.position_size_usd.toFixed(0)} | ${pnlUsd >= 0 ? '+' : ''}$${pnlUsd.toFixed(2)}`);
+          }
+          
+          const header = `👑 <b>BEHEMOTH LIVE REPORT</b> 👑\n━━━━━━━━━━━━━━━━━━━━━━\n`;
+          const body = lines.join('\n');
+          const footer = `\n━━━━━━━━━━━━━━━━━━━━━━\n💰 <b>Margin In Use:</b> $${totalMargin.toFixed(2)}\n💵 <b>Unrealized PNL:</b> ${totalPnl >= 0 ? '+' : ''}$${totalPnl.toFixed(2)}`;
+          await sendTelegramMessage(chatId, header + body + footer);
+        }
+      } catch (e) {
+        console.error("Behemoth status failed:", e);
       }
       return new NextResponse('OK', { status: 200 });
     }
@@ -117,6 +164,7 @@ export async function POST(req: NextRequest) {
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://ultron-assistant-iota.vercel.app";
       await sendTelegramMessage(chatId, "📊 **Ultron Control Center**\n\nSelect an option below:", {
         inline_keyboard: [
+          [{ text: "👑 Behemoth Status", callback_data: "behemoth_status" }],
           [{ text: "📊 Open Life OS Dashboard", web_app: { url: `${appUrl}/` } }],
           [{ text: "🚨 PANIC CLOSE ALL TRADES 🚨", callback_data: "panic_close" }]
         ]

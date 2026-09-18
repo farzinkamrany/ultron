@@ -322,7 +322,7 @@ export async function POST(req: NextRequest) {
   const results: string[] = [];
 
   try {
-    const exchange = new ccxt.kucoin({ enableRateLimit: true });
+    const exchange = new ccxt.hyperliquid({ enableRateLimit: true });
     const accountBalance = await getAccountBalance();
     const totalMarginUsed = await getTotalMarginUsed();
 
@@ -353,9 +353,12 @@ export async function POST(req: NextRequest) {
 
     for (const symbol of SYMBOLS) {
       try {
+        const baseSymbol = symbol.split('/')[0];
+        const fetchSymbol = `${baseSymbol}/USDC:USDC`;
+        
         // Fetch 4H candles — 1000 candles = ~166 days (enough for EMA50/200)
         // For Megalodon (EMA800) we need at least 800 candles = ~133 days of 4H
-        const ohlcv = await exchange.fetchOHLCV(symbol, '4h', undefined, 1000);
+        const ohlcv = await exchange.fetchOHLCV(fetchSymbol, '4h', undefined, 1000);
         if (ohlcv.length < 200) {
           console.warn(`[Orchestrator] Not enough data for ${symbol}: ${ohlcv.length} candles`);
           continue;
