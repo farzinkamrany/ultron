@@ -61,6 +61,14 @@ export interface LiveSymbolState {
   lastProcessed4HCandleTime: number;
 }
 
+export interface CTOConfig {
+  risk_per_trade_pct: number;
+  gann_tolerance_pct: number;
+  smc_lookback_candles: number;
+  defcon_level: number;
+  take_profit_target_pct: number;
+}
+
 export const DEFAULT_SYMBOL_STATE: Omit<LiveSymbolState, 'symbol'> = {
   currentRegime: 'UNKNOWN',
   gridActive: false,
@@ -170,13 +178,21 @@ export function processSymbol(
   state: LiveSymbolState,
   candles4H: Candle[],
   accountBalance: number,
-  totalMarginUsed: number
+  totalMarginUsed: number,
+  ctoConfig: CTOConfig | null = null
 ): { state: LiveSymbolState; signals: OrchestratorSignal[] } {
   const signals: OrchestratorSignal[] = [];
   const candle = candles4H[candles4H.length - 1]; // the just-closed 4H candle
   const now = candle.timestamp;
 
-  const maxAllowedMargin = accountBalance * MAX_PORTFOLIO_LEVERAGE;
+  // Dynamic leverage: 8x in TREND regime (confirmed bull/bear trend), 5x in RANGE
+  // CTO can further scale this via risk_per_trade_pct if active
+  const riskPct = ctoConfig?.risk_per_trade_pct ?? 1.6;
+  const baseLeverage = state.currentRegime === 'TREND' ? 8.0 : 5.0;
+  const portfolioLeverage = baseLeverage * (riskPct / 1.6);
+  const maxAllowedMargin = accountBalance * portfolioLeverage;
+
+  const defconLevel = ctoConfig?.defcon_level ?? 0;
 
   // ── 1. REGIME DETECTION ─────────────────────────────────────────────────
   if (candles4H.length > 50) {
@@ -327,22 +343,28 @@ export function processSymbol(
 
     if (state.leviathanTrade) {
       const trade = state.leviathanTrade;
-      // Partial TP at +40%
+      // Partial TP at +20% — lock half the gains early, let the rest ride free
+      // The remaining half gets SL moved to breakeven (zero downside risk)
       if (!trade.partialTaken) {
+        const tpTarget = (ctoConfig?.take_profit_target_pct ?? 20) / 100;
         const gainPct = trade.action === 'BUY'
           ? (candle.high - trade.entryPrice) / trade.entryPrice
           : (trade.entryPrice - candle.low) / trade.entryPrice;
-        if (gainPct >= 0.40) {
+        if (gainPct >= tpTarget) {
           trade.positionSize *= 0.5;
           trade.partialTaken = true;
           if (trade.action === 'BUY') trade.sl = Math.max(trade.sl, trade.entryPrice);
           else trade.sl = Math.min(trade.sl, trade.entryPrice);
+
+          const tpMultiplierLong = 1 + tpTarget;
+          const tpMultiplierShort = 1 - tpTarget;
+
           signals.push({
             symbol: state.symbol,
             strategy: 'LEVIATHAN',
             action: 'PARTIAL_TP_HIT',
             stopLoss: trade.sl,
-            takeProfit: trade.action === 'BUY' ? trade.entryPrice * 1.40 : trade.entryPrice * 0.60,
+            takeProfit: trade.action === 'BUY' ? trade.entryPrice * tpMultiplierLong : trade.entryPrice * tpMultiplierShort,
             positionSizeUsd: trade.positionSize, // remaining half
             reason: `Leviathan Partial TP Hit (Limit filled by Exchange). Updating SL to Breakeven.`,
           });
@@ -394,7 +416,7 @@ export function processSymbol(
         const bullSignal = closedCandle.close > prevEma200 && closedCandle.close > prevHigh20;
         const bearSignal = closedCandle.close < prevEma200 && closedCandle.close < prevLow20;
 
-        if (bullSignal) {
+        if (bullSignal && defconLevel === 0) {
           const sl = lowest(candles4H, 10, 1) - atrVal;
           const riskDist = Math.max(Math.abs(closedCandle.close - sl) / closedCandle.close, 0.01);
           const riskAmount = accountBalance * 0.05;
@@ -411,12 +433,12 @@ export function processSymbol(
               strategy: 'LEVIATHAN',
               action: 'OPEN_LONG',
               stopLoss: sl,
-              takeProfit: closedCandle.close * 1.40,
+              takeProfit: closedCandle.close * (1 + (ctoConfig?.take_profit_target_pct ?? 20) / 100),
               positionSizeUsd: posSize,
               reason: `Leviathan LONG: Breakout above ${prevHigh20.toFixed(2)}`,
             });
           }
-        } else if (bearSignal) {
+        } else if (bearSignal && defconLevel === 0) {
           const sl = highest(candles4H, 10, 1) + atrVal;
           const riskDist = Math.max(Math.abs(sl - closedCandle.close) / closedCandle.close, 0.01);
           const riskAmount = accountBalance * 0.05;
@@ -433,7 +455,7 @@ export function processSymbol(
               strategy: 'LEVIATHAN',
               action: 'OPEN_SHORT',
               stopLoss: sl,
-              takeProfit: closedCandle.close * 0.60,
+              takeProfit: closedCandle.close * (1 - (ctoConfig?.take_profit_target_pct ?? 20) / 100),
               positionSizeUsd: posSize,
               reason: `Leviathan SHORT: Breakout below ${prevLow20.toFixed(2)}`,
             });

@@ -233,7 +233,11 @@ async function runMultiAssetOrchestrator() {
             if (st.leviathanTrade) currentGlobalMarginUsed += st.leviathanTrade.positionSize;
             if (st.megalodonTrade) currentGlobalMarginUsed += st.megalodonTrade.positionSize;
         }
-        const maxAllowedMargin = globalBalance * MAX_PORTFOLIO_LEVERAGE;
+        // Dynamic leverage: 5x in ranging markets, 8x when majority of symbols in confirmed TREND
+        const activeRegimes = Object.values(states).map(s => s.currentRegime);
+        const trendingCount = activeRegimes.filter(r => r === 'TREND').length;
+        const dynamicLeverage = trendingCount >= 5 ? 8.0 : 5.0;
+        const maxAllowedMargin = globalBalance * dynamicLeverage;
 
         // ============================================================
         // 2. REGIME DETECTION
@@ -387,12 +391,12 @@ async function runMultiAssetOrchestrator() {
                         ? (candle.high - trade.entryPrice) / trade.entryPrice
                         : (trade.entryPrice - candle.low) / trade.entryPrice;
 
-                    if (gainPct >= 0.40) {
+                    if (gainPct >= 0.20) {
                         const halfSize = trade.positionSize * 0.5;
                         const halfQty  = halfSize / trade.entryPrice;
                         const tpPrice  = trade.action === 'BUY'
-                            ? trade.entryPrice * 1.40 * (1 - SLIPPAGE)
-                            : trade.entryPrice * 0.60 * (1 + SLIPPAGE);
+                            ? trade.entryPrice * 1.20 * (1 - SLIPPAGE)
+                            : trade.entryPrice * 0.80 * (1 + SLIPPAGE);
                         const partialPnl = trade.action === 'BUY'
                             ? (tpPrice - trade.entryPrice) * halfQty - halfSize * TAKER_FEE
                             : (trade.entryPrice - tpPrice) * halfQty - halfSize * TAKER_FEE;
@@ -401,6 +405,7 @@ async function runMultiAssetOrchestrator() {
                         stats.leviathanPartialTPs++;
                         trade.positionSize *= 0.5;
                         trade.partialTaken = true;
+                        // SL to breakeven — the remaining half now has zero downside risk
                         if (trade.action === 'BUY') trade.sl = Math.max(trade.sl, trade.entryPrice);
                         else trade.sl = Math.min(trade.sl, trade.entryPrice);
                     }
