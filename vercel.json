@@ -1,9 +1,3 @@
 {
-  "regions": ["fra1"],
-  "crons": [
-    {
-      "path": "/api/cron/cto",
-      "schedule": "0 0 * * *"
-    }
-  ]
+  "regions": ["fra1"]
 }

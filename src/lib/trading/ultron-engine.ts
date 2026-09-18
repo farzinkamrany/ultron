@@ -51,7 +51,6 @@ export interface LiveSymbolState {
     positionSize: number;
     partialTaken: boolean;
   } | null;
-  // Megalodon
   megalodonTrade: {
     action: 'BUY' | 'SELL';
     entryPrice: number;
@@ -59,6 +58,7 @@ export interface LiveSymbolState {
     positionSize: number;
   } | null;
   megalodonCooldownUntil: number;
+  lastProcessed4HCandleTime: number;
 }
 
 export const DEFAULT_SYMBOL_STATE: Omit<LiveSymbolState, 'symbol'> = {
@@ -74,6 +74,7 @@ export const DEFAULT_SYMBOL_STATE: Omit<LiveSymbolState, 'symbol'> = {
   leviathanTrade: null,
   megalodonTrade: null,
   megalodonCooldownUntil: 0,
+  lastProcessed4HCandleTime: 0,
 };
 
 // ─── Constants ─────────────────────────────────────────────────────────────
@@ -380,53 +381,63 @@ export function processSymbol(
         }
       }
     } else {
-      // Entry signals (Pure Donchian Breakout)
-      const bullSignal = candle.close > ema200 && candle.close > high20;
-      const bearSignal = candle.close < ema200 && candle.close < low20;
+      // Ensure we only process Leviathan entries on a CLOSED 4H candle
+      const candleClosed4H = candle.timestamp > (state.lastProcessed4HCandleTime || 0);
+      if (candleClosed4H) {
+        // Evaluate breakout on the PREVIOUS (closed) 4H candle to match backtest
+        const closedCandle = candles4H[candles4H.length - 2];
+        const prevEma200 = ema(candles4H.slice(0, candles4H.length - 1), 200);
+        const prevHigh20 = highest(candles4H, 20, 2);
+        const prevLow20 = lowest(candles4H, 20, 2);
+        
+        // Entry signals (Pure Donchian Breakout)
+        const bullSignal = closedCandle.close > prevEma200 && closedCandle.close > prevHigh20;
+        const bearSignal = closedCandle.close < prevEma200 && closedCandle.close < prevLow20;
 
-      if (bullSignal) {
-        const sl = lowest(candles4H, 10, 1) - atrVal;
-        const riskDist = Math.max(Math.abs(candle.close - sl) / candle.close, 0.01);
-        const riskAmount = accountBalance * 0.05;
-        const desired = riskAmount / riskDist;
-        const maxAllowed = Math.min(leviathanCapital * 5, Math.max(0, maxAllowedMargin - totalMarginUsed));
-        const posSize = Math.min(desired, maxAllowed);
+        if (bullSignal) {
+          const sl = lowest(candles4H, 10, 1) - atrVal;
+          const riskDist = Math.max(Math.abs(closedCandle.close - sl) / closedCandle.close, 0.01);
+          const riskAmount = accountBalance * 0.05;
+          const desired = riskAmount / riskDist;
+          const maxAllowed = Math.min(leviathanCapital * 5, Math.max(0, maxAllowedMargin - totalMarginUsed));
+          const posSize = Math.min(desired, maxAllowed);
 
-        if (posSize >= 50) {
-          const entryPrice = candle.close * (1 + SLIPPAGE);
-          state.leviathanTrade = { action: 'BUY', entryPrice, sl, positionSize: posSize, partialTaken: false };
-          totalMarginUsed += posSize;
-          signals.push({
-            symbol: state.symbol,
-            strategy: 'LEVIATHAN',
-            action: 'OPEN_LONG',
-            stopLoss: sl,
-            takeProfit: candle.close * 1.40,
-            positionSizeUsd: posSize,
-            reason: `Leviathan LONG: Breakout above ${high20.toFixed(2)}`,
-          });
-        }
-      } else if (bearSignal) {
-        const sl = highest(candles4H, 10, 1) + atrVal;
-        const riskDist = Math.max(Math.abs(sl - candle.close) / candle.close, 0.01);
-        const riskAmount = accountBalance * 0.05;
-        const desired = riskAmount / riskDist;
-        const maxAllowed = Math.min(leviathanCapital * 2, Math.max(0, maxAllowedMargin - totalMarginUsed));
-        const posSize = Math.min(desired, maxAllowed);
+          if (posSize >= 50) {
+            const entryPrice = closedCandle.close * (1 + SLIPPAGE);
+            state.leviathanTrade = { action: 'BUY', entryPrice, sl, positionSize: posSize, partialTaken: false };
+            totalMarginUsed += posSize;
+            signals.push({
+              symbol: state.symbol,
+              strategy: 'LEVIATHAN',
+              action: 'OPEN_LONG',
+              stopLoss: sl,
+              takeProfit: closedCandle.close * 1.40,
+              positionSizeUsd: posSize,
+              reason: `Leviathan LONG: Breakout above ${prevHigh20.toFixed(2)}`,
+            });
+          }
+        } else if (bearSignal) {
+          const sl = highest(candles4H, 10, 1) + atrVal;
+          const riskDist = Math.max(Math.abs(sl - closedCandle.close) / closedCandle.close, 0.01);
+          const riskAmount = accountBalance * 0.05;
+          const desired = riskAmount / riskDist;
+          const maxAllowed = Math.min(leviathanCapital * 2, Math.max(0, maxAllowedMargin - totalMarginUsed));
+          const posSize = Math.min(desired, maxAllowed);
 
-        if (posSize >= 50) {
-          const entryPrice = candle.close * (1 - SLIPPAGE);
-          state.leviathanTrade = { action: 'SELL', entryPrice, sl, positionSize: posSize, partialTaken: false };
-          totalMarginUsed += posSize;
-          signals.push({
-            symbol: state.symbol,
-            strategy: 'LEVIATHAN',
-            action: 'OPEN_SHORT',
-            stopLoss: sl,
-            takeProfit: candle.close * 0.60,
-            positionSizeUsd: posSize,
-            reason: `Leviathan SHORT: Breakout below ${low20.toFixed(2)}`,
-          });
+          if (posSize >= 50) {
+            const entryPrice = closedCandle.close * (1 - SLIPPAGE);
+            state.leviathanTrade = { action: 'SELL', entryPrice, sl, positionSize: posSize, partialTaken: false };
+            totalMarginUsed += posSize;
+            signals.push({
+              symbol: state.symbol,
+              strategy: 'LEVIATHAN',
+              action: 'OPEN_SHORT',
+              stopLoss: sl,
+              takeProfit: closedCandle.close * 0.60,
+              positionSizeUsd: posSize,
+              reason: `Leviathan SHORT: Breakout below ${prevLow20.toFixed(2)}`,
+            });
+          }
         }
       }
     }
@@ -484,48 +495,58 @@ export function processSymbol(
           }
         }
       }
-    } else if (now > state.megalodonCooldownUntil) {
-      if (candle.close > ema800 * 1.02) {
-        const sl = ema800 - atrVal * 3;
-        const riskDist = Math.max(Math.abs(candle.close - sl) / candle.close, 0.01);
-        const desired = (accountBalance * 0.03) / riskDist;
-        const maxAllowed = Math.min(megalodonCapital * 2, Math.max(0, maxAllowedMargin - totalMarginUsed));
-        const posSize = Math.min(desired, maxAllowed);
+    } else {
+      const candleClosed4H = candle.timestamp > (state.lastProcessed4HCandleTime || 0);
+      if (candleClosed4H && now > state.megalodonCooldownUntil) {
+        const closedCandle = candles4H[candles4H.length - 2];
+        const prevEma800 = ema(candles4H.slice(0, candles4H.length - 1), 800);
+        const prevAtrVal = atr(candles4H.slice(0, candles4H.length - 1), 14);
 
-        if (posSize >= 50) {
-          state.megalodonTrade = { action: 'BUY', entryPrice: candle.close, sl, positionSize: posSize };
-          signals.push({
-            symbol: state.symbol,
-            strategy: 'MEGALODON',
-            action: 'OPEN_LONG',
-            stopLoss: sl,
-            takeProfit: candle.close * 2,
-            positionSizeUsd: posSize,
-            reason: `Megalodon LONG: price ${candle.close.toFixed(2)} > EMA800 ${ema800.toFixed(2)}`,
-          });
-        }
-      } else if (candle.close < ema800 * 0.98) {
-        const sl = ema800 + atrVal * 3;
-        const riskDist = Math.max(Math.abs(sl - candle.close) / candle.close, 0.01);
-        const desired = (accountBalance * 0.03) / riskDist;
-        const maxAllowed = Math.min(megalodonCapital * 2, Math.max(0, maxAllowedMargin - totalMarginUsed));
-        const posSize = Math.min(desired, maxAllowed);
+        if (closedCandle.close > prevEma800 * 1.02) {
+          const sl = prevEma800 - prevAtrVal * 3;
+          const riskDist = Math.max(Math.abs(closedCandle.close - sl) / closedCandle.close, 0.01);
+          const desired = (accountBalance * 0.03) / riskDist;
+          const maxAllowed = Math.min(megalodonCapital * 2, Math.max(0, maxAllowedMargin - totalMarginUsed));
+          const posSize = Math.min(desired, maxAllowed);
 
-        if (posSize >= 50) {
-          state.megalodonTrade = { action: 'SELL', entryPrice: candle.close, sl, positionSize: posSize };
-          signals.push({
-            symbol: state.symbol,
-            strategy: 'MEGALODON',
-            action: 'OPEN_SHORT',
-            stopLoss: sl,
-            takeProfit: candle.close * 0.5,
-            positionSizeUsd: posSize,
-            reason: `Megalodon SHORT: price ${candle.close.toFixed(2)} < EMA800 ${ema800.toFixed(2)}`,
-          });
+          if (posSize >= 50) {
+            state.megalodonTrade = { action: 'BUY', entryPrice: closedCandle.close, sl, positionSize: posSize };
+            signals.push({
+              symbol: state.symbol,
+              strategy: 'MEGALODON',
+              action: 'OPEN_LONG',
+              stopLoss: sl,
+              takeProfit: closedCandle.close * 2,
+              positionSizeUsd: posSize,
+              reason: `Megalodon LONG: price ${closedCandle.close.toFixed(2)} > EMA800 ${prevEma800.toFixed(2)}`,
+            });
+          }
+        } else if (closedCandle.close < prevEma800 * 0.98) {
+          const sl = prevEma800 + prevAtrVal * 3;
+          const riskDist = Math.max(Math.abs(sl - closedCandle.close) / closedCandle.close, 0.01);
+          const desired = (accountBalance * 0.03) / riskDist;
+          const maxAllowed = Math.min(megalodonCapital * 2, Math.max(0, maxAllowedMargin - totalMarginUsed));
+          const posSize = Math.min(desired, maxAllowed);
+
+          if (posSize >= 50) {
+            state.megalodonTrade = { action: 'SELL', entryPrice: closedCandle.close, sl, positionSize: posSize };
+            signals.push({
+              symbol: state.symbol,
+              strategy: 'MEGALODON',
+              action: 'OPEN_SHORT',
+              stopLoss: sl,
+              takeProfit: closedCandle.close * 0.5,
+              positionSizeUsd: posSize,
+              reason: `Megalodon SHORT: price ${closedCandle.close.toFixed(2)} < EMA800 ${prevEma800.toFixed(2)}`,
+            });
+          }
         }
       }
     }
   }
+
+  // Update processed time
+  state.lastProcessed4HCandleTime = candle.timestamp;
 
   return { state, signals };
 }
