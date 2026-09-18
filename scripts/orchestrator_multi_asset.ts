@@ -144,6 +144,7 @@ class SymbolState {
     public orderSizeUSD = 0;
     public gridStep = 0;
     public readonly GRID_LEVELS = 30;
+    public behemothCooldownUntil: number = 0;
 
     public leviathanTrade: any = null;
     public megalodonTrade: any = null;
@@ -272,7 +273,7 @@ async function runMultiAssetOrchestrator() {
             : 0;
         const fallingKnife = priceVelocity < -0.04;
 
-        if (!state.gridActive && state.buffer4H.length > 20 && !fallingKnife && state.currentRegime !== 'TREND') {
+        if (!state.gridActive && state.buffer4H.length > 20 && !fallingKnife && state.currentRegime !== 'TREND' && candle.timestamp > state.behemothCooldownUntil) {
 
             state.grid = [];
             state.positionCoins = 0;
@@ -312,7 +313,10 @@ async function runMultiAssetOrchestrator() {
                         state.realizedGridPnl += state.orderSizeUSD * Math.abs(MAKER_FEE);
                         level.active = false;
                         const sellLevel = state.grid.find(g => g.price > level.price);
-                        if (sellLevel) sellLevel.active = true;
+                        if (sellLevel) {
+                            sellLevel.type = 'SELL';
+                            sellLevel.active = true;
+                        }
                     }
                     else if (level.type === 'SELL' && candle.high >= level.price) {
                         if (state.positionCoins > 0) {
@@ -326,7 +330,10 @@ async function runMultiAssetOrchestrator() {
                             }
                             level.active = false;
                             const buyLevel = state.grid.slice().reverse().find(g => g.price < level.price);
-                            if (buyLevel) buyLevel.active = true;
+                            if (buyLevel) {
+                                buyLevel.type = 'BUY';
+                                buyLevel.active = true;
+                            }
                         }
                     }
                 }
@@ -336,11 +343,14 @@ async function runMultiAssetOrchestrator() {
                 if (candle.close > upperBound || candle.close < lowerBound) {
                     if (state.positionCoins !== 0) {
                         const exitValue = state.positionCoins * candle.close;
+                        const entryValue = state.positionCoins * state.avgEntryPrice;
+                        state.realizedGridPnl += (exitValue - entryValue);
                         state.realizedGridPnl -= exitValue * TAKER_FEE;
                         state.positionCoins = 0;
                         state.avgEntryPrice = 0;
                     }
                     state.gridActive = false;
+                    state.behemothCooldownUntil = candle.timestamp + (24 * 3600 * 1000);
                     globalBalance += state.realizedGridPnl;
                     stats.behemothProfit += state.realizedGridPnl;
                     state.realizedGridPnl = 0;
