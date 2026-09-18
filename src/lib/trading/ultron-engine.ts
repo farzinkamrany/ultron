@@ -449,15 +449,10 @@ export function processSymbol(
         if (bullSignal && defconLevel === 0) {
           const sl = lowest(candles4H, 10, 1) - atrVal;
           const riskDist = Math.max(Math.abs(closedCandle.close - sl) / closedCandle.close, 0.01);
-          let riskPct = 0.02;
-          if (accountBalance < 10000) riskPct = 0.08;
-          else if (accountBalance < 100000) riskPct = 0.05;
-          else if (accountBalance < 1000000) riskPct = 0.03;
-          else if (accountBalance < 10000000) riskPct = 0.02;
-          else riskPct = 0.015;
-
-          if (isGlobalTrend) riskPct *= 1.5;
-          riskPct = Math.min(riskPct, 0.10);
+          let riskPct = 0.05;
+          if (accountBalance >= 1000000) riskPct = 0.01;
+          else if (accountBalance >= 100000) riskPct = 0.02;
+          else if (accountBalance >= 10000) riskPct = 0.03;
           const riskAmount = accountBalance * riskPct;
           const desired = riskAmount / riskDist;
           const maxAllowed = Math.min(leviathanCapital * 5, Math.max(0, maxAllowedMargin - totalMarginUsed));
@@ -482,15 +477,10 @@ export function processSymbol(
         } else if (bearSignal && defconLevel === 0) {
           const sl = highest(candles4H, 10, 1) + atrVal;
           const riskDist = Math.max(Math.abs(sl - closedCandle.close) / closedCandle.close, 0.01);
-          let riskPct = 0.02;
-          if (accountBalance < 10000) riskPct = 0.08;
-          else if (accountBalance < 100000) riskPct = 0.05;
-          else if (accountBalance < 1000000) riskPct = 0.03;
-          else if (accountBalance < 10000000) riskPct = 0.02;
-          else riskPct = 0.015;
-
-          if (isGlobalTrend) riskPct *= 1.5;
-          riskPct = Math.min(riskPct, 0.10);
+          let riskPct = 0.05;
+          if (accountBalance >= 1000000) riskPct = 0.01;
+          else if (accountBalance >= 100000) riskPct = 0.02;
+          else if (accountBalance >= 10000) riskPct = 0.03;
           const riskAmount = accountBalance * riskPct;
           const desired = riskAmount / riskDist;
           const maxAllowed = Math.min(leviathanCapital * 2, Math.max(0, maxAllowedMargin - totalMarginUsed));
@@ -626,14 +616,9 @@ export function processSymbol(
           const sl = prevEma800 - prevAtrVal * 3;
           const riskDist = Math.max(Math.abs(closedCandle.close - sl) / closedCandle.close, 0.01);
           let riskPct = 0.03;
-          if (accountBalance < 2000) riskPct = 0.40;
-          else if (accountBalance < 5000) riskPct = 0.30;
-          else if (accountBalance < 20000) riskPct = 0.20;
-          else if (accountBalance < 100000) riskPct = 0.10;
-          else if (accountBalance >= 1000000) riskPct = 0.005;
+          if (accountBalance >= 1000000) riskPct = 0.005;
           else if (accountBalance >= 100000) riskPct = 0.01;
-
-          if (accountBalance < 50000 && isGlobalTrend) riskPct *= 1.3;
+          else if (accountBalance >= 10000) riskPct = 0.02;
           const riskAmount = accountBalance * riskPct;
           const desired = riskAmount / riskDist;
           const maxAllowed = Math.min(megalodonCapital * 2, Math.max(0, maxAllowedMargin - totalMarginUsed));
@@ -655,14 +640,9 @@ export function processSymbol(
           const sl = prevEma800 + prevAtrVal * 3;
           const riskDist = Math.max(Math.abs(sl - closedCandle.close) / closedCandle.close, 0.01);
           let riskPct = 0.03;
-          if (accountBalance < 2000) riskPct = 0.40;
-          else if (accountBalance < 5000) riskPct = 0.30;
-          else if (accountBalance < 20000) riskPct = 0.20;
-          else if (accountBalance < 100000) riskPct = 0.10;
-          else if (accountBalance >= 1000000) riskPct = 0.005;
+          if (accountBalance >= 1000000) riskPct = 0.005;
           else if (accountBalance >= 100000) riskPct = 0.01;
-
-          if (accountBalance < 50000 && isGlobalTrend) riskPct *= 1.3;
+          else if (accountBalance >= 10000) riskPct = 0.02;
           const riskAmount = accountBalance * riskPct;
           const desired = riskAmount / riskDist;
           const maxAllowed = Math.min(megalodonCapital * 2, Math.max(0, maxAllowedMargin - totalMarginUsed));
