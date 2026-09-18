@@ -67,7 +67,7 @@ async function getAccountBalance(): Promise<number> {
   // For MICRO: fetch from Hyperliquid
   try {
     const exchange = new ccxt.hyperliquid({
-      walletAddress: process.env.HYPERLIQUID_WALLET || '',
+      walletAddress: process.env.HYPERLIQUID_WALLET || process.env.HYPERLIQUID_WALLET_ADDRESS || '',
       privateKey: process.env.HYPERLIQUID_PRIVATE_KEY || '',
     });
     const balInfo = await exchange.fetchBalance();
@@ -140,7 +140,7 @@ async function executeSignal(signal: OrchestratorSignal, currentPrice: number): 
     } else if (mode === 'MICRO' && (signal.strategy === 'LEVIATHAN' || signal.strategy === 'MEGALODON')) {
       try {
         const exchange = new ccxt.hyperliquid({
-          walletAddress: process.env.HYPERLIQUID_WALLET || '',
+          walletAddress: process.env.HYPERLIQUID_WALLET || process.env.HYPERLIQUID_WALLET_ADDRESS || '',
           privateKey: process.env.HYPERLIQUID_PRIVATE_KEY || '',
           enableRateLimit: true,
         });
@@ -210,7 +210,7 @@ async function executeSignal(signal: OrchestratorSignal, currentPrice: number): 
     } else if (mode === 'MICRO' && (signal.strategy === 'LEVIATHAN' || signal.strategy === 'MEGALODON')) {
       try {
         const exchange = new ccxt.hyperliquid({
-          walletAddress: process.env.HYPERLIQUID_WALLET || '',
+          walletAddress: process.env.HYPERLIQUID_WALLET || process.env.HYPERLIQUID_WALLET_ADDRESS || '',
           privateKey: process.env.HYPERLIQUID_PRIVATE_KEY || '',
           enableRateLimit: true,
         });

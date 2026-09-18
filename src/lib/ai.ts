@@ -348,7 +348,8 @@ Before setting parameters, you MUST evaluate the following:
 `;
 
   const { GoogleGenerativeAI } = await import("@google/generative-ai");
-  const ai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+  const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY_PRIMARY || "";
+  const ai = new GoogleGenerativeAI(geminiKey);
   const model = ai.getGenerativeModel({ model: "gemini-1.5-pro" });
 
   try {
