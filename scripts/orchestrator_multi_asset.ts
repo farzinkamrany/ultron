@@ -245,12 +245,21 @@ async function runMultiAssetOrchestrator() {
             if (st.leviathanTrade) currentGlobalMarginUsed += st.leviathanTrade.positionSize;
             if (st.megalodonTrade) currentGlobalMarginUsed += st.megalodonTrade.positionSize;
         }
-        // Dynamic leverage: 5x in ranging markets, 8x when majority of symbols in confirmed TREND
+        // Dynamic leverage: Scale based on balance and boost in strong trends
+        let baseLeverage = 5.0;
+        if (globalBalance < 50000) baseLeverage = 25.0;
+        else if (globalBalance < 100000) baseLeverage = 15.0;
+        else if (globalBalance < 1000000) baseLeverage = 10.0;
+        else if (globalBalance < 10000000) baseLeverage = 8.0;
+        else baseLeverage = 6.0;
+
         const activeRegimes = Object.values(states).map(s => s.currentRegime);
         const trendingCount = activeRegimes.filter(r => r === 'TREND').length;
-        let dynamicLeverage = trendingCount >= 5 ? 8.0 : 5.0;
-        if (globalBalance < 50000) dynamicLeverage = 25.0;
-        else if (globalBalance < 100000) dynamicLeverage = 15.0;
+        
+        if (trendingCount >= 7) baseLeverage *= 1.3;
+        else if (trendingCount >= 5) baseLeverage *= 1.15;
+        
+        const dynamicLeverage = Math.min(baseLeverage, 30.0);
         const maxAllowedMargin = globalBalance * dynamicLeverage;
 
         // ============================================================
@@ -400,6 +409,29 @@ async function runMultiAssetOrchestrator() {
 
             if (state.leviathanTrade) {
                 const trade = state.leviathanTrade;
+                
+                const gainPct = trade.action === 'BUY'
+                    ? (candle.high - trade.entryPrice) / trade.entryPrice
+                    : (trade.entryPrice - candle.low) / trade.entryPrice;
+
+                // Pyramiding: Add 50% more size at +15% profit
+                if (!trade.pyramid1 && gainPct >= 0.15) {
+                    const additionalSize = trade.positionSize * 0.5;
+                    const maxAllowed = Math.max(0, maxAllowedMargin - currentGlobalMarginUsed);
+                    const pyramidSize = Math.min(additionalSize, maxAllowed);
+                    
+                    if (pyramidSize >= 50) {
+                        trade.positionSize += pyramidSize;
+                        trade.pyramid1 = true;
+                        if (trade.action === 'BUY') {
+                            trade.sl = Math.max(trade.sl, trade.entryPrice);
+                        } else {
+                            trade.sl = Math.min(trade.sl, trade.entryPrice);
+                        }
+                        currentGlobalMarginUsed += pyramidSize;
+                    }
+                }
+
                 if (!trade.partialTaken) {
                     const gainPct = trade.action === 'BUY'
                         ? (candle.high - trade.entryPrice) / trade.entryPrice
@@ -464,10 +496,15 @@ async function runMultiAssetOrchestrator() {
                 if (bullSignal) {
                     const sl = calculateLowestLow(state.buffer4H, 10, 1) - atr;
                     const riskDist = Math.max(Math.abs(candle.close - sl) / candle.close, 0.01);
-                    let riskPct = 0.05;
-                    if (globalBalance >= 1000000) riskPct = 0.01;
-                    else if (globalBalance >= 100000) riskPct = 0.02;
-                    else if (globalBalance >= 10000) riskPct = 0.03;
+                    let riskPct = 0.02;
+                    if (globalBalance < 10000) riskPct = 0.08;
+                    else if (globalBalance < 100000) riskPct = 0.05;
+                    else if (globalBalance < 1000000) riskPct = 0.03;
+                    else if (globalBalance < 10000000) riskPct = 0.02;
+                    else riskPct = 0.015;
+
+                    if (trendingCount >= 5) riskPct *= 1.5;
+                    riskPct = Math.min(riskPct, 0.10);
                     const riskAmount = globalBalance * riskPct;
                     let desiredPosSize = riskAmount / riskDist;
 
@@ -493,10 +530,15 @@ async function runMultiAssetOrchestrator() {
                 } else if (bearSignal) {
                     const sl = calculateHighestHigh(state.buffer4H, 10, 1) + atr;
                     const riskDist = Math.max(Math.abs(sl - candle.close) / candle.close, 0.01);
-                    let riskPct = 0.05;
-                    if (globalBalance >= 1000000) riskPct = 0.01;
-                    else if (globalBalance >= 100000) riskPct = 0.02;
-                    else if (globalBalance >= 10000) riskPct = 0.03;
+                    let riskPct = 0.02;
+                    if (globalBalance < 10000) riskPct = 0.08;
+                    else if (globalBalance < 100000) riskPct = 0.05;
+                    else if (globalBalance < 1000000) riskPct = 0.03;
+                    else if (globalBalance < 10000000) riskPct = 0.02;
+                    else riskPct = 0.015;
+
+                    if (trendingCount >= 5) riskPct *= 1.5;
+                    riskPct = Math.min(riskPct, 0.10);
                     const riskAmount = globalBalance * riskPct;
                     let desiredPosSize = riskAmount / riskDist;
 
