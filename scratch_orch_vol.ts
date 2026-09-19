@@ -610,7 +610,7 @@ async function runMultiAssetOrchestrator() {
     console.log(`------------------------------------------------------------`);
 
     for (const year of Object.keys(yearlyResults).sort()) {
-        const result = yearlyResults[year];
+        const result = yearlyResults[Number(year)];
         console.log(`Year ${year}: $${result.endBalance.toFixed(2)} (${result.profitPct.toFixed(2)}%)`);
     }
     console.log(`============================================================`);
