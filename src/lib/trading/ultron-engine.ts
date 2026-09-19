@@ -91,10 +91,10 @@ export const DEFAULT_SYMBOL_STATE: Omit<LiveSymbolState, 'symbol'> = {
 
 // ─── Constants ─────────────────────────────────────────────────────────────
 
-const GRID_LEVELS = 20;
-const TAKER_FEE = 0.00035;
-const MAKER_FEE = -0.0001;
-const SLIPPAGE = 0.001;
+const GRID_LEVELS = 30; // Updated from v5_12_bear (was 20)
+const TAKER_FEE = 0.0004; // Adjusted to match backtest
+const MAKER_FEE = 0.0001; // Adjusted to match backtest
+const SLIPPAGE = 0.006; // Adjusted to match backtest
 const MAX_PORTFOLIO_LEVERAGE = 5.0;
 
 // ─── Indicators ────────────────────────────────────────────────────────────
@@ -224,9 +224,9 @@ export function processSymbol(
     state.currentRegime = newRegime;
   }
 
-  let behemothWeight = state.currentRegime === 'RANGE' ? 0.30 : 0.00;
-  let leviathanWeight = state.currentRegime === 'TREND' ? 0.20 : 0.00;
-  let megalodonWeight = state.currentRegime === 'TREND' ? 0.20 : 0.05;
+  let behemothWeight = state.currentRegime === 'RANGE' ? 0.80 : 0.40; // Updated from v5_12_bear
+  let leviathanWeight = state.currentRegime === 'TREND' ? 0.15 : 0.05; // Updated from v5_12_bear
+  let megalodonWeight = state.currentRegime === 'TREND' ? 0.10 : 0.02;
 
   // Hyper Mode: Disable Behemoth < 50k, boost Megalodon
   if (accountBalance < 50000) {
@@ -238,6 +238,20 @@ export function processSymbol(
   const behemothCapital = Math.min(accountBalance * behemothWeight, 500_000);
   const leviathanCapital = Math.min(accountBalance * leviathanWeight, 500_000);
   const megalodonCapital = Math.min(accountBalance * megalodonWeight, 500_000);
+
+  // ── BEAR MARKET BOOST (v5_12_bear): 2x grid allocation when TREND + price < EMA200 ──
+  let isBearMarket = false;
+  let effectiveBehemothCapital = behemothCapital;
+  
+  if (candles4H.length > 200 && state.currentRegime === 'TREND') {
+    const ema200 = ema(candles4H, 200);
+    if (candle.close < ema200) {
+      isBearMarket = true;
+      effectiveBehemothCapital *= 2.0; // Double grid allocation in bear markets
+    }
+  }
+  
+  effectiveBehemothCapital = Math.min(effectiveBehemothCapital, 800_000); // Cap at reasonable limit
 
   // ── 2. BEHEMOTH GRID ─────────────────────────────────────────────────────
   const priceVelocity = candles4H.length > 6
@@ -260,7 +274,7 @@ export function processSymbol(
     const lowerBound = candle.close * (1 - dynamicRange);
     state.gridStep = (upperBound - lowerBound) / GRID_LEVELS;
 
-    const targetCapital = Math.min(behemothCapital, Math.max(0, maxAllowedMargin - totalMarginUsed));
+    const targetCapital = Math.min(effectiveBehemothCapital, Math.max(0, maxAllowedMargin - totalMarginUsed));
 
     if (targetCapital >= 50) {
       state.orderSizeUsd = targetCapital / (GRID_LEVELS / 2);
@@ -280,7 +294,7 @@ export function processSymbol(
         stopLoss: lowerBound,
         takeProfit: upperBound,
         positionSizeUsd: targetCapital,
-        reason: `Behemoth grid started. Range: ${lowerBound.toFixed(2)}-${upperBound.toFixed(2)}, Step: ${state.gridStep.toFixed(2)}`,
+        reason: `Behemoth grid started. Range: ${lowerBound.toFixed(2)}-${upperBound.toFixed(2)}, Step: ${state.gridStep.toFixed(2)}${isBearMarket ? ' [BEAR BOOST: 2x allocation]' : ''}`,
         gridState: state.grid,
         gridStep: state.gridStep,
       });
@@ -295,7 +309,7 @@ export function processSymbol(
         const coinsBought = state.orderSizeUsd / level.price;
         const totalCost = state.positionCoins * state.avgEntryPrice + coinsBought * level.price;
         state.positionCoins += coinsBought;
-        state.avgEntryPrice = totalCost / state.positionCoins;
+        state.avgEntryPrice = totalCost / state.positionCoins; // v5_12_bear: proper cost basis
         state.realizedGridPnl += state.orderSizeUsd * Math.abs(MAKER_FEE);
         level.active = false;
         // Activate the next sell level
@@ -315,8 +329,8 @@ export function processSymbol(
       } else if (level.type === 'SELL' && candle.high >= level.price) {
         if (state.positionCoins > 0) {
           const coinsSold = state.orderSizeUsd / level.price;
-          const profitUSD = coinsSold * state.gridStep;
-          state.realizedGridPnl += profitUSD + state.orderSizeUsd * Math.abs(MAKER_FEE);
+          const profitUSD = (level.price - state.avgEntryPrice) * Math.min(coinsSold, state.positionCoins);
+          state.realizedGridPnl += profitUSD - Math.abs(state.orderSizeUsd * MAKER_FEE);
           state.positionCoins = Math.max(0, state.positionCoins - coinsSold);
           if (state.positionCoins < 0.0001) { state.positionCoins = 0; state.avgEntryPrice = 0; }
           level.active = false;
